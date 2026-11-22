@@ -1,15 +1,21 @@
-"""Behavioral checks for the Hugging Face Space deploy retry policy."""
+"""Behavioral checks for Hugging Face Space deploy retries and diagnostics."""
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+import logging
 import ntpath
 import os
 from pathlib import Path
+import runpy
 import stat
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
+from threading import Event, Thread
 import traceback
 from types import SimpleNamespace
 import unittest
 from unittest import mock
+import warnings
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tool/ci'))
@@ -554,23 +560,172 @@ class StorageWarningTest(unittest.TestCase):
                 api.upload_folder.assert_called_once()
 
 
+class DiagnosticScopeTest(unittest.TestCase):
+    def test_import_leaves_host_log_record_factory_unused(self):
+        factory = logging.getLogRecordFactory()
+
+        def named_factory(name, *args, **kwargs):
+            if name is None:
+                raise ValueError('logger name required by host factory')
+            return factory(name, *args, **kwargs)
+
+        with mock.patch.object(logging, '_logRecordFactory', wraps=named_factory) as host:
+            runpy.run_path(hf.__file__)
+            host.assert_not_called()
+
+    def test_nested_scope_and_failure_restore_streams_and_hooks(self):
+        output, errors = StringIO(), StringIO()
+        logger = logging.getLogger('app.scope')
+        orphan = logging.Logger('orphan')
+        orphan.propagate = False
+        early = logging.StreamHandler(output)
+        fallback = logging.StreamHandler(errors)
+        logger.addHandler(early)
+        self.addCleanup(logger.removeHandler, early)
+        hooks = logging.getLogRecordFactory(), logging.Logger.makeRecord, warnings.showwarning
+        filters = warnings.filters[:]
+        with redirect_stdout(output), redirect_stderr(errors), mock.patch.object(logging, 'lastResort', fallback):
+            with self.assertRaisesRegex(RuntimeError, 'outer failure'), hf._redact_hub_diagnostics():
+                outer = sys.stdout, sys.stderr
+                self.assertIs(early.stream, outer[0])
+                self.assertIs(fallback.stream, outer[1])
+                orphan.warning('last resort https://inert.invalid/AUDIT_FALLBACK')
+                late = logging.StreamHandler()
+                logger.addHandler(late)
+                self.addCleanup(logger.removeHandler, late)
+                self.assertEqual(
+                    (logging.getLogRecordFactory(), logging.Logger.makeRecord, warnings.showwarning), hooks)
+                logger.warning('outer first https://inert.invalid/AUDIT_OUTER_FIRST')
+                with self.assertRaisesRegex(RuntimeError, 'inner failure'), hf._redact_hub_diagnostics():
+                    logger.warning('inner https://inert.invalid/AUDIT_INNER')
+                    raise RuntimeError('inner failure')
+                self.assertEqual((sys.stdout, sys.stderr), outer)
+                self.assertIs(early.stream, outer[0])
+                self.assertIs(late.stream, outer[1])
+                logger.warning('outer last https://inert.invalid/AUDIT_OUTER_LAST')
+                raise RuntimeError('outer failure')
+            self.assertEqual((sys.stdout, sys.stderr), (output, errors))
+            self.assertIs(early.stream, output)
+            self.assertIs(late.stream, errors)
+            self.assertIs(fallback.stream, errors)
+            self.assertIn('last resort', errors.getvalue())
+            for stream in (output, errors):
+                self.assertNotIn('AUDIT_', stream.getvalue())
+                self.assertIn('outer first', stream.getvalue())
+                self.assertIn('inner', stream.getvalue())
+                self.assertIn('outer last', stream.getvalue())
+            logger.warning('outside scope')
+            self.assertIn('outside scope', output.getvalue())
+        self.assertEqual((logging.getLogRecordFactory(), logging.Logger.makeRecord, warnings.showwarning), hooks)
+        self.assertEqual(warnings.filters, filters)
+
+    def test_close_flushes_partial_output_and_leaves_original_open(self):
+        output = StringIO()
+        handler = logging.StreamHandler(output)
+        with redirect_stdout(output), hf._redact_hub_diagnostics():
+            self.assertIs(handler.stream, sys.stdout)
+            sys.stdout.write('partially buffered sig=AUDIT_CLOSE')
+            self.assertEqual(output.getvalue(), '')
+            sys.stdout.close()
+            self.assertIn('partially buffered', output.getvalue())
+            self.assertNotIn('AUDIT_CLOSE', output.getvalue())
+        self.assertIs(handler.stream, output)
+        self.assertFalse(output.closed)
+
+    def test_late_hook_and_stream_replacements_survive_scope_exit(self):
+        output, errors, replacement = StringIO(), StringIO(), StringIO()
+        logger = logging.getLogger('app.replacements')
+        handler = logging.StreamHandler(output)
+        logger.addHandler(handler)
+        self.addCleanup(logger.removeHandler, handler)
+        factory = logging.getLogRecordFactory()
+        make_record = logging.Logger.makeRecord
+        show_warning = warnings.showwarning
+        with (redirect_stdout(output), redirect_stderr(errors),
+              mock.patch.object(logging, '_logRecordFactory', wraps=factory) as early_factory,
+              mock.patch.object(logging.Logger, 'makeRecord', make_record),
+              mock.patch.object(warnings, 'showwarning', show_warning)):
+            with hf._redact_hub_diagnostics():
+                self.assertIs(logging.getLogRecordFactory(), early_factory)
+                self.assertIs(logging.Logger.makeRecord, make_record)
+                late_factory = mock.Mock(wraps=factory)
+                late_make_record = mock.Mock(wraps=make_record)
+                late_show_warning = mock.Mock(wraps=show_warning)
+                logging.setLogRecordFactory(late_factory)
+                logging.Logger.makeRecord = late_make_record
+                warnings.showwarning = late_show_warning
+                sys.stdout = replacement
+                handler.setStream(replacement)
+            self.assertIs(logging.getLogRecordFactory(), late_factory)
+            self.assertIs(logging.Logger.makeRecord, late_make_record)
+            self.assertIs(warnings.showwarning, late_show_warning)
+            self.assertIs(sys.stdout, replacement)
+            self.assertIs(sys.stderr, errors)
+            self.assertIs(handler.stream, replacement)
+
+    def test_worker_that_emits_after_scope_exit_uses_restored_handler(self):
+        output = StringIO()
+        logger = logging.getLogger('app.worker')
+        handler = logging.StreamHandler(output)
+        logger.addHandler(handler)
+        self.addCleanup(logger.removeHandler, handler)
+        reached, resume = Event(), Event()
+        make_record = logging.Logger.makeRecord
+
+        def waiting_make_record(*args, **kwargs):
+            reached.set()
+            resume.wait(5)
+            return make_record(*args, **kwargs)
+
+        with redirect_stderr(output), mock.patch.object(logging.Logger, 'makeRecord', waiting_make_record):
+            worker = Thread(target=logger.warning, args=('worker outside scope',))
+            try:
+                with hf._redact_hub_diagnostics():
+                    worker.start()
+                    self.assertTrue(reached.wait(5))
+            finally:
+                resume.set()
+                worker.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(output.getvalue(), 'worker outside scope\n')
+
+
 class CliTest(unittest.TestCase):
     def test_cli_redacts_sdk_and_transport_diagnostics(self):
-        runner = '''
+        runner = r'''
 import logging
 import runpy
 import sys
+import traceback
+from types import ModuleType
+from urllib.parse import quote
 import warnings
 from unittest import mock
 
-from test_hf_space_deploy import SensitiveHttpError, ROOT
+from test_hf_space_deploy import SensitiveHttpError, ROOT, hf
+
+def signed(label):
+    return f'https://example.invalid/asset?X-Amz-Signature=AUDIT_{label}'
+
+logging.basicConfig(stream=sys.stderr, format='%(message)s')
+logging.raiseExceptions = True
+logger = logging.getLogger('huggingface_hub.audit')
+early = logging.StreamHandler(sys.stdout)
+logger.addHandler(early)
+
+class Formatted:
+    def __str__(self):
+        return 'brace object {}'.format(signed('BRACE_OBJECT'))
+
+class BadMessage:
+    def __str__(self):
+        raise ValueError('broken string conversion ' + signed('BAD_MESSAGE'))
 
 def make_client(**kwargs):
     url = SensitiveHttpError.signed_url
     handler = logging.StreamHandler()
     for name in ('huggingface_hub', 'urllib3', 'requests'):
-        logger = logging.getLogger(name)
-        logger.addHandler(handler)
+        logging.getLogger(name).addHandler(handler)
         child = logging.getLogger(f'{name}.late.child')
         try:
             raise RuntimeError(url('exception'))
@@ -594,7 +749,116 @@ def make_client(**kwargs):
         'encoded https%3A%2F%2Fexample.invalid%2Fe%3FX-Amz-Signature%3Dencoded '
         'and url=/asset?X-Amz-Signature=equals')
     logging.makeLogRecord({})
+    logger.warning('percent HTTP %(status)d PUT %(url)s', {'status': 503, 'url': signed('MAPPING')})
+    logger.warning(Formatted())
+    key, signature = signed('SPLIT_ADJACENT').split('=', 1)
+    logger.warning('split adjacent %s=%s', key, signature)
+    key, signature = signed('SPLIT_WHITESPACE').split('=', 1)
+    logger.warning('HTTP 503 PUT URL %s= signature %s retry 1/5', key, signature)
+    logger.warning('non-string %s', RuntimeError(signed('OBJECT_ARGUMENT')))
+    logger.warning('upper scheme %s', signed('LOWERCASE').replace('https', 'HTTPS').replace('X-Amz', 'x-amz'))
+    logger.warning('legacy %s&Expires=123', signed('LEGACY').replace('X-Amz-Signature', 'Signature'))
+    logger.warning('encoded values %s', signed('ENCODED_VALUES').replace('Signature', '%53ignature') + '%2F%2B')
+    logger.warning('encoded relative /asset%%3FX-Amz-Signature%%3D%s', 'AUDIT_ENCODED_QUERY')
+    logger.warning('fully encoded relative %s', quote('/asset?other=AUDIT_ENCODED_RELATIVE', safe=''))
+    logger.warning('fully encoded absolute %s', quote(signed('ENCODED_ABSOLUTE'), safe=''))
+    logger.warning('relative legacy %s HTTP/1.1', '/asset?Signature=AUDIT_RELATIVE')
+    logger.warning('py warnings follow')
+    logging.getLogger('py.warnings').warning('direct warning record %s', signed('PY_WARNINGS'))
+    logger.warning('broken braces {}', signed('BAD_BRACE_ARGS'))
+    logger.warning('broken format %d', signed('BAD_PERCENT_ARGS'))
+    logger.warning(BadMessage())
+    logger.warning('no active exception %s', signed('NO_EXCEPTION'), exc_info=True)
+    with mock.patch.object(logger, 'findCaller', return_value=('fixture.py', 5, 'fixture',
+            'test stack: ' + signed('STACK'))):
+        logger.warning('stack record', stack_info=True)
+    populated = logging.makeLogRecord({'name': logger.name, 'msg': 'rebuilt record %s',
+                                      'args': (signed('REBUILT'),), 'levelno': logging.WARNING})
+    logger.handle(populated)
+    for target in ({'url': signed('DICT')}, [signed('LIST')], Formatted()):
+        extra_logger.warning('structured extra', extra={'target': target})
+    fields = logging.StreamHandler(sys.stdout)
+    fields.setFormatter(logging.Formatter('standard fields %(name)s %(pathname)s %(funcName)s %(message)s'))
+    field_logger = logging.getLogger(signed('NAME'))
+    field_logger.addHandler(fields)
+    with mock.patch.object(field_logger, 'findCaller', return_value=(signed('PATH'), 5, signed('FUNC'), None)):
+        field_logger.warning('standard message %s', signed('MESSAGE'))
+    for stream in (sys.stdout, sys.stderr):
+        print('standalone signing fields X-Amz-Credential=AUDIT_AWS sIg%3Daudit_encoded '
+              'Expires=AUDIT_EXPIRY SIGNATURE=AUDIT_LEGACY_FIELD X-Goog-Signature=AUDIT_GOOGLE retry 2/5',
+              file=stream)
+        stream.write('fragmented http')
+        stream.write('s://example.invalid/AUDIT_SPLIT\n')
+        stream.write('flush sig=AUDIT_FLUSH')
+        stream.flush()
+        stream.write('\n')
+        try:
+            raise RuntimeError(signed('PRINTED_TRACEBACK'))
+        except RuntimeError:
+            traceback.print_exc(file=stream)
+        stream.write('scope exit sig=AUDIT_SCOPE_EXIT')
     return mock.Mock()
+
+def on_import(name):
+    if name == 'HfApi':
+        logger.warning('SDK import %s', signed('IMPORT'))
+        logging.getLogger().warning('SDK verbosity warning %s', signed('IMPORT_ROOT'))
+        return make_client
+    raise AttributeError(name)
+
+hub = ModuleType('huggingface_hub')
+hub.__getattr__ = on_import
+script = ROOT / 'tool/ci/hf_space_deploy.py'
+sys.argv = [str(script), '--repo', 'org/space', '--folder', 'build',
+            '--commit-message', 'msg', '--delete-pattern', '*']
+logger.warning('before CLI http://outside.invalid/preinstalled')
+with mock.patch.dict(sys.modules, {'huggingface_hub': hub}):
+    runpy.run_path(str(script), run_name='__main__')
+api = mock.Mock()
+api.upload_folder.side_effect = lambda **kwargs: logger.warning('direct deploy http://outside.invalid/direct')
+hf.deploy(api, 'org/space', 'build', 'msg', ['*'], False)
+api.upload_folder.assert_called_once()
+'''
+        result = subprocess.run(
+            [sys.executable, '-B', '-c', runner], cwd=Path(__file__).parent,
+            env={**os.environ, 'HF_TOKEN': 'mock-token'},
+            capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('HTTP/1.1 503', result.stderr)
+        self.assertIn('SDK upload warning', result.stderr)
+        self.assertIn('root record', result.stderr)
+        self.assertIn('captured warning', result.stderr)
+        self.assertIn('direct warning record', result.stderr)
+        self.assertIn('test stack:', result.stderr)
+        self.assertIn('broken string conversion', result.stderr)
+        self.assertIn('SDK verbosity warning', result.stderr)
+        self.assertIn('standard fields', result.stdout)
+        self.assertIn('extra ', result.stdout)
+        for name, stream in (('stdout', result.stdout), ('stderr', result.stderr)):
+            with self.subTest(stream=name):
+                self.assertIn('SDK import', stream)
+                self.assertIn('HTTP 503 PUT', stream)
+                self.assertIn('retry 1/5', stream)
+                self.assertIn('retry 2/5', stream)
+                self.assertIn('rebuilt record', stream)
+                self.assertIn('scope exit', stream)
+                self.assertIn('before CLI http://outside.invalid/preinstalled', stream)
+                self.assertIn('direct deploy http://outside.invalid/direct', stream)
+                self.assertNotIn('AUDIT_', stream)
+                self.assertNotIn('audit_encoded', stream)
+                self.assertNotIn('stand-in', stream)
+                self.assertNotIn('example.invalid', stream)
+
+    def test_cli_redacts_unhandled_sdk_initialization_traceback(self):
+        runner = '''
+import runpy
+import sys
+from unittest import mock
+
+from test_hf_space_deploy import ROOT
+
+def make_client(**kwargs):
+    raise RuntimeError('SDK initialization failed https://inert.invalid/asset?sig=AUDIT_INIT')
 
 script = ROOT / 'tool/ci/hf_space_deploy.py'
 sys.argv = [str(script), '--repo', 'org/space', '--folder', 'build',
@@ -606,16 +870,11 @@ with mock.patch.dict(sys.modules, {'huggingface_hub': mock.Mock(HfApi=make_clien
             [sys.executable, '-B', '-c', runner], cwd=Path(__file__).parent,
             env={**os.environ, 'HF_TOKEN': 'mock-token'},
             capture_output=True, text=True, timeout=15)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stderr.count('HTTP 503 PUT'), 3, result.stderr)
-        self.assertIn('HTTP/1.1 503', result.stderr)
-        self.assertIn('SDK upload warning', result.stderr)
-        self.assertIn('root record', result.stderr)
-        self.assertIn('captured warning', result.stderr)
-        self.assertIn('extra ', result.stdout)
-        for stream in (result.stdout, result.stderr):
-            self.assertNotIn('X-Amz-Signature', stream)
-            self.assertNotIn('example.invalid', stream)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn('Traceback (most recent call last)', result.stderr)
+        self.assertIn('RuntimeError: SDK initialization failed', result.stderr)
+        self.assertNotIn('AUDIT_INIT', result.stderr)
+        self.assertNotIn('AUDIT_INIT', result.stdout)
 
     def test_cli_redacts_retry_logs_from_offline_hub_wheel(self):
         wheel = os.environ.get('LLAMADART_HF_HUB_WHEEL')
