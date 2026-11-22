@@ -6,6 +6,7 @@ import stat
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
+import traceback
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -19,6 +20,28 @@ class HttpError(Exception):
     def __init__(self, status, headers=None):
         super().__init__(f'HTTP {status}')
         self.response = mock.Mock(status_code=status, headers=headers or {})
+
+
+class SensitiveHttpError(HttpError):
+    def __init__(self, status, retry_after, chain):
+        super().__init__(status, {'Retry-After': retry_after})
+        self.args = (self.signed_url('args'),)
+        self.response.text = self.signed_url('response')
+        setattr(self, f'__{chain}__', RuntimeError(self.signed_url(chain)))
+
+    def __repr__(self):
+        return self.signed_url('repr')
+
+    @staticmethod
+    def signed_url(field):
+        return f'https://example.invalid/{field}?X-Amz-Signature=stand-in'
+
+
+TERMINAL_CASES = (
+    (403, '0', 0),
+    (429, str(hf.MAX_TOTAL_WAIT + 1), 0),
+    (429, '0', hf.MAX_ATTEMPTS - 1),
+)
 
 
 def missing_space_api():
@@ -52,7 +75,7 @@ class RetryTest(unittest.TestCase):
     def test_exhausted_attempts_fail_with_the_429(self):
         api = missing_space_api()
         api.create_repo.side_effect = HttpError(429)
-        with self.assertRaises(HttpError):
+        with self.assertRaises(hf.DeployError):
             run_deploy(api)
         self.assertEqual(api.create_repo.call_count, hf.MAX_ATTEMPTS)
         api.upload_folder.assert_not_called()
@@ -61,7 +84,7 @@ class RetryTest(unittest.TestCase):
         api = missing_space_api()
         api.create_repo.side_effect = HttpError(429, {'Retry-After': str(hf.MAX_TOTAL_WAIT + 1)})
         sleeps = []
-        with self.assertRaises(HttpError):
+        with self.assertRaises(hf.DeployError):
             hf.deploy(api, 'r', 'f', 'm', ['*'], False, sleep=sleeps.append,
                       log=lambda *a, **k: None)
         self.assertEqual(sleeps, [])
@@ -73,11 +96,40 @@ class RetryTest(unittest.TestCase):
                 getattr(api, step).side_effect = (
                     HttpError(status) if status else ValueError('bad'))
                 sleeps = []
-                with self.assertRaises(Exception):
+                with self.assertRaises(hf.DeployError) as raised:
                     hf.deploy(api, 'r', 'f', 'm', ['*'], False, sleep=sleeps.append,
                               log=lambda *a, **k: None)
+                diagnostic = (f'HTTP {status}, HttpError' if status
+                              else 'HTTP status unavailable, ValueError')
+                self.assertEqual(str(raised.exception), f'{step}: failed ({diagnostic})')
                 self.assertEqual(getattr(api, step).call_count, 1, (status, step))
                 self.assertEqual(sleeps, [], (status, step))
+
+    def test_wrapped_upload_failure_reports_the_chained_status(self):
+        for status in (403, 429):
+            with self.subTest(status=status):
+                api = missing_space_api()
+                wrapped = RuntimeError(SensitiveHttpError.signed_url('wrapper'))
+                wrapped.__cause__ = SensitiveHttpError(status, '0', 'cause')
+                api.upload_folder.side_effect = wrapped
+                sleeps = []
+                with self.assertRaises(hf.DeployError) as raised:
+                    hf.deploy(api, 'r', 'f', 'm', ['*'], False, sleep=sleeps.append,
+                              log=lambda *a, **k: None)
+                self.assertEqual(str(raised.exception),
+                                 f'upload_folder: failed (HTTP {status}, RuntimeError)')
+                self.assertEqual(api.upload_folder.call_count, 1)
+                self.assertEqual(sleeps, [])
+
+    def test_cyclic_exception_chain_reports_unavailable_status(self):
+        api = missing_space_api()
+        first, second = RuntimeError('a'), ValueError('b')
+        first.__context__, second.__context__ = second, first
+        api.upload_folder.side_effect = first
+        with self.assertRaises(hf.DeployError) as raised:
+            run_deploy(api)
+        self.assertEqual(str(raised.exception),
+                         'upload_folder: failed (HTTP status unavailable, RuntimeError)')
 
     def test_logs_never_include_the_token(self):
         api = missing_space_api()
@@ -106,7 +158,7 @@ class PolicyTest(unittest.TestCase):
     def test_exactly_max_attempts_when_every_try_is_429(self):
         api = missing_space_api()
         api.upload_folder.side_effect = HttpError(429)
-        with self.assertRaises(HttpError):
+        with self.assertRaises(hf.DeployError):
             run_deploy(api)
         self.assertEqual(api.upload_folder.call_count, 5)
 
@@ -116,7 +168,7 @@ class PolicyTest(unittest.TestCase):
         api.upload_folder.side_effect = [HttpError(429, {'Retry-After': '100'}),
                                          HttpError(429, {'Retry-After': '100'}), None]
         sleeps = []
-        with self.assertRaises(HttpError):
+        with self.assertRaises(hf.DeployError):
             hf.deploy(api, 'r', 'f', 'm', ['*'], False, sleep=sleeps.append,
                       log=lambda *a, **k: None)
         self.assertEqual(sleeps, [100.0, 100.0])
@@ -175,9 +227,8 @@ class ProvisioningTest(unittest.TestCase):
             with self.subTest(error=error):
                 api = mock.Mock()
                 api.repo_info.side_effect = error
-                with self.assertRaises(type(error)) as raised:
+                with self.assertRaises(hf.DeployError):
                     run_deploy(api)
-                self.assertIs(raised.exception, error)
                 api.repo_info.assert_called_once()
                 api.create_repo.assert_not_called()
                 api.upload_folder.assert_not_called()
@@ -194,11 +245,9 @@ class ProvisioningTest(unittest.TestCase):
         for headers, attempts in (({}, hf.MAX_ATTEMPTS), ({'Retry-After': '86400'}, 1)):
             with self.subTest(headers=headers):
                 api = mock.Mock()
-                error = HttpError(429, headers)
-                api.repo_info.side_effect = error
-                with self.assertRaises(HttpError) as raised:
+                api.repo_info.side_effect = HttpError(429, headers)
+                with self.assertRaises(hf.DeployError):
                     run_deploy(api)
-                self.assertIs(raised.exception, error)
                 self.assertEqual(api.repo_info.call_count, attempts)
                 api.create_repo.assert_not_called()
                 api.upload_folder.assert_not_called()
@@ -207,13 +256,11 @@ class ProvisioningTest(unittest.TestCase):
         api = missing_space_api()
         api.repo_info.side_effect = [HttpError(429, {'Retry-After': '100'}), HttpError(404)]
         api.create_repo.side_effect = [HttpError(429, {'Retry-After': '100'}), None]
-        error = HttpError(429, {'Retry-After': '41'})
-        api.upload_folder.side_effect = error
+        api.upload_folder.side_effect = HttpError(429, {'Retry-After': '41'})
         sleeps = []
-        with self.assertRaises(HttpError) as raised:
+        with self.assertRaises(hf.DeployError):
             hf.deploy(api, 'org/space', 'build', 'msg', ['*'], True,
                       sleep=sleeps.append, log=lambda *a, **k: None)
-        self.assertIs(raised.exception, error)
         self.assertEqual(sleeps, [100.0, 100.0])
         self.assertEqual(api.repo_info.call_count, 2)
         self.assertEqual(api.create_repo.call_count, 2)
@@ -221,21 +268,17 @@ class ProvisioningTest(unittest.TestCase):
 
     def test_missing_space_creation_quota_still_blocks_upload(self):
         api = missing_space_api()
-        error = HttpError(429, {'Retry-After': '86400'})
-        api.create_repo.side_effect = error
-        with self.assertRaises(HttpError) as raised:
+        api.create_repo.side_effect = HttpError(429, {'Retry-After': '86400'})
+        with self.assertRaises(hf.DeployError):
             run_deploy(api)
-        self.assertIs(raised.exception, error)
         api.create_repo.assert_called_once()
         api.upload_folder.assert_not_called()
 
-    def test_existing_space_upload_error_propagates_without_creation(self):
+    def test_existing_space_upload_failure_skips_creation(self):
         api = mock.Mock()
-        error = HttpError(403)
-        api.upload_folder.side_effect = error
-        with self.assertRaises(HttpError) as raised:
+        api.upload_folder.side_effect = HttpError(403)
+        with self.assertRaises(hf.DeployError):
             run_deploy(api)
-        self.assertIs(raised.exception, error)
         api.create_repo.assert_not_called()
         api.upload_folder.assert_called_once()
 
@@ -289,7 +332,7 @@ class SquashTest(unittest.TestCase):
                     self.assertEqual(sleeps, [60.0, 40.0, 40.0, 100.0])
                     self.assertEqual(api.super_squash_history.call_count, 2)
                 else:
-                    with self.assertRaises(hf.SquashHistoryError):
+                    with self.assertRaises(hf.DeployError):
                         deploy()
                     self.assertEqual(sleeps, [60.0, 40.0, 40.0])
                     api.super_squash_history.assert_called_once()
@@ -302,7 +345,7 @@ class SquashTest(unittest.TestCase):
                 error = HttpError(status)
                 api.super_squash_history.side_effect = error
                 sleep = mock.Mock()
-                with self.assertRaises(hf.SquashHistoryError):
+                with self.assertRaises(hf.DeployError):
                     hf.deploy(api, 'org/space', 'build', 'msg', ['*'], True,
                               squash_history=True, sleep=sleep)
                 api.super_squash_history.assert_called_once()
@@ -312,11 +355,9 @@ class SquashTest(unittest.TestCase):
         for status in (403, 500):
             with self.subTest(status=status):
                 api = mock.Mock()
-                error = HttpError(status)
-                api.upload_folder.side_effect = error
-                with self.assertRaises(HttpError) as raised:
+                api.upload_folder.side_effect = HttpError(status)
+                with self.assertRaises(hf.DeployError):
                     run_deploy(api, squash_history=True)
-                self.assertIs(raised.exception, error)
                 api.super_squash_history.assert_not_called()
 
     def test_squash_history_retry_logs_exclude_secrets(self):
@@ -514,20 +555,39 @@ class StorageWarningTest(unittest.TestCase):
 
 
 class CliTest(unittest.TestCase):
-    def test_cli_terminal_squash_errors_omit_provider_details(self):
+    def test_upload_failure_omits_provider_details_in_outer_handler(self):
+        for status, retry_after, retries in TERMINAL_CASES:
+            for chain in ('cause', 'context'):
+                with self.subTest(status=status, retry_after=retry_after, chain=chain):
+                    api = mock.Mock()
+                    api.upload_folder.side_effect = SensitiveHttpError(status, retry_after, chain)
+                    try:
+                        run_deploy(api, squash_history=True)
+                    except Exception as error:
+                        diagnostic = '\n'.join((str(error), repr(error), repr(error.args),
+                                                traceback.format_exc()))
+                        self.assertNotIn('X-Amz-Signature', diagnostic)
+                        self.assertEqual(
+                            str(error), f'upload_folder: failed (HTTP {status}, SensitiveHttpError)')
+                        self.assertIsNone(error.__cause__)
+                        self.assertIsNone(error.__context__)
+                    else:
+                        self.fail('Expected upload failure')
+                    self.assertEqual(api.upload_folder.call_count, retries + 1)
+                    api.super_squash_history.assert_not_called()
+
+    def test_cli_terminal_hub_errors_omit_provider_details(self):
         runner = '''
 import runpy
 import sys
 import time
 from unittest import mock
 
-from test_hf_space_deploy import HttpError, ROOT
+from test_hf_space_deploy import SensitiveHttpError, missing_space_api, ROOT
 
-status, retry_after = sys.argv[1:]
-api = mock.Mock()
-error = HttpError(int(status), {'Retry-After': retry_after})
-error.args = ('response-body-canary https://example.invalid/file?signature=stand-in',)
-api.super_squash_history.side_effect = error
+operation, status, retry_after = sys.argv[1:]
+api = missing_space_api() if operation == 'create_repo' else mock.Mock()
+getattr(api, operation).side_effect = SensitiveHttpError(int(status), retry_after, 'cause')
 hub = mock.Mock()
 hub.HfApi.return_value = api
 script = ROOT / 'tool/ci/hf_space_deploy.py'
@@ -536,21 +596,19 @@ sys.argv = [str(script), '--repo', 'org/space', '--folder', 'build',
 with mock.patch.dict(sys.modules, {'huggingface_hub': hub}), mock.patch.object(time, 'sleep'):
     runpy.run_path(str(script), run_name='__main__')
 '''
-        for status, retry_after, retries in (
-                (403, '0', 0), (429, str(hf.MAX_TOTAL_WAIT + 1), 0),
-                (429, '0', hf.MAX_ATTEMPTS - 1)):
-            with self.subTest(status=status, retry_after=retry_after):
-                result = subprocess.run(
-                    [sys.executable, '-B', '-c', runner, str(status), retry_after],
-                    cwd=Path(__file__).parent, env={**os.environ, 'HF_TOKEN': 'mock-token'},
-                    capture_output=True, text=True, timeout=15)
-                self.assertEqual(result.returncode, 1)
-                self.assertEqual(result.stdout, '')
-                self.assertEqual(result.stderr.splitlines(), [
-                    f'super_squash_history: HTTP 429 on attempt {attempt}/{hf.MAX_ATTEMPTS}; '
-                    'retrying in 0s'
-                    for attempt in range(1, retries + 1)
-                ] + [f'super_squash_history: failed (HTTP {status}, HttpError)'])
+        for operation in ('repo_info', 'create_repo', 'upload_folder', 'super_squash_history'):
+            for status, retry_after, retries in TERMINAL_CASES:
+                with self.subTest(operation=operation, status=status, retry_after=retry_after):
+                    result = subprocess.run(
+                        [sys.executable, '-B', '-c', runner, operation, str(status), retry_after],
+                        cwd=Path(__file__).parent, env={**os.environ, 'HF_TOKEN': 'mock-token'},
+                        capture_output=True, text=True, timeout=15)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertEqual(result.stdout, '')
+                    self.assertEqual(result.stderr.splitlines(), [
+                        f'{operation}: HTTP 429 on attempt {attempt}/{hf.MAX_ATTEMPTS}; retrying in 0s'
+                        for attempt in range(1, retries + 1)
+                    ] + [f'{operation}: failed (HTTP {status}, SensitiveHttpError)'])
 
     def test_cli_parses_squash_history_and_max_folder_bytes(self):
         hub = mock.Mock()

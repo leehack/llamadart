@@ -12,7 +12,7 @@ once so a broken deploy stays visible.
 --max-folder-bytes rejects oversized or unreadable folders and symlinks before
 any Hub call. Existing Spaces warn at 750 MB of usedStorage.
 --squash-history collapses the Space's main history after a successful upload.
-A terminal squash error reports the HTTP status and error type.
+A terminal Hub error reports only the operation, HTTP status and error type.
 """
 import argparse
 import os
@@ -27,10 +27,23 @@ MAX_TOTAL_WAIT = 240.0
 MAX_BACKOFF = 30.0
 BASE_BACKOFF = 5.0
 STORAGE_WARN_BYTES = 750_000_000
+_MISSING_SPACE = object()
 
 
 def status_of(error):
     return getattr(getattr(error, 'response', None), 'status_code', None)
+
+
+def reported_status(error):
+    # huggingface_hub wraps LFS upload failures in RuntimeError; the HTTP error is in the chain.
+    seen = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        status = status_of(error)
+        if type(status) is int:
+            return status
+        error = error.__cause__ or error.__context__
+    return None
 
 
 def retry_after(error):
@@ -46,7 +59,7 @@ class Budget:
     waited = 0.0
 
 
-class SquashHistoryError(RuntimeError):
+class DeployError(RuntimeError):
     pass
 
 
@@ -66,6 +79,19 @@ def with_retry(label, call, budget, sleep=time.sleep, jitter=random.random, log=
                 file=sys.stderr)
             sleep(delay)
             budget.waited += delay
+
+
+def _call_hub(label, call, budget, *, allow_missing=False, **retry_options):
+    try:
+        return with_retry(label, call, budget, **retry_options)
+    except Exception as error:
+        status = reported_status(error)
+        if allow_missing and status_of(error) == 404:
+            return _MISSING_SPACE
+        http = f'HTTP {status}' if type(status) is int else 'HTTP status unavailable'
+        message = f'{label}: failed ({http}, {type(error).__name__})'
+    # Raise outside the handler so the provider error is absent from the exception chain.
+    raise DeployError(message) from None
 
 
 def used_storage_of(info):
@@ -123,14 +149,11 @@ def deploy(api, repo, folder, commit_message, delete_patterns, public, *,
                 f'Folder size {actual} bytes exceeds --max-folder-bytes limit {max_folder_bytes} bytes')
 
     budget = Budget()
-    try:
-        info = with_retry('repo_info', budget=budget, call=lambda: api.repo_info(
-            repo_id=repo, repo_type='space'), **retry_options)
-    except Exception as error:
-        if status_of(error) != 404:
-            raise
+    info = _call_hub('repo_info', budget=budget, call=lambda: api.repo_info(
+        repo_id=repo, repo_type='space'), allow_missing=True, **retry_options)
+    if info is _MISSING_SPACE:
         create_options = {'private': False} if public else {}
-        with_retry('create_repo', budget=budget, call=lambda: api.create_repo(
+        _call_hub('create_repo', budget=budget, call=lambda: api.create_repo(
             repo_id=repo, repo_type='space', space_sdk='static', exist_ok=True, **create_options),
             **retry_options)
     else:
@@ -140,22 +163,14 @@ def deploy(api, repo, folder, commit_message, delete_patterns, public, *,
             log(f'repo_info: Space usedStorage is {used / 1_000_000:.1f} MB (limit 1000.0 MB)',
                 file=sys.stderr)
 
-    with_retry('upload_folder', budget=budget, call=lambda: api.upload_folder(
+    _call_hub('upload_folder', budget=budget, call=lambda: api.upload_folder(
         repo_id=repo, repo_type='space', folder_path=folder, revision='main',
         delete_patterns=delete_patterns, commit_message=commit_message),
         **retry_options)
     if squash_history:
-        try:
-            with_retry('super_squash_history', budget=budget,
-                       call=lambda: api.super_squash_history(
-                           repo_id=repo, repo_type='space', branch='main',
-                           commit_message=commit_message),
-                       **retry_options)
-        except Exception as error:
-            status = status_of(error)
-            http = f'HTTP {status}' if type(status) is int else 'HTTP status unavailable'
-            raise SquashHistoryError(
-                f'super_squash_history: failed ({http}, {type(error).__name__})') from None
+        _call_hub('super_squash_history', budget=budget, call=lambda: api.super_squash_history(
+            repo_id=repo, repo_type='space', branch='main', commit_message=commit_message),
+            **retry_options)
 
 
 def main(argv=None):
@@ -175,7 +190,7 @@ def main(argv=None):
         deploy(HfApi(token=os.environ['HF_TOKEN']), args.repo, args.folder, args.commit_message,
                args.delete_pattern, args.public, squash_history=args.squash_history,
                max_folder_bytes=args.max_folder_bytes)
-    except SquashHistoryError as error:
+    except DeployError as error:
         raise SystemExit(str(error)) from None
 
 
