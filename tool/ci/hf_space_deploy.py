@@ -76,17 +76,20 @@ def used_storage_of(info):
 
 
 def folder_size_bytes(folder):
-    # A trailing separator makes lstat follow a symlinked root.
-    drive, tail = os.path.splitdrive(os.fspath(folder))
-    folder = drive + (tail.rstrip(os.sep + (os.altsep or '')) or tail)
+    folder = os.fspath(folder)
 
     def raise_walk_error(error):
         raise error
 
     try:
-        root_mode = os.lstat(folder).st_mode
-        if stat.S_ISLNK(root_mode):
-            raise ValueError("Deploy folder contains a symlink at '.'")
+        # Check prefixes before a separator, '.' or '..' can hide a link from lstat.
+        prefixes = [folder]
+        while (parent := os.path.dirname(prefixes[-1])) and parent != prefixes[-1]:
+            prefixes.append(parent)
+        for prefix in reversed(prefixes):
+            root_mode = os.lstat(prefix).st_mode
+            if stat.S_ISLNK(root_mode):
+                raise ValueError("Deploy folder contains a symlink at '.'")
         if not stat.S_ISDIR(root_mode):
             raise ValueError('Deploy folder must be a directory')
         size = 0

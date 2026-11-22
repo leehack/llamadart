@@ -1,6 +1,8 @@
 """Behavioral checks for the Hugging Face Space deploy retry policy."""
+import ntpath
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -332,7 +334,7 @@ class PreflightTest(unittest.TestCase):
     def setUp(self):
         scratch = TemporaryDirectory(prefix='w2155-')
         self.addCleanup(scratch.cleanup)
-        self.root = Path(scratch.name)
+        self.root = Path(scratch.name).resolve()
         self.folder = self.root / 'site'
         self.folder.mkdir()
         self.api = mock.Mock()
@@ -384,16 +386,49 @@ class PreflightTest(unittest.TestCase):
                 finally:
                     link.unlink()
 
-    def test_max_folder_bytes_rejects_symlinked_root_with_or_without_separator(self):
+    def test_max_folder_bytes_rejects_symlinked_root_spellings(self):
+        target_parent = self.root / 'target-parent'
+        target = target_parent / 'target'
+        target.mkdir(parents=True)
+        (target / 'index.html').write_bytes(b'demo')
+        (target_parent / 'other').mkdir()
         link = self.root / 'site-link'
-        self.create_symlink(link, self.folder, is_directory=True)
-        for suffix in ('', os.sep):
+        self.create_symlink(link, target, is_directory=True)
+        (self.root / 'other').mkdir()
+        for suffix in ('', '/', '//', '/.', '//.', '/..', '/../other'):
             with self.subTest(suffix=suffix):
-                with self.assertRaises(ValueError) as raised:
-                    run_deploy(self.api, folder=str(link) + suffix,
-                               max_folder_bytes=250_000_000)
-                self.assertEqual(str(raised.exception), "Deploy folder contains a symlink at '.'")
-                self.assertEqual(self.api.mock_calls, [])
+                self.assert_preflight_rejects_root_link(str(link) + suffix)
+
+    def test_max_folder_bytes_rejects_windows_root_spellings(self):
+        link = r'C:\artifacts\site-link'
+
+        def lstat(path):
+            mode = stat.S_IFDIR
+            if path.replace('/', '\\') == link:
+                mode = stat.S_IFLNK
+            return SimpleNamespace(st_mode=mode)
+
+        for suffix in ('\\', '//', '\\\\.', '/.', '\\..', '/..\\other'):
+            with self.subTest(suffix=suffix):
+                with (mock.patch.multiple(hf.os, path=ntpath, sep='\\', altsep='/'),
+                      mock.patch.object(hf.os, 'lstat', side_effect=lstat),
+                      mock.patch.object(hf.os, 'walk', return_value=[])):
+                    self.assert_preflight_rejects_root_link(link + suffix)
+
+    def test_max_folder_bytes_accepts_real_directory_with_dot_suffix(self):
+        (self.folder / 'index.html').write_bytes(b'demo')
+        folder = str(self.folder) + '/.'
+        with self.assertRaisesRegex(ValueError, 'Folder size 4 bytes exceeds.*limit 3 bytes'):
+            run_deploy(self.api, folder=folder, max_folder_bytes=3)
+        self.assertEqual(self.api.mock_calls, [])
+        run_deploy(self.api, folder=folder, max_folder_bytes=4)
+        self.assertEqual(self.api.upload_folder.call_args.kwargs['folder_path'], folder)
+
+    def assert_preflight_rejects_root_link(self, folder):
+        api = mock.Mock()
+        with self.assertRaisesRegex(ValueError, r"^Deploy folder contains a symlink at '\.'$"):
+            run_deploy(api, folder=folder, max_folder_bytes=250_000_000)
+        self.assertEqual(api.mock_calls, [])
 
     def test_max_folder_bytes_rejects_walk_errors(self):
         denied = self.folder / 'denied'
