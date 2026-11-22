@@ -1,6 +1,7 @@
 """Behavioral checks for the Hugging Face Space deploy retry policy."""
 import os
 from pathlib import Path
+import subprocess
 import sys
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -286,9 +287,8 @@ class SquashTest(unittest.TestCase):
                     self.assertEqual(sleeps, [60.0, 40.0, 40.0, 100.0])
                     self.assertEqual(api.super_squash_history.call_count, 2)
                 else:
-                    with self.assertRaises(HttpError) as raised:
+                    with self.assertRaises(hf.SquashHistoryError):
                         deploy()
-                    self.assertIs(raised.exception, error)
                     self.assertEqual(sleeps, [60.0, 40.0, 40.0])
                     api.super_squash_history.assert_called_once()
                 self.assertEqual(api.upload_folder.call_count, 2)
@@ -300,10 +300,9 @@ class SquashTest(unittest.TestCase):
                 error = HttpError(status)
                 api.super_squash_history.side_effect = error
                 sleep = mock.Mock()
-                with self.assertRaises(HttpError) as raised:
+                with self.assertRaises(hf.SquashHistoryError):
                     hf.deploy(api, 'org/space', 'build', 'msg', ['*'], True,
                               squash_history=True, sleep=sleep)
-                self.assertIs(raised.exception, error)
                 api.super_squash_history.assert_called_once()
                 sleep.assert_not_called()
 
@@ -376,12 +375,7 @@ class PreflightTest(unittest.TestCase):
                 (self.root / 'missing-target', 'broken-link', False)):
             with self.subTest(link=link_name):
                 link = self.folder / link_name
-                try:
-                    link.symlink_to(target, target_is_directory=is_directory)
-                except OSError as error:
-                    if getattr(error, 'winerror', None) == 1314:
-                        self.skipTest('Creating symlinks requires Windows developer mode or privilege')
-                    raise
+                self.create_symlink(link, target, is_directory=is_directory)
                 try:
                     with self.assertRaisesRegex(ValueError, link_name) as raised:
                         self.deploy(max_folder_bytes=250_000_000)
@@ -389,6 +383,17 @@ class PreflightTest(unittest.TestCase):
                     self.assertEqual(self.api.mock_calls, [])
                 finally:
                     link.unlink()
+
+    def test_max_folder_bytes_rejects_symlinked_root_with_or_without_separator(self):
+        link = self.root / 'site-link'
+        self.create_symlink(link, self.folder, is_directory=True)
+        for suffix in ('', os.sep):
+            with self.subTest(suffix=suffix):
+                with self.assertRaises(ValueError) as raised:
+                    run_deploy(self.api, folder=str(link) + suffix,
+                               max_folder_bytes=250_000_000)
+                self.assertEqual(str(raised.exception), "Deploy folder contains a symlink at '.'")
+                self.assertEqual(self.api.mock_calls, [])
 
     def test_max_folder_bytes_rejects_walk_errors(self):
         denied = self.folder / 'denied'
@@ -417,6 +422,14 @@ class PreflightTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'vanished'):
                 self.deploy(max_folder_bytes=10)
         self.assertEqual(self.api.mock_calls, [])
+
+    def create_symlink(self, link, target, *, is_directory):
+        try:
+            link.symlink_to(target, target_is_directory=is_directory)
+        except OSError as error:
+            if getattr(error, 'winerror', None) == 1314:
+                self.skipTest('Creating symlinks requires Windows developer mode or privilege')
+            raise
 
     def deploy(self, **options):
         run_deploy(self.api, folder=self.folder, squash_history=True, **options)
@@ -453,6 +466,44 @@ class StorageWarningTest(unittest.TestCase):
 
 
 class CliTest(unittest.TestCase):
+    def test_cli_terminal_squash_errors_omit_provider_details(self):
+        runner = '''
+import runpy
+import sys
+import time
+from unittest import mock
+
+from test_hf_space_deploy import HttpError, ROOT
+
+status, retry_after = sys.argv[1:]
+api = mock.Mock()
+error = HttpError(int(status), {'Retry-After': retry_after})
+error.args = ('response-body-canary https://example.invalid/file?signature=stand-in',)
+api.super_squash_history.side_effect = error
+hub = mock.Mock()
+hub.HfApi.return_value = api
+script = ROOT / 'tool/ci/hf_space_deploy.py'
+sys.argv = [str(script), '--repo', 'org/space', '--folder', 'build',
+            '--commit-message', 'msg', '--delete-pattern', '*', '--squash-history']
+with mock.patch.dict(sys.modules, {'huggingface_hub': hub}), mock.patch.object(time, 'sleep'):
+    runpy.run_path(str(script), run_name='__main__')
+'''
+        for status, retry_after, retries in (
+                (403, '0', 0), (429, str(hf.MAX_TOTAL_WAIT + 1), 0),
+                (429, '0', hf.MAX_ATTEMPTS - 1)):
+            with self.subTest(status=status, retry_after=retry_after):
+                result = subprocess.run(
+                    [sys.executable, '-B', '-c', runner, str(status), retry_after],
+                    cwd=Path(__file__).parent, env={**os.environ, 'HF_TOKEN': 'mock-token'},
+                    capture_output=True, text=True, timeout=15)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stdout, '')
+                self.assertEqual(result.stderr.splitlines(), [
+                    f'super_squash_history: HTTP 429 on attempt {attempt}/{hf.MAX_ATTEMPTS}; '
+                    'retrying in 0s'
+                    for attempt in range(1, retries + 1)
+                ] + [f'super_squash_history: failed (HTTP {status}, HttpError)'])
+
     def test_cli_parses_squash_history_and_max_folder_bytes(self):
         hub = mock.Mock()
         with (mock.patch.dict(sys.modules, {'huggingface_hub': hub}),

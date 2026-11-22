@@ -12,6 +12,7 @@ once so a broken deploy stays visible.
 --max-folder-bytes rejects oversized or unreadable folders and symlinks before
 any Hub call. Existing Spaces warn at 750 MB of usedStorage.
 --squash-history collapses the Space's main history after a successful upload.
+A terminal squash error reports the HTTP status and error type.
 """
 import argparse
 import os
@@ -44,6 +45,10 @@ class Budget:
     waited = 0.0
 
 
+class SquashHistoryError(RuntimeError):
+    pass
+
+
 def with_retry(label, call, budget, sleep=time.sleep, jitter=random.random, log=print):
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
@@ -71,6 +76,10 @@ def used_storage_of(info):
 
 
 def folder_size_bytes(folder):
+    # A trailing separator makes lstat follow a symlinked root.
+    drive, tail = os.path.splitdrive(os.fspath(folder))
+    folder = drive + (tail.rstrip(os.sep + (os.altsep or '')) or tail)
+
     def raise_walk_error(error):
         raise error
 
@@ -130,9 +139,17 @@ def deploy(api, repo, folder, commit_message, delete_patterns, public, *,
         delete_patterns=delete_patterns, commit_message=commit_message),
         **retry_options)
     if squash_history:
-        with_retry('super_squash_history', budget=budget, call=lambda: api.super_squash_history(
-            repo_id=repo, repo_type='space', branch='main', commit_message=commit_message),
-            **retry_options)
+        try:
+            with_retry('super_squash_history', budget=budget,
+                       call=lambda: api.super_squash_history(
+                           repo_id=repo, repo_type='space', branch='main',
+                           commit_message=commit_message),
+                       **retry_options)
+        except Exception as error:
+            status = status_of(error)
+            http = f'HTTP {status}' if type(status) is int else 'HTTP status unavailable'
+            raise SquashHistoryError(
+                f'super_squash_history: failed ({http}, {type(error).__name__})') from None
 
 
 def main(argv=None):
@@ -148,9 +165,12 @@ def main(argv=None):
 
     from huggingface_hub import HfApi
 
-    deploy(HfApi(token=os.environ['HF_TOKEN']), args.repo, args.folder, args.commit_message,
-           args.delete_pattern, args.public, squash_history=args.squash_history,
-           max_folder_bytes=args.max_folder_bytes)
+    try:
+        deploy(HfApi(token=os.environ['HF_TOKEN']), args.repo, args.folder, args.commit_message,
+               args.delete_pattern, args.public, squash_history=args.squash_history,
+               max_folder_bytes=args.max_folder_bytes)
+    except SquashHistoryError as error:
+        raise SystemExit(str(error)) from None
 
 
 if __name__ == '__main__':
