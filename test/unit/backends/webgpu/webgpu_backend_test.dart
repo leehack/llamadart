@@ -46,6 +46,9 @@ external JSObject _jsTypeError(String message);
 @JS('Function')
 external JSFunction _jsFunction(String argument, String body);
 
+@JS('Object.assign')
+external JSObject _assignObject(JSObject target, JSObject source);
+
 @JS('Object.defineProperty')
 external void _defineProperty(
   JSObject object,
@@ -2240,7 +2243,11 @@ void main() {
             ..['name'] = 'CoreAssetError'.toJS
             ..['code'] = code.toJS
             ..['asset'] = asset.toJS
-            ..['url'] = 'https://example.com/core_st.wasm'.toJS
+            ..['url'] =
+                (asset == 'loader'
+                        ? 'https://example.com/core_st.js'
+                        : 'https://example.com/core_st.wasm')
+                    .toJS
             ..['httpStatus'] = code == 'CORE_ASSET_UNAVAILABLE'
                 ? 404.toJS
                 : null
@@ -2437,6 +2444,10 @@ void main() {
           test(
             'refuses a missing $asset during $execution preflight',
             () async {
+              if (asset == 'loader') {
+                globalContext['__llamadartBridgeCoreModuleUrlSt'] =
+                    'https://example.com/core_st.js?mode=$execution'.toJS;
+              }
               bridge['preflightCore'] = (() {
                 calls.add('preflight');
                 if (asset == 'wasm') {
@@ -2486,6 +2497,62 @@ void main() {
           });
         }
       }
+
+      test('rejects the failed loader once per page and URL', () async {
+        const loaderGlobal = '__llamadartBridgeCoreModuleUrlSt';
+        const failed = 'https://example.com/core_st.js?v=failed';
+        globalContext[loaderGlobal] = failed.toJS;
+        bridge['preflightCore'] = (() {
+          calls.add('preflight');
+          final loader = lastBridgeConfig!['coreModuleUrl'] as JSString;
+          if (loader.toDart == failed) {
+            return _rejectPromise(
+              coreAssetError('CORE_ASSET_UNAVAILABLE', asset: 'loader'),
+            );
+          }
+          return Future<JSObject>.value(preflightResult).toJS;
+        }).toJS;
+
+        final loaderUnavailable = throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('Reload the page or use a different core loader URL'),
+              contains('COOP/COEP'),
+              contains('v0.1.92'),
+            ),
+          ),
+        );
+
+        await expectLater(
+          backend.modelLoadFromUrl(modelUrl, params),
+          loaderUnavailable,
+        );
+        globalContext['__llamadartBridgeWasmUrlSt'] = 'replaced.wasm'.toJS;
+        await expectLater(
+          backend.modelLoadFromUrl(modelUrl, params),
+          loaderUnavailable,
+        );
+        await backend.dispose();
+        backend = WebGpuLlamaBackend(
+          bridgeFactory: ([config]) {
+            lastBridgeConfig = config;
+            return _assignObject(JSObject(), bridge) as LlamaWebGpuBridge;
+          },
+        );
+        await expectLater(
+          backend.modelLoadFromUrl(modelUrl, params),
+          loaderUnavailable,
+        );
+
+        expect(calls, ['preflight']);
+
+        globalContext[loaderGlobal] =
+            'https://example.com/core_st.js?v=replacement'.toJS;
+        expect(await backend.modelLoadFromUrl(modelUrl, params), 1);
+        expect(calls, ['preflight', 'preflight', 'model']);
+      });
 
       test('awaits the selected core and records fallback notes', () async {
         final preflight = Completer<JSObject>();
