@@ -759,6 +759,8 @@ await prefs.setInt('preferred_backend', backendIndex);
   tests `main`'s tip in full first. See `doc/ci_selection.md`.
 - Required repository secret: `HF_TOKEN` (write access to your Space repo).
 - Required repository variable: `HF_CHAT_APP_SPACE_REPO` in `owner/space` format.
+- The workflow caps the upload folder at 250 MB and squashes the Space's
+  deployment history after each successful upload.
 - The workflow-generated Space `README.md` already injects required COI headers
   for large-model web runtime support.
 

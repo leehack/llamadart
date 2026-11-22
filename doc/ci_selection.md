@@ -392,6 +392,14 @@ artifact is never uploaded over it. The Laya Tetris deploy runs the same guard
 with its workflow's `paths` filter as the input list, since a push outside that
 filter starts no Laya Tetris run.
 
+Both static Space workflows pass `--max-folder-bytes 250000000`. The deploy
+helper rejects oversized folders, symlinks and scan errors before any Hub call.
+It warns when the Space reports at least 750 MB of `usedStorage`. After a
+successful upload, `--squash-history` calls `super_squash_history` on the
+Space's `main` branch. This preserves the uploaded files and collapses their
+Space deployment history to one commit, keeping old artifacts from accumulating
+against the 1 GB repository limit.
+
 Chat app deployments share a serialized, non-cancelling group with
 [`queue: max`](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency#example-queueing-multiple-pending-runs).
 It retains up to 100 pending deployments. Older validation can finish after
