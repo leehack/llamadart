@@ -112,6 +112,11 @@ void main() {
       globalContext.delete('__llamadartBridgeAssetSource'.toJS);
       globalContext.delete('__llamadartBridgeModuleUrl'.toJS);
       globalContext.delete('__llamadartBridgeCoreModuleUrl'.toJS);
+      globalContext.delete('__llamadartBridgeAllowSingleThreadCore'.toJS);
+      globalContext.delete('__llamadartBridgeCoreModuleUrlSt'.toJS);
+      globalContext.delete('__llamadartBridgeCoreModuleUrlMem64St'.toJS);
+      globalContext.delete('__llamadartBridgeWasmUrlSt'.toJS);
+      globalContext.delete('__llamadartBridgeWasmUrlMem64St'.toJS);
       globalContext.delete('__llamadartBridgeWasmUrl'.toJS);
       globalContext.delete('__llamadartBridgeWasmUrlMem64'.toJS);
       globalContext.delete('__llamadartBridgeUserAgent'.toJS);
@@ -2194,6 +2199,163 @@ void main() {
         );
       },
     );
+
+    group('single-thread core opt-in', () {
+      const modelUrl = 'https://example.com/model.gguf';
+      const params = ModelParams(gpuLayers: 0);
+      const notesKey = 'llamadart.webgpu.runtime_notes';
+
+      setUp(() {
+        globalContext['__llamadartBridgeAllowSingleThreadCore'] = true.toJS;
+        globalContext['__llamadartBridgeCoreModuleUrlSt'] = 'st.js'.toJS;
+      });
+
+      test('refuses missing single-thread loader configuration', () async {
+        globalContext.delete('__llamadartBridgeCoreModuleUrlSt'.toJS);
+        await expectLater(
+          backend.modelLoadFromUrl(modelUrl, params),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('v0.1.87'),
+            ),
+          ),
+        );
+        expect(requestedContextSizes, isEmpty);
+      });
+
+      test(
+        'forwards only the single-thread assets and confirms the core',
+        () async {
+          globalContext['__llamadartBridgeCoreModuleUrl'] = 'pthread.js'.toJS;
+          globalContext['__llamadartBridgeCoreModuleUrlSt'] = 'st.js'.toJS;
+          globalContext['__llamadartBridgeCoreModuleUrlMem64St'] =
+              'mem64_st.js'.toJS;
+          globalContext['__llamadartBridgeWasmUrlSt'] = 'st.wasm'.toJS;
+          globalContext['__llamadartBridgeWasmUrlMem64St'] =
+              'mem64_st.wasm'.toJS;
+          globalContext['__llamadartBridgeAllowAutoRemoteFetchBackend'] =
+              true.toJS;
+          bridgeRuntimeHints[notesKey] =
+              'core_wasm32_active;core_pthreads:0;core_single_thread';
+
+          await backend.modelLoadFromUrl(modelUrl, params);
+
+          final config = lastBridgeConfig!;
+          expect((config['allowSingleThreadCore'] as JSBoolean).toDart, isTrue);
+          expect((config['coreModuleUrl'] as JSString).toDart, 'st.js');
+          expect(
+            (config['coreModuleUrlMem64'] as JSString).toDart,
+            'mem64_st.js',
+          );
+          expect((config['wasmUrl'] as JSString).toDart, 'st.wasm');
+          expect((config['wasmUrlMem64'] as JSString).toDart, 'mem64_st.wasm');
+          expect(
+            (config['allowAutoRemoteFetchBackend'] as JSBoolean).toDart,
+            isFalse,
+          );
+          expect(requestedForceRemoteFetchBackends, [null]);
+          expect(
+            (await backend.modelMetadata(1))[notesKey],
+            contains('core_single_thread'),
+          );
+        },
+      );
+
+      test('requires a literal boolean opt-in', () async {
+        globalContext['__llamadartBridgeAllowSingleThreadCore'] = 'true'.toJS;
+        globalContext['__llamadartBridgeCoreModuleUrl'] = 'pthread.js'.toJS;
+        globalContext['__llamadartBridgeCoreModuleUrlSt'] = 'st.js'.toJS;
+        await backend.modelLoadFromUrl(modelUrl, params);
+        final config = lastBridgeConfig!;
+        expect(config['allowSingleThreadCore'], isNull);
+        expect((config['coreModuleUrl'] as JSString).toDart, 'pthread.js');
+      });
+
+      for (final notes in [
+        '',
+        'core_pthreads:1',
+        'core_pthreads:00;core_single_thread',
+      ]) {
+        test(
+          'refuses a core without a positive single-thread probe ($notes)',
+          () async {
+            bridgeRuntimeHints[notesKey] = notes;
+            await expectLater(
+              backend.modelLoadFromUrl(modelUrl, params),
+              throwsA(
+                isA<LlamaUnsupportedException>().having(
+                  (error) => error.message,
+                  'message',
+                  contains('Single-thread'),
+                ),
+              ),
+            );
+            expect(backend.isReady, isFalse);
+            expect(requestedContextSizes, hasLength(1));
+          },
+        );
+      }
+
+      test('rejects a legacy bridge that ignores the opt-in', () async {
+        final error = JSObject()
+          ..['code'] = 'CROSS_ORIGIN_ISOLATION_REQUIRED'.toJS;
+        bridge['loadModelFromUrl'] = ((String url, JSObject? config) {
+          recordLoadConfig(config);
+          return _rejectPromise(error);
+        }).toJS;
+        await expectLater(
+          backend.modelLoadFromUrl(modelUrl, params),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('v0.1.87'), contains('COOP/COEP')),
+            ),
+          ),
+        );
+        expect(requestedContextSizes, hasLength(1));
+      });
+
+      test('refuses forced fetch-backed loading before dispatch', () async {
+        globalContext['__llamadartBridgeForceRemoteFetchBackend'] = true.toJS;
+        await expectLater(
+          backend.modelLoadFromUrl(modelUrl, params),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('fetch-backed'),
+            ),
+          ),
+        );
+        expect(requestedContextSizes, isEmpty);
+      });
+
+      test('never retries a staging failure with the fetch backend', () async {
+        globalContext['__llamadartBridgeAllowAutoRemoteFetchBackend'] =
+            true.toJS;
+        bridgeRuntimeHints[notesKey] =
+            'core_pthreads:0;core_single_thread;model_fs_write_failed';
+        failLoads(message: 'memory access out of bounds', firstAttempts: 99);
+        await expectLater(
+          backend.modelLoadFromUrl(modelUrl, params),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('requires a threaded core'),
+                isNot(contains('ForceRemoteFetchBackend')),
+              ),
+            ),
+          ),
+        );
+        expect(requestedForceRemoteFetchBackends, isNotEmpty);
+        expect(requestedForceRemoteFetchBackends, everyElement(isNot(true)));
+      });
+    });
 
     group('cross-origin isolation error', () {
       JSPromise<JSAny?> rejectIsolation({String? name, String? code}) {

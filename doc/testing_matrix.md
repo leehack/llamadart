@@ -1618,6 +1618,26 @@ verified local copy before expiry; independently verify its outer digest and
 inner inventory using the fixture verifier. A passing normal aggregate does not
 establish a qualification result or replace independent interpretation.
 
+## Web single-thread core
+
+Stage the existing Stories15M GGUF at
+`build/web_single_thread_core/model.gguf` and install Playwright Chromium.
+Run `dart run tool/testing/run_local_e2e.dart --scenario web-single-thread-core --dry-run`
+first, then omit `--dry-run`. Use `--python` to select a Python environment
+with Playwright. The scenario uses the pinned bridge through Dart on
+Chromium, verifies actual isolation and shared-memory availability, and
+compares direct and worker execution for both wasm widths. It also exercises
+v0.1.86, the default COOP/COEP refusal, a forced-fetch refusal and an isolated
+threaded worker that successfully loads through the fetch backend.
+
+Add `--backend webgpu` to require GPU offload for non-isolated Stories15M
+generation. Pass `--model-url` to measure another GGUF in a single-thread
+CPU worker, starting once on wasm32 and once on memory64. If the wasm32
+attempt retries on memory64, the smoke verifies requests for both matching
+single-thread binaries. The run reports the loaded core, execution mode,
+model size, loader and thread count. Other models, browsers and
+hardware require their own measurements.
+
 ## Web lazy grammar
 
 Stage existing read-only weights under `build/web_lazy_grammar/models/` and write

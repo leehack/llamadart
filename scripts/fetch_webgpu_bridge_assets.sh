@@ -85,6 +85,10 @@ download_required "llama_webgpu_core.js"
 download_required "llama_webgpu_core.wasm"
 download_optional "llama_webgpu_core_mem64.js"
 download_optional "llama_webgpu_core_mem64.wasm"
+download_optional "llama_webgpu_core_st.js"
+download_optional "llama_webgpu_core_st.wasm"
+download_optional "llama_webgpu_core_mem64_st.js"
+download_optional "llama_webgpu_core_mem64_st.wasm"
 download_optional "manifest.json"
 download_optional "sha256sums.txt"
 
@@ -161,6 +165,12 @@ if command -v shasum >/dev/null 2>&1 || command -v sha256sum >/dev/null 2>&1; th
     if [[ -f "llama_webgpu_core_mem64.wasm" ]]; then
       files+=("llama_webgpu_core_mem64.wasm")
     fi
+
+    for file in llama_webgpu_core{,_mem64}_st.{js,wasm}; do
+      if was_downloaded "$file" && [[ -f "$file" ]]; then
+        files+=("$file")
+      fi
+    done
 
     if command -v shasum >/dev/null 2>&1; then
       shasum -a 256 "${files[@]}" > sha256sums.txt

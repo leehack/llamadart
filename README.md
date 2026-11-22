@@ -66,8 +66,12 @@ Pairing rules, the SwiftPM bootstrap and the privacy manifest are in
 [Installation](https://llamadart.leehack.com/docs/getting-started/installation) and
 [Apple setup](https://llamadart.leehack.com/docs/platforms/apple-setup).
 Web apps run `dart run llamadart:web_setup` once; see the
-[WebGPU bridge](https://llamadart.leehack.com/docs/platforms/webgpu-bridge). Lazy tool-call grammars and
-custom grammar roots follow the loaded bridge core's `lazyGrammar` capability.
+[WebGPU bridge](https://llamadart.leehack.com/docs/platforms/webgpu-bridge).
+Pages without cross-origin isolation can opt into the single-threaded GGUF
+core with `window.__llamadartBridgeAllowSingleThreadCore = true`. It uses one
+CPU thread and supports WebGPU offload. Fetch-backed model loading requires
+the threaded core. Lazy tool-call grammars and custom grammar roots follow the
+loaded core's `lazyGrammar` capability.
 
 llamadart also ships [agent skills](https://dart.dev/tools/pub/package-skills)
 that teach coding agents its APIs. Install them from your app's root:

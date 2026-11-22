@@ -487,6 +487,15 @@
       window.__llamadartBridgeCoreModuleUrlMem64 = coreModuleUrlMem64;
       window.__llamadartBridgeWasmUrl = wasmUrl;
       window.__llamadartBridgeWasmUrlMem64 = wasmUrlMem64;
+      const singleThreadAsset = (filename) => {
+        const url = new URL(runtimeAssetModuleUrl, window.location.href);
+        url.pathname = url.pathname.replace(/llama_webgpu_bridge\.js$/, filename);
+        return url.href;
+      };
+      window.__llamadartBridgeCoreModuleUrlSt ??= singleThreadAsset('llama_webgpu_core_st.js');
+      window.__llamadartBridgeWasmUrlSt ??= singleThreadAsset('llama_webgpu_core_st.wasm');
+      window.__llamadartBridgeCoreModuleUrlMem64St ??= singleThreadAsset('llama_webgpu_core_mem64_st.js');
+      window.__llamadartBridgeWasmUrlMem64St ??= singleThreadAsset('llama_webgpu_core_mem64_st.wasm');
       window.__llamadartBridgeWorkerUrl = workerModuleUrl;
       window.__llamadartBridgePreferMemory64 = preferMemory64;
       window.__llamadartBridgeWorkerFallbackReason = null;

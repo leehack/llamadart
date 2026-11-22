@@ -851,6 +851,53 @@ Future<void> main(List<String> args) async {
     });
   });
 
+  test(
+    'single-thread core smoke uses a real Chromium page and pinned assets',
+    () async {
+      final result = await runLocalE2e(
+        [
+          '--scenario',
+          'web-single-thread-core',
+          '--backend',
+          'webgpu',
+          '--model-url',
+          'http://localhost:7357/large.gguf',
+          '--port',
+          '7357',
+          '--python',
+          'python3',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(
+        result.stdout,
+        contains(
+          'WEBGPU_BRIDGE_OUT_DIR=/repo/build/web_single_thread_core/bridge '
+          'bash scripts/fetch_webgpu_bridge_assets.sh',
+        ),
+      );
+      expect(
+        result.stdout,
+        contains(
+          'dart compile js test/e2e/webgpu/fixtures/single_thread_core.dart '
+          '-o build/web_single_thread_core/single_thread_core.js',
+        ),
+      );
+      expect(result.stdout, contains('--coep require-corp &'));
+      expect(
+        result.stdout,
+        contains(
+          'python3 tool/testing/playwright_web_single_thread_core.py '
+          'http://127.0.0.1:7357 --model-url http://localhost:7357/large.gguf --gpu',
+        ),
+      );
+    },
+  );
+
   group('web-webgpu-generation', () {
     test(
       'dry-run fetches pinned assets and runs the WebGPU platform',

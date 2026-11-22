@@ -101,6 +101,10 @@ class WebGpuLlamaBackend
       'llamadart-webgpu-model-cache-v1';
   static const String _nextTokenScoringUnsupportedMessage =
       'Web next-token scoring requires llama-web-bridge-assets v0.1.52+.';
+  static const String _singleThreadCoreUnavailable =
+      'Single-thread GGUF loading needs llama-web-bridge-assets v0.1.87+ and '
+      'matching single-thread core assets. Run dart run llamadart:web_setup '
+      'or serve the page with cross-origin isolation (COOP/COEP).';
   static const int _maxInt32 = 0x7fffffff;
   static const _WebGpuCompletionCapabilities _noCompletionCapabilities = (
     presencePenalty: false,
@@ -334,7 +338,9 @@ class WebGpuLlamaBackend
     }
   }
 
-  WebGpuBridgeConfig _createBridgeConfig() {
+  WebGpuBridgeConfig _createBridgeConfig({
+    required bool allowSingleThreadCore,
+  }) {
     final logger = JSObject();
     logger.setProperty(
       'debug'.toJS,
@@ -361,13 +367,22 @@ class WebGpuLlamaBackend
       }.toJS,
     );
 
-    final coreModuleUrl = _getGlobalString('__llamadartBridgeCoreModuleUrl');
+    final coreSuffix = allowSingleThreadCore ? 'St' : '';
+    final coreModuleUrl = _getGlobalString(
+      '__llamadartBridgeCoreModuleUrl$coreSuffix',
+    );
+    if (allowSingleThreadCore && coreModuleUrl == null) {
+      throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
+    }
     final coreModuleUrlMem64 = _getGlobalString(
-      '__llamadartBridgeCoreModuleUrlMem64',
+      '__llamadartBridgeCoreModuleUrlMem64$coreSuffix',
     );
     final wasmUrl =
-        _bridgeWasmUrl ?? _getGlobalString('__llamadartBridgeWasmUrl');
-    final wasmUrlMem64 = _getGlobalString('__llamadartBridgeWasmUrlMem64');
+        (allowSingleThreadCore ? null : _bridgeWasmUrl) ??
+        _getGlobalString('__llamadartBridgeWasmUrl$coreSuffix');
+    final wasmUrlMem64 = _getGlobalString(
+      '__llamadartBridgeWasmUrlMem64$coreSuffix',
+    );
     final workerModuleUrl =
         _bridgeWorkerUrl ?? _getGlobalString('__llamadartBridgeWorkerUrl');
     final preferMemory64 =
@@ -379,7 +394,8 @@ class WebGpuLlamaBackend
     // Keep bridge remote-fetch loading opt-in until malformed responses can be
     // rejected without risking an unrecoverable core abort. Forced mode is an
     // explicit opt-in and must enable the bridge capability end to end.
-    final allowAutoRemoteFetchBackend = _isRemoteFetchBackendOptedIn();
+    final allowAutoRemoteFetchBackend =
+        !allowSingleThreadCore && _isRemoteFetchBackendOptedIn();
 
     return WebGpuBridgeConfig(
       wasmUrl: wasmUrl?.toJS,
@@ -388,6 +404,7 @@ class WebGpuLlamaBackend
       coreModuleUrl: coreModuleUrl?.toJS,
       coreModuleUrlMem64: coreModuleUrlMem64?.toJS,
       preferMemory64: preferMemory64,
+      allowSingleThreadCore: allowSingleThreadCore ? true : null,
       threadPoolSize: threadPoolSizeHint,
       allowAutoRemoteFetchBackend: allowAutoRemoteFetchBackend,
       remoteFetchChunkBytes: _resolveRemoteFetchChunkBytes(),
@@ -415,13 +432,15 @@ class WebGpuLlamaBackend
     }
   }
 
-  Future<bool> _ensureBridge() async {
+  Future<bool> _ensureBridge({required bool allowSingleThreadCore}) async {
     if (_bridge != null) {
       return true;
     }
 
     if (_bridgeFactory != null) {
-      _bridge = _bridgeFactory(_createBridgeConfig());
+      _bridge = _bridgeFactory(
+        _createBridgeConfig(allowSingleThreadCore: allowSingleThreadCore),
+      );
       return true;
     }
 
@@ -438,7 +457,9 @@ class WebGpuLlamaBackend
       return false;
     }
 
-    _bridge = LlamaWebGpuBridge(_createBridgeConfig());
+    _bridge = LlamaWebGpuBridge(
+      _createBridgeConfig(allowSingleThreadCore: allowSingleThreadCore),
+    );
     return true;
   }
 
@@ -477,12 +498,14 @@ class WebGpuLlamaBackend
     _webGpuMultimodalWarmupAttempted = false;
   }
 
-  Future<void> _activateBridge() async {
+  Future<void> _activateBridge({required bool allowSingleThreadCore}) async {
     if (_usingBridge && _bridge != null) {
       return;
     }
 
-    final ready = await _ensureBridge();
+    final ready = await _ensureBridge(
+      allowSingleThreadCore: allowSingleThreadCore,
+    );
     if (!ready || _bridge == null) {
       final loadError = _getBridgeLoadError();
       final message = _buildBridgeUnavailableMessage(loadError);
@@ -642,6 +665,28 @@ class WebGpuLlamaBackend
     }
 
     return null;
+  }
+
+  bool get _allowSingleThreadCore {
+    final optIn = globalContext['__llamadartBridgeAllowSingleThreadCore'];
+    final isolated = globalContext['crossOriginIsolated'];
+    return optIn.isA<JSBoolean>() &&
+        (optIn as JSBoolean).toDart &&
+        isolated.isA<JSBoolean>() &&
+        !(isolated as JSBoolean).toDart;
+  }
+
+  bool _hasSingleThreadCore(LlamaWebGpuBridge bridge) {
+    try {
+      final notes = bridge
+          .getModelMetadata()?['llamadart.webgpu.runtime_notes'];
+      if (!notes.isA<JSString>()) return false;
+      final runtimeNotes = (notes as JSString).toDart.split(';');
+      return runtimeNotes.contains('core_pthreads:0') &&
+          runtimeNotes.contains('core_single_thread');
+    } catch (_) {
+      return false;
+    }
   }
 
   bool _isRemoteFetchBackendOptedIn() {
@@ -936,6 +981,7 @@ class WebGpuLlamaBackend
     Object error, {
     Map<String, String>? runtimeHints,
     required bool remoteFetchBackendOptedIn,
+    required bool allowSingleThreadCore,
   }) {
     final text = _errorText(error);
     final loweredText = text.toLowerCase();
@@ -963,6 +1009,13 @@ class WebGpuLlamaBackend
     final runtimeNotes = runtimeHints?['llamadart.webgpu.runtime_notes'] ?? '';
     if (runtimeNotesIndicateModelFsWriteFailure(runtimeNotes) &&
         !remoteFetchBackendOptedIn) {
+      if (allowSingleThreadCore) {
+        return UnsupportedError(
+          'Web model staging failed on the single-thread core. Try a smaller '
+          'or sharded GGUF or use memory64 if supported. Fetch-backed loading '
+          'requires a threaded core and cross-origin isolation (COOP/COEP).',
+        );
+      }
       return UnsupportedError(
         'Web model staging failed before the GGUF could be loaded safely. '
         'Automatic fetch-backed loading is disabled by default because an '
@@ -1141,7 +1194,6 @@ class WebGpuLlamaBackend
   ({
     int requestedGpuLayers,
     int? requestedThreads,
-    bool remoteFetchBackendOptedIn,
     bool requireGpu,
     JSFunction? progressCallback,
   })
@@ -1169,7 +1221,6 @@ class WebGpuLlamaBackend
     final requireGpu = params.device == ComputeDevice.gpu;
     _preferMemory64Override = _resolvePreferMemory64(params);
     _forceRemoteFetchBackendOverride = null;
-    final remoteFetchBackendOptedIn = _isRemoteFetchBackendOptedIn();
 
     final requestedThreads = params.numberOfThreads > 0
         ? params.numberOfThreads
@@ -1239,7 +1290,6 @@ class WebGpuLlamaBackend
     return (
       requestedGpuLayers: requestedGpuLayers,
       requestedThreads: requestedThreads,
-      remoteFetchBackendOptedIn: remoteFetchBackendOptedIn,
       requireGpu: requireGpu,
       progressCallback: progressCallback,
     );
@@ -1254,6 +1304,19 @@ class WebGpuLlamaBackend
     url = webGpuDocumentUrl(url);
     final cacheUrl = webGpuPersistentCacheUrl(url);
     final setup = _prepareUrlLoad(url, params, onProgress);
+    final allowSingleThreadCore = _allowSingleThreadCore;
+    final forceRemoteFetch = _getGlobalBool(
+      '__llamadartBridgeForceRemoteFetchBackend',
+    );
+    if (allowSingleThreadCore && forceRemoteFetch) {
+      throw LlamaUnsupportedException(
+        'The single-thread Web core does not support fetch-backed model '
+        'loading, which requires a pthread core in a browser worker. Disable '
+        '__llamadartBridgeForceRemoteFetchBackend for streamed staging.',
+      );
+    }
+    final remoteFetchBackendOptedIn =
+        !allowSingleThreadCore && _isRemoteFetchBackendOptedIn();
     if (setup.requireGpu && !await webGpuAdapterAvailable()) {
       throw LlamaUnsupportedException(
         'ComputeDevice.gpu needs WebGPU for llama.cpp on the Web, but this '
@@ -1268,7 +1331,6 @@ class WebGpuLlamaBackend
       requestedGpuLayers: setup.requestedGpuLayers,
       allowCpuFallback: !setup.requireGpu,
     );
-    LlamaUnsupportedException? gpuInactive;
     bool? cachedWebModel;
     Object? lastError;
     Map<String, String> lastRuntimeHints = const <String, String>{};
@@ -1292,14 +1354,14 @@ class WebGpuLlamaBackend
       );
 
       try {
-        await _activateBridge();
+        await _activateBridge(allowSingleThreadCore: allowSingleThreadCore);
         final bridge = _requireBridge();
         bridgeForAttempt = bridge;
         cachedWebModel ??= await _isModelResponseCachedForUrl(bridge, cacheUrl);
 
         if (_forceRemoteFetchBackendOverride != null) {
           forceRemoteFetchBackend = _forceRemoteFetchBackendOverride;
-        } else if (_getGlobalBool('__llamadartBridgeForceRemoteFetchBackend')) {
+        } else if (forceRemoteFetch) {
           forceRemoteFetchBackend = true;
         } else if (cachedWebModel == true) {
           forceRemoteFetchBackend = false;
@@ -1340,6 +1402,9 @@ class WebGpuLlamaBackend
         if (loadPromise != null) {
           await loadPromise.toDart;
         }
+        if (allowSingleThreadCore && !_hasSingleThreadCore(bridge)) {
+          throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
+        }
         if (setup.requireGpu && bridge.isGpuActive() != true) {
           var gpuDetail = '';
           try {
@@ -1350,7 +1415,7 @@ class WebGpuLlamaBackend
                   '',
             );
           } catch (_) {}
-          throw gpuInactive = LlamaUnsupportedException(
+          throw LlamaUnsupportedException(
             'ComputeDevice.gpu needs WebGPU for llama.cpp on the Web, but the '
             'runtime loaded the model without GPU layers.$gpuDetail Use '
             'ComputeDevice.auto or cpu.',
@@ -1374,14 +1439,16 @@ class WebGpuLlamaBackend
         _completionCapabilities = await _probeCompletionCapabilities(bridge);
         return 1;
       } catch (e) {
-        if (identical(e, gpuInactive)) {
+        if (e is LlamaUnsupportedException) {
           await _safeDisposeBridge();
           rethrow;
         }
         final isolationError = webGpuCrossOriginIsolationError(e);
         if (isolationError != null) {
           await _safeDisposeBridge();
-          throw isolationError;
+          throw allowSingleThreadCore
+              ? LlamaUnsupportedException(_singleThreadCoreUnavailable)
+              : isolationError;
         }
         lastError = e;
         Map<String, String> runtimeHints = const <String, String>{};
@@ -1414,7 +1481,7 @@ class WebGpuLlamaBackend
             coreVariant: runtimeHints['llamadart.webgpu.core_variant'],
             runtimeNotes: runtimeHints['llamadart.webgpu.runtime_notes'] ?? '',
             forceRemoteFetchRequested: forceRemoteFetchBackend == true,
-            remoteFetchBackendOptedIn: setup.remoteFetchBackendOptedIn,
+            remoteFetchBackendOptedIn: remoteFetchBackendOptedIn,
           ),
           escalation,
         );
@@ -1459,7 +1526,8 @@ class WebGpuLlamaBackend
         final normalized = _normalizeBridgeRuntimeError(
           e,
           runtimeHints: runtimeHints,
-          remoteFetchBackendOptedIn: setup.remoteFetchBackendOptedIn,
+          remoteFetchBackendOptedIn: remoteFetchBackendOptedIn,
+          allowSingleThreadCore: allowSingleThreadCore,
         );
         if (normalized != null) {
           throw normalized;
@@ -1472,7 +1540,8 @@ class WebGpuLlamaBackend
       final normalized = _normalizeBridgeRuntimeError(
         lastError,
         runtimeHints: lastRuntimeHints,
-        remoteFetchBackendOptedIn: setup.remoteFetchBackendOptedIn,
+        remoteFetchBackendOptedIn: remoteFetchBackendOptedIn,
+        allowSingleThreadCore: allowSingleThreadCore,
       );
       if (normalized != null) {
         throw normalized;

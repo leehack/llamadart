@@ -35,6 +35,10 @@ const List<String> webBridgeRuntimeFiles = <String>[
   'llama_webgpu_core.wasm',
   'llama_webgpu_core_mem64.js',
   'llama_webgpu_core_mem64.wasm',
+  'llama_webgpu_core_st.js',
+  'llama_webgpu_core_st.wasm',
+  'llama_webgpu_core_mem64_st.js',
+  'llama_webgpu_core_mem64_st.wasm',
 ];
 
 const String _manifestFileName = 'manifest.json';
@@ -479,6 +483,10 @@ const String _bootstrapTemplate = r'''
     window.__llamadartBridgeWasmUrl = asset('llama_webgpu_core.wasm');
     window.__llamadartBridgeCoreModuleUrlMem64 = asset('llama_webgpu_core_mem64.js');
     window.__llamadartBridgeWasmUrlMem64 = asset('llama_webgpu_core_mem64.wasm');
+    window.__llamadartBridgeCoreModuleUrlSt = asset('llama_webgpu_core_st.js');
+    window.__llamadartBridgeWasmUrlSt = asset('llama_webgpu_core_st.wasm');
+    window.__llamadartBridgeCoreModuleUrlMem64St = asset('llama_webgpu_core_mem64_st.js');
+    window.__llamadartBridgeWasmUrlMem64St = asset('llama_webgpu_core_mem64_st.wasm');
     if (typeof mod.enableBridgeWorkerHost === 'function') {
       window.__llamadartBridgeWorkerUrl = asset('llama_webgpu_bridge_worker.js');
     }

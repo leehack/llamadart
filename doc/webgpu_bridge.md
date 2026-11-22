@@ -373,16 +373,29 @@ web backend load options).
 
 ## Hosting headers
 
-Large single-file GGUF loads are only reliable when the page is cross-origin
-isolated (`Cross-Origin-Opener-Policy: same-origin`,
-`Cross-Origin-Embedder-Policy: require-corp`; `credentialless` isolates only in
-Chromium-based browsers, see
-[#1025](https://github.com/leehack/llamadart/issues/1025)). Without it
-the web core cannot start: assets `v0.1.85+` reject the load at once
-with `CrossOriginIsolationError` (`code: 'CROSS_ORIGIN_ISOLATION_REQUIRED'`),
-which `WebGpuLlamaBackend` throws as `LlamaUnsupportedException` on the direct
-and worker paths; earlier assets waited minutes (the init timeout, retried: 180 s direct,
-360 s worker) before a generic `Bridge core init timeout` error. `credentialless` does not isolate Safari.
+The default threaded GGUF core requires cross-origin isolation
+(`Cross-Origin-Opener-Policy: same-origin`,
+`Cross-Origin-Embedder-Policy: require-corp`; `credentialless` isolates only
+in Chromium-based browsers, see
+[#1025](https://github.com/leehack/llamadart/issues/1025)). On a non-isolated
+page, assets v0.1.85+ default to `CrossOriginIsolationError`
+(`CROSS_ORIGIN_ISOLATION_REQUIRED`), which Dart translates into
+`LlamaUnsupportedException` on the direct and worker paths. Older threaded
+assets can time out during core initialization.
+
+Setting `__llamadartBridgeAllowSingleThreadCore` to literal `true` affects
+only a non-isolated page. Dart passes `allowSingleThreadCore: true` and selects
+the single-thread URLs for both wasm widths. After a successful model load,
+the bridge's native pthread probe must report `core_pthreads:0` and
+`core_single_thread` in the runtime notes. Those notes and `core_variant`
+identify the actual loaded core. The wasm32 single-thread loader URL is
+required because older bridge releases accepted the option without publishing
+single-thread assets and could otherwise try a threaded core. A missing
+loader URL, an isolation error from a legacy bridge, or a completed load
+without these notes surfaces `LlamaUnsupportedException` naming the minimum
+asset version.
+Fetch-backed loading requires pthreads. Dart excludes it from automatic
+staging recovery on the single-thread path and rejects a forced request.
 
 For Hugging Face Spaces with `sdk: static`, set the headers in the Space
 README frontmatter; keys and values must be lowercase:
@@ -603,6 +616,12 @@ in both runtimes.
 
 ## Runtime globals read by `llamadart`
 
+- `window.__llamadartBridgeAllowSingleThreadCore`: literal `true` opts into
+  GGUF loading on non-isolated pages using matching v0.1.87+ bridge assets.
+- `window.__llamadartBridgeCoreModuleUrlSt` and
+  `window.__llamadartBridgeWasmUrlSt` supply the single-thread wasm32 core.
+  `window.__llamadartBridgeCoreModuleUrlMem64St` and
+  `window.__llamadartBridgeWasmUrlMem64St` supply its memory64 variant.
 - `window.__llamadartBridgeAllowAutoRemoteFetchBackend`: default `false`;
   streamed staging stays the default. `true` only for a controlled origin that
   serves valid GGUF byte ranges; it also lets Dart recovery paths retry with

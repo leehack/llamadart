@@ -982,6 +982,18 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Stage build/web_lazy_grammar/config.json as doc/testing_matrix.md describes.',
   ),
   TestMatrixRow(
+    id: 'web-single-thread-core',
+    tier: 'targeted',
+    mode: 'local-only, Chromium',
+    covers:
+        'Non-isolated direct and worker single-thread wasm32 and memory64 '
+        'generation, typed opt-in and old-asset refusals, and isolated '
+        'threaded controls including forced fetch-backed loading.',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario web-single-thread-core',
+    useWhen: 'Web bridge core selection or single-thread loading changes.',
+  ),
+  TestMatrixRow(
     id: 'web-webgpu-generation',
     tier: 'targeted',
     mode: 'local-only, WebGPU browser',
