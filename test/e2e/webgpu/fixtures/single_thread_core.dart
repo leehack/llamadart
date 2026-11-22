@@ -51,6 +51,8 @@ Future<JSString> _run(String modelUrl, bool preferMemory64, bool gpu) async {
     }).toJS;
   } on LlamaUnsupportedException catch (error) {
     return jsonEncode({'unsupported': error.message}).toJS;
+  } on LlamaModelException catch (error) {
+    return jsonEncode({'model_error': error.toString()}).toJS;
   } catch (error) {
     return jsonEncode({'error': error.toString()}).toJS;
   } finally {

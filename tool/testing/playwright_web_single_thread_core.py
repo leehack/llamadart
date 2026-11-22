@@ -1,6 +1,7 @@
 """Exercise the public Dart GGUF load path in a real Chromium page."""
 
 import argparse
+import hashlib
 import json
 import platform
 from pathlib import Path
@@ -9,13 +10,18 @@ from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright
 
 
+LEGACY_ASSETS_URL_FILE = Path("test/e2e/webgpu/fixtures/single_thread_legacy_assets_url.txt")
+LEGACY_BRIDGE_DIGESTS = {
+    "llama_webgpu_bridge.js": "c91d386f5b7a42c1a2d9ba9208203cea2e062bc494e98cfcccdfa398a2a2ba24",
+    "llama_webgpu_bridge_worker.js": "47bbfa0fe897e708455b9497e9aa41d2e94489c329300c33b12936fb3169deca",
+}
+
+
 def run_case(browser, origin, model_url, *, worker, isolated=False,
              opt_in=True, mem64=False, legacy=False, forced_fetch=False, gpu=False,
              allow_wasm64_retry=False):
     legacy_assets_url = (
-        Path("test/e2e/webgpu/fixtures/single_thread_legacy_assets_url.txt")
-        .read_text(encoding="utf-8")
-        .strip()
+        LEGACY_ASSETS_URL_FILE.read_text(encoding="utf-8").strip()
         if legacy
         else None
     )
@@ -117,6 +123,106 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
         page.close()
 
 
+def run_bootstrap_case(browser, fixture, model_url, *, worker, case):
+    base = f"{fixture}bootstrap/"
+    assets_root = Path("build/web_single_thread_core/bridge")
+    page = browser.new_page()
+    responses = []
+    legacy_assets = {}
+    missing_asset = {
+        "legacy": "llama_webgpu_core_st.js",
+        "loader-404": "llama_webgpu_core_st.js",
+        "wasm-404": "llama_webgpu_core_st.wasm",
+    }.get(case)
+
+    def serve_asset(route):
+        name = Path(urlsplit(route.request.url).path).name
+        if case == "legacy":
+            if name in legacy_assets:
+                route.fulfill(body=legacy_assets[name], content_type="text/javascript")
+            else:
+                route.fulfill(status=404)
+        elif name == missing_asset:
+            route.fulfill(status=404)
+        else:
+            route.fulfill(path=assets_root / name)
+
+    try:
+        if case == "legacy":
+            legacy_url = LEGACY_ASSETS_URL_FILE.read_text(encoding="utf-8").strip()
+            for name, digest in LEGACY_BRIDGE_DIGESTS.items():
+                response = page.context.request.get(legacy_url + name)
+                assert response.ok, (name, response.status)
+                payload = response.body()
+                assert hashlib.sha256(payload).hexdigest() == digest, name
+                legacy_assets[name] = payload
+
+        html = Path("example/chat_app/web/index.html").read_text(encoding="utf-8")
+        html = html.replace("$FLUTTER_BASE_HREF", base).replace(
+            'src="flutter_bootstrap.js" async', f'src="{fixture}single_thread_core.js"'
+        )
+        page.context.route(f"{base}webgpu_bridge/**", serve_asset)
+        page.route(f"{base}probe.html", lambda route: route.fulfill(
+            body=html, content_type="text/html"
+        ))
+        if case in {"model-404", "bad-model"}:
+            status = 404 if case == "model-404" else 200
+            page.context.route(model_url, lambda route: route.fulfill(
+                status=status, body=b"invalid GGUF", content_type="application/octet-stream"
+            ))
+        page.context.on("response", lambda response: responses.append(
+            (Path(urlsplit(response.url).path).name, response.status)
+        ) if response.url.startswith(f"{base}webgpu_bridge/") or response.url == model_url else None)
+        page.add_init_script("window.__llamadartBridgeAllowSingleThreadCore = true")
+        page.goto(f"{base}probe.html")
+        page.wait_for_function(
+            "window.__llamadartBridgeReady === true && typeof runSingleThreadCore === 'function'"
+        )
+        actual = page.evaluate(
+            """async ({worker, modelUrl}) => {
+              window.LlamaWebGpuBridge = class extends window.LlamaWebGpuBridge {
+                constructor(config) { super({...config, disableWorker: !worker}); }
+              };
+              return {
+                isolated: crossOriginIsolated,
+                source: window.__llamadartBridgeAssetSource,
+                coreModuleUrl: window.__llamadartBridgeCoreModuleUrlSt,
+                wasmUrl: window.__llamadartBridgeWasmUrlSt,
+                result: JSON.parse(await runSingleThreadCore(modelUrl, false, false)),
+              };
+            }""",
+            dict(worker=worker, modelUrl=model_url),
+        )
+        print(json.dumps(dict(bootstrap_case=case, worker=worker, **actual,
+                              responses=responses)), flush=True)
+        assert actual["isolated"] is False and actual["source"] == "local", actual
+        assert urlsplit(actual["coreModuleUrl"]).path.endswith("/llama_webgpu_core_st.js"), actual
+        assert urlsplit(actual["wasmUrl"]).path.endswith("/llama_webgpu_core_st.wasm"), actual
+        assert (("llama_webgpu_bridge_worker.js", 200) in responses) == worker, responses
+        result = actual["result"]
+        if missing_asset:
+            assert (missing_asset, 404) in responses, responses
+            assert ("model.gguf", 200) not in responses, responses
+            detail = result.get("unsupported", "")
+            assert all(text in detail for text in ("Single-thread", "COOP/COEP", "v0.1.87")), result
+        else:
+            assert ("model.gguf", status) in responses, responses
+            assert "model_error" in result, result
+    finally:
+        page.close()
+
+
+def check_bootstrap_errors(browser, fixture, model_url):
+    failures = []
+    for worker in [False, True]:
+        for case in ["legacy", "loader-404", "wasm-404", "model-404", "bad-model"]:
+            try:
+                run_bootstrap_case(browser, fixture, model_url, worker=worker, case=case)
+            except AssertionError as error:
+                failures.append(f"{case}, worker={worker}: {error}")
+    assert not failures, "\n".join(failures)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("origin")
@@ -144,6 +250,7 @@ def main():
                          forced_fetch=worker)
                 for mem64 in [False, True]:
                     run_case(browser, origin, fixture_url, worker=worker, mem64=mem64, gpu=args.gpu)
+            check_bootstrap_errors(browser, f"{origin}/build/web_single_thread_core/", fixture_url)
             if args.model_url:
                 for mem64 in [False, True]:
                     run_case(browser, origin, args.model_url, worker=True, mem64=mem64,

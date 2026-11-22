@@ -22,6 +22,7 @@ import 'package:web/web.dart'
         Event,
         HTMLBaseElement,
         Response,
+        ResponseInit,
         URL,
         document,
         window;
@@ -2298,7 +2299,79 @@ void main() {
         );
       }
 
+      for (final (mode, asset) in [
+        ('direct', 'st.js'),
+        ('worker', 'st.wasm'),
+      ]) {
+        test('refuses a missing configured $asset in $mode mode', () async {
+          globalContext['__llamadartBridgeWasmUrlSt'] = 'st.wasm'.toJS;
+          final originalFetch = globalContext['fetch'];
+          addTearDown(() => globalContext['fetch'] = originalFetch);
+          final requests = <String>[];
+          globalContext['fetch'] = ((String url, JSObject? options) {
+            requests.add(url);
+            final status = url.endsWith(asset) ? 404 : 200;
+            return Future<Response>.value(
+              Response(null, ResponseInit(status: status)),
+            ).toJS;
+          }).toJS;
+          bridge['loadModelFromUrl'] = ((String url, JSObject? config) {
+            recordLoadConfig(config);
+            const message = 'Bridge core initialization failed';
+            return _rejectPromise(
+              mode == 'direct' ? _jsTypeError(message) : _jsError(message),
+            );
+          }).toJS;
+
+          await expectLater(
+            backend.modelLoadFromUrl(modelUrl, params),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                allOf(
+                  contains('Single-thread'),
+                  contains('COOP/COEP'),
+                  contains('v0.1.87'),
+                ),
+              ),
+            ),
+          );
+          expect(requests, unorderedEquals(['st.js', 'st.wasm']));
+          expect(requestedContextSizes, hasLength(1));
+          expect(backend.isReady, isFalse);
+        });
+      }
+
+      test(
+        'an initialized single-thread core keeps a model 404 typed as a model error',
+        () async {
+          bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
+          bridgeRuntimeHints[notesKey] = 'core_pthreads:0;core_single_thread';
+          final originalFetch = globalContext['fetch'];
+          addTearDown(() => globalContext['fetch'] = originalFetch);
+          var requests = 0;
+          globalContext['fetch'] = ((String url, JSObject? options) {
+            requests++;
+            return Future<Response>.value(
+              Response(null, ResponseInit(status: 404)),
+            ).toJS;
+          }).toJS;
+          failLoads(
+            message: 'Failed to fetch model shard: 404',
+            firstAttempts: 99,
+          );
+
+          await expectLater(
+            backend.modelLoadFromUrl(modelUrl, params),
+            throwsA(isA<LlamaModelException>()),
+          );
+          expect(requests, 0);
+        },
+      );
+
       test('rejects a legacy bridge that ignores the opt-in', () async {
+        globalContext['__llamadartBridgeWasmUrlSt'] = 'st.wasm'.toJS;
         final error = JSObject()
           ..['code'] = 'CROSS_ORIGIN_ISOLATION_REQUIRED'.toJS;
         bridge['loadModelFromUrl'] = ((String url, JSObject? config) {
@@ -2336,6 +2409,7 @@ void main() {
       test('never retries a staging failure with the fetch backend', () async {
         globalContext['__llamadartBridgeAllowAutoRemoteFetchBackend'] =
             true.toJS;
+        bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
         bridgeRuntimeHints[notesKey] =
             'core_pthreads:0;core_single_thread;model_fs_write_failed';
         failLoads(message: 'memory access out of bounds', firstAttempts: 99);

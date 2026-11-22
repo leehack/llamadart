@@ -393,7 +393,10 @@ required because older bridge releases accepted the option without publishing
 single-thread assets and could otherwise try a threaded core. A missing
 loader URL, an isolation error from a legacy bridge, or a completed load
 without these notes surfaces `LlamaUnsupportedException` naming the minimum
-asset version.
+asset version. If core initialization fails, Dart checks the configured
+wasm32 loader and Wasm URLs. A confirmed HTTP 404 or 410 on a core asset
+produces the same typed refusal. Model download and GGUF errors retain their
+model error path.
 Fetch-backed loading requires pthreads. Dart excludes it from automatic
 staging recovery on the single-thread path and rejects a forced request.
 

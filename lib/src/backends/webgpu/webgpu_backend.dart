@@ -689,6 +689,38 @@ class WebGpuLlamaBackend
     }
   }
 
+  Future<bool> _singleThreadCoreAssetsMissing() async {
+    Future<bool> isMissing(String url) async {
+      final controller = AbortController();
+      try {
+        final response = await globalContext
+            .callMethod<JSPromise<Response>>(
+              'fetch'.toJS,
+              url.toJS,
+              RequestInit(signal: controller.signal),
+            )
+            .toDart
+            .timeout(const Duration(seconds: 3));
+        return response.status == 404 || response.status == 410;
+      } catch (_) {
+        return false;
+      } finally {
+        controller.abort();
+      }
+    }
+
+    // The bridge falls back from memory64 to wasm32 during core startup.
+    // Confirm the required wasm32 assets using GET, as the loader does.
+    final missing = await Future.wait([
+      for (final property in [
+        '__llamadartBridgeCoreModuleUrlSt',
+        '__llamadartBridgeWasmUrlSt',
+      ])
+        if (_getGlobalString(property) case final url?) isMissing(url),
+    ]);
+    return missing.contains(true);
+  }
+
   bool _isRemoteFetchBackendOptedIn() {
     return _getGlobalOptionalBool(
               '__llamadartBridgeAllowAutoRemoteFetchBackend',
@@ -1460,6 +1492,14 @@ class WebGpuLlamaBackend
           }
         }
         lastRuntimeHints = runtimeHints;
+        final coreVariant = runtimeHints['llamadart.webgpu.core_variant'];
+        if (allowSingleThreadCore &&
+            bridgeForAttempt != null &&
+            (coreVariant == null || coreVariant == 'uninitialized') &&
+            await _singleThreadCoreAssetsMissing()) {
+          await _safeDisposeBridge();
+          throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
+        }
 
         _emitConsoleText(
           LlamaLogLevel.error,
@@ -1478,7 +1518,7 @@ class WebGpuLlamaBackend
             attemptIndex: index,
             attemptCount: loadAttempts.length,
             errorText: _errorText(e).toLowerCase(),
-            coreVariant: runtimeHints['llamadart.webgpu.core_variant'],
+            coreVariant: coreVariant,
             runtimeNotes: runtimeHints['llamadart.webgpu.runtime_notes'] ?? '',
             forceRemoteFetchRequested: forceRemoteFetchBackend == true,
             remoteFetchBackendOptedIn: remoteFetchBackendOptedIn,
