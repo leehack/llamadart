@@ -28,7 +28,7 @@ final _heading = RegExp(r'^ {0,3}(#{1,2})(?:[ \t]+(.*)|$)');
 final _closingHashes = RegExp(r'[ \t]+#+[ \t]*$');
 final _fence = RegExp(r'^ {0,3}(`{3,}|~{3,})(.*)$');
 final _listMarker = RegExp(r'^ {0,3}(?:[-+*]|[0-9]{1,9}[.)]) +(?=\S)');
-final _quote = RegExp(r' {0,3}>[ \t]?');
+final _quote = RegExp(r'^ {0,3}>');
 final _backticks = RegExp(r'`+');
 final _commentToken = RegExp(r'`+|<!--');
 final _scope = RegExp(r'^\[(core|packages/[^\]]*)\](?![([])');
@@ -253,41 +253,21 @@ _MarkdownLine _joinLandedEntry(List<_MarkdownLine> entry) {
   );
 }
 
-Iterable<_MarkdownLine> _markdownLines(
-  String body, {
-  bool includeQuotes = false,
-}) sync* {
+Iterable<_MarkdownLine> _markdownLines(String body) sync* {
   var inComment = false;
-  var commentDepth = 0;
-  ({String marker, int quoteDepth})? fence;
+  String? fence;
   var listIndent = 0;
   for (final (index, line) in const LineSplitter().convert(body).indexed) {
-    var quoteDepth = 0;
-    var contentStart = 0;
-    // Inside code or HTML, additional quote markers are literal content.
-    while (includeQuotes &&
-        (fence == null || quoteDepth < fence.quoteDepth) &&
-        (!inComment || quoteDepth < commentDepth)) {
-      final quote = _quote.matchAsPrefix(line, contentStart);
-      if (quote == null) break;
-      contentStart = quote.end;
-      quoteDepth++;
-    }
-    final content = line.substring(contentStart);
-    final fenceMatch = _fence.firstMatch(content);
+    final fenceMatch = _fence.firstMatch(line);
     if (fence != null) {
-      if (quoteDepth == fence.quoteDepth) {
-        if (fenceMatch != null &&
-            fenceMatch[1]!.startsWith(fence.marker) &&
-            fenceMatch[2]!.trim().isEmpty) {
-          fence = null;
-        }
-        continue;
+      if (fenceMatch != null &&
+          fenceMatch[1]!.startsWith(fence) &&
+          fenceMatch[2]!.trim().isEmpty) {
+        fence = null;
       }
-      fence = null;
+      continue;
     }
-    if (quoteDepth < commentDepth) inComment = false;
-    if (!includeQuotes && !inComment && _quote.matchAsPrefix(line) != null) {
+    if (!inComment && _quote.hasMatch(line)) {
       yield (
         index: index,
         line: line,
@@ -311,20 +291,17 @@ Iterable<_MarkdownLine> _markdownLines(
           example: 'fenced',
           inComment: false,
         );
-        fence = (marker: marker, quoteDepth: quoteDepth);
+        fence = marker;
         continue;
       }
     }
 
-    final (visible, commentContinues) = _withoutComments(content, inComment);
+    final (visible, commentContinues) = _withoutComments(line, inComment);
     inComment = commentContinues;
-    commentDepth = quoteDepth;
     final indent = line.length - line.trimLeft().length;
     final nested = listIndent != 0 && indent >= listIndent;
     if (!nested && visible.trim().isNotEmpty) {
-      listIndent = quoteDepth == 0
-          ? _listMarker.firstMatch(visible)?.end ?? 0
-          : 0;
+      listIndent = _listMarker.firstMatch(visible)?.end ?? 0;
     }
     final heading = nested ? null : _heading.firstMatch(line);
     yield (
@@ -350,13 +327,11 @@ Set<int> visibleReleaseBulletLines(String body) => {
       row.index,
 };
 
-Iterable<({String text, bool canonical})> releaseNoteLines(String body) sync* {
-  for (final row in _markdownLines(body, includeQuotes: true)) {
-    if (row.example != null) continue;
-    yield (
-      text: row.visible,
-      canonical: !row.nested && row.visible == row.line,
-    );
+Iterable<String> visibleReleaseLines(String body) sync* {
+  for (final row in _markdownLines(body)) {
+    if (!row.nested && row.visible == row.line && row.example == null) {
+      yield row.line;
+    }
   }
 }
 

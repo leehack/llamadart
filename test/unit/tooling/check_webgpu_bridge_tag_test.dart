@@ -409,35 +409,21 @@ void main() {
         expect(verify(), contains(startsWith('$path ')));
       },
     );
-    test('strict prep verifies visible retention claims throughout $path', () {
-      final root = _preparedReleaseRepo();
-      final changelog = File('${root.path}/$path');
-      final valid = changelog.readAsStringSync();
-      const badClaim = '(unchanged from 1.2.1)';
-      const reason = 'does not match the previous release';
-      for (final claim in [
-        '- Another runtime\n  $badClaim.',
-        '- Another runtime\n  - Other files $badClaim.',
-        '> Another runtime $badClaim.',
-        '> Another runtime unchanged from\n> 1.2.1.',
-        '- Another runtime $badClaim. <!-- review note -->',
-        '- Another runtime unchanged from `1.2.1`.',
-        '- Another runtime unchanged since 1.2.1.',
-      ]) {
-        changelog.writeAsStringSync('$valid\n$claim\n');
-        expect(
-          _verifyPreparedRelease(root),
-          contains(allOf(startsWith(path), contains(reason))),
-          reason: claim,
+    test(
+      'strict prep ignores retention examples in comments and code in $path',
+      () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        final valid = changelog.readAsStringSync();
+        const badClaim = '(unchanged from 1.2.1)';
+        changelog.writeAsStringSync(
+          '$valid\n<!-- Another runtime $badClaim. -->\n'
+          '```markdown\n- Example $badClaim.\n```\n'
+          '- Pass the prompt unchanged from the caller.\n',
         );
-      }
-      changelog.writeAsStringSync(
-        '$valid\n<!-- Another runtime $badClaim. -->\n'
-        '```markdown\n- Example $badClaim.\n```\n'
-        '- Pass the prompt unchanged from the caller.\n',
-      );
-      expect(_verifyPreparedRelease(root), isEmpty);
-    });
+        expect(_verifyPreparedRelease(root), isEmpty);
+      },
+    );
 
     for (final (shape, example) in [
       ('quoted backticks', '> ```html\n> <!--\n> ```'),
@@ -492,15 +478,18 @@ void main() {
       expect(_verifyPreparedRelease(root), isEmpty);
     });
 
-    test(
-      'strict prep ends a nested code fence at its quote boundary in $path',
-      () {
+    for (final (shape, markup, ending) in [
+      ('inline emphasis', '<em><!-- previous release -->', '</em>'),
+      ('wrap hint', '<wbr><!-- editorial -->', ''),
+      ('line break', '<br> <!-- wrap -->', ''),
+    ]) {
+      test('strict prep rejects a wrapped claim with $shape in $path', () {
         final root = _preparedReleaseRepo();
         final changelog = File('${root.path}/$path');
         final valid = changelog.readAsStringSync();
         changelog.writeAsStringSync(
-          '$valid\n> > ```html\n> > <!--\n'
-          '> Native audio remains pinned to v9.9.8 (unchanged from 1.2.1).\n',
+          '$valid\nNative audio remains pinned to v9.9.8 (unchanged\n'
+          '$markup\nfrom 1.2.1$ending).\n',
         );
         expect(
           _verifyPreparedRelease(root),
@@ -511,8 +500,28 @@ void main() {
             ),
           ),
         );
-      },
-    );
+      });
+    }
+
+    for (final (shape, example) in [
+      ('quoted indented code', '>     Literal example (unchanged from 1.2.1).'),
+      (
+        'quoted list-item fence',
+        '> - ```text\n>   Literal example (unchanged from 1.2.1).\n>   ```',
+      ),
+      (
+        'separate paragraphs',
+        'The public API is unchanged\n\n> From 1.2.1 onward, use the new CLI.',
+      ),
+    ]) {
+      test('strict prep accepts valid notes with $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        final valid = changelog.readAsStringSync();
+        changelog.writeAsStringSync('$valid\n$example\n');
+        expect(_verifyPreparedRelease(root), isEmpty);
+      });
+    }
   }
 
   for (final path in _preparedChangelogs) {
