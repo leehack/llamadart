@@ -431,7 +431,9 @@ class PreflightTest(unittest.TestCase):
                 run_deploy(self.api, folder='~/site', max_folder_bytes=3)
             self.assertEqual(self.api.mock_calls, [])
             run_deploy(self.api, folder='~/site', max_folder_bytes=4)
-        self.assertEqual(self.api.upload_folder.call_args.kwargs['folder_path'], str(self.folder))
+            expected = os.path.expanduser('~/site')
+        self.assertNotIn('~', expected)
+        self.assertEqual(self.api.upload_folder.call_args.kwargs['folder_path'], expected)
 
     def assert_preflight_rejects_root_link(self, folder):
         api = mock.Mock()
