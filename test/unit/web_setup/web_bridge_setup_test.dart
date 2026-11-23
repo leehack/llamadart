@@ -129,6 +129,39 @@ void main() {
         patchIndexHtml: patchIndexHtml,
       );
 
+  test('pins, verifies and exposes both single-thread core variants', () async {
+    await runSetup();
+    final html = indexHtml.readAsStringSync();
+    const files = <String, String>{
+      'CoreModuleUrlSt': 'llama_webgpu_core_st.js',
+      'WasmUrlSt': 'llama_webgpu_core_st.wasm',
+      'CoreModuleUrlMem64St': 'llama_webgpu_core_mem64_st.js',
+      'WasmUrlMem64St': 'llama_webgpu_core_mem64_st.wasm',
+    };
+    for (final entry in files.entries) {
+      expect(File(assetPath(entry.value)).existsSync(), isTrue);
+      expect(
+        html,
+        contains("__llamadartBridge${entry.key} = asset('${entry.value}')"),
+      );
+    }
+    expect(html, isNot(contains('__llamadartBridgeAllowSingleThreadCore')));
+
+    final corrupt = _FakeRelease();
+    corrupt.served['llama_webgpu_core_mem64_st.wasm'] = <int>[42];
+    File(assetPath('llama_webgpu_core_mem64_st.wasm')).deleteSync();
+    await expectLater(
+      setUpWebBridge(webDir: webDir, pin: corrupt.pin, fetch: corrupt.fetch),
+      throwsA(
+        isA<WebSetupException>().having(
+          (error) => error.message,
+          'message',
+          contains('llama_webgpu_core_mem64_st.wasm'),
+        ),
+      ),
+    );
+  });
+
   test('vendors every verified asset and adds the bootstrap once', () async {
     final WebSetupResult result = await runSetup();
 

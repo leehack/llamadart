@@ -66,8 +66,12 @@ Pairing rules, the SwiftPM bootstrap and the privacy manifest are in
 [Installation](https://llamadart.leehack.com/docs/getting-started/installation) and
 [Apple setup](https://llamadart.leehack.com/docs/platforms/apple-setup).
 Web apps run `dart run llamadart:web_setup` once; see the
-[WebGPU bridge](https://llamadart.leehack.com/docs/platforms/webgpu-bridge). Lazy tool-call grammars and
-custom grammar roots follow the loaded bridge core's `lazyGrammar` capability.
+[WebGPU bridge](https://llamadart.leehack.com/docs/platforms/webgpu-bridge).
+Pages without cross-origin isolation can opt into the single-threaded GGUF
+core with `window.__llamadartBridgeAllowSingleThreadCore = true`. It uses one
+CPU thread and supports WebGPU offload. Fetch-backed model loading requires
+the threaded core. Lazy tool-call grammars and custom grammar roots follow the
+loaded core's `lazyGrammar` capability.
 Set `ModelParams.jsBackedModelStaging` to opt into or out of JavaScript-backed
 GGUF and projector staging. Explicit opt-in requires bridge assets v0.1.92+
 and omission keeps the bridge's WebKit default.
@@ -178,7 +182,7 @@ Current default runtime pins:
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v1.0.0-4` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.19.1-7` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.92` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.93` |
 
 The Web backend reuses cached HTTP(S) projectors through the pinned bridge.
 If a direct WebAssembly core abort unloads the model, catch

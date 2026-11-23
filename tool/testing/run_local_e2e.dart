@@ -1742,6 +1742,66 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'web-single-thread-core',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Check direct and worker single-thread wasm32 and memory64 loads '
+          'on a non-isolated page, typed opt-in and old-asset guards, and '
+          'threaded controls on an isolated page.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'bash',
+          arguments: const ['scripts/fetch_webgpu_bridge_assets.sh'],
+          environment: {
+            'WEBGPU_BRIDGE_OUT_DIR':
+                '${context.projectRoot}/build/web_single_thread_core/bridge',
+          },
+          description: 'Fetch pinned WebGPU bridge assets',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'compile',
+            'js',
+            'test/e2e/webgpu/fixtures/single_thread_core.dart',
+            '-o',
+            'build/web_single_thread_core/single_thread_core.js',
+          ],
+          description: 'Compile the public Dart GGUF load fixture',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/serve_static_with_headers.py',
+            '--port',
+            '${context.port}',
+            '--directory',
+            context.projectRoot,
+            '--coep',
+            'require-corp',
+          ],
+          description: 'Serve the model and bridge files',
+          background: true,
+          waitForPort: context.port,
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/playwright_web_single_thread_core.py',
+            'http://127.0.0.1:${context.port}',
+            if (context.modelUrl case final url?) ...['--model-url', url],
+            if (context.webgpuRequested) '--gpu',
+          ],
+          description: 'Verify single-thread selection and threaded controls',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'web-webgpu-generation',
       group: LocalE2eScenarioGroup.webSmoke,
       description:
@@ -3488,21 +3548,25 @@ Future<LocalE2eResult> runLocalE2e(
           'also accepts firefox.\n',
     );
   }
-  if (scenario.name == 'chat-app-web-real-model-smoke' &&
+  const webGpuSmokeScenarios = {
+    'chat-app-web-real-model-smoke',
+    'web-single-thread-core',
+  };
+  if (webGpuSmokeScenarios.contains(scenario.name) &&
       parsed.backendProvided &&
       !const ['cpu', 'webgpu'].contains(parsed.backend)) {
-    return const LocalE2eResult(
+    return LocalE2eResult(
       64,
-      stderr:
-          'chat-app-web-real-model-smoke requires --backend cpu or webgpu.\n',
+      stderr: '${scenario.name} requires --backend cpu or webgpu.\n',
     );
   }
-  if (scenario.name != 'chat-app-web-real-model-smoke' &&
+  if (!webGpuSmokeScenarios.contains(scenario.name) &&
       parsed.backend == 'webgpu') {
     return LocalE2eResult(
       64,
       stderr:
-          '--backend webgpu applies only to chat-app-web-real-model-smoke; '
+          '--backend webgpu applies only to chat-app-web-real-model-smoke and '
+          'web-single-thread-core; '
           '${scenario.name} does not accept it.\n',
     );
   }

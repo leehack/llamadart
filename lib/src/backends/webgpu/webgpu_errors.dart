@@ -191,6 +191,25 @@ LlamaUnsupportedException? webGpuCrossOriginIsolationError(Object error) {
   );
 }
 
+/// The stable fields carried by a bridge core-asset error on either runtime.
+({String code, String? asset})? webGpuCoreAssetError(Object error) {
+  try {
+    final object = error as JSObject;
+    String? string(String key) {
+      final value = object[key];
+      return value.isA<JSString>() ? (value as JSString).toDart : null;
+    }
+
+    final code = string('code');
+    if (string('name') == 'CoreAssetError' && code != null) {
+      return (code: code, asset: string('asset'));
+    }
+  } catch (_) {
+    // Primitive rejections carry no bridge error code.
+  }
+  return null;
+}
+
 /// Required bridge capability for an explicit JS-backed staging request.
 const String webGpuJsBackedStagingRequired =
     'JS-backed model staging (ModelParams.jsBackedModelStaging) requires '

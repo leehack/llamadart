@@ -379,7 +379,7 @@ const String bridgeLlamaCppTag = 'v1.0.0';
 const String bridgeLlamaCppCommit = 'b1b770d90d94cad9e9ea5b993bdbc383a522fb28';
 
 /// The exact bridge source commit used to build the pinned bridge assets.
-const String bridgeSourceCommit = 'd7236223d2393d51dab541df6caf3ef88f06d49b';
+const String bridgeSourceCommit = '273fe3bb59e7dcbb419ab25409863bb39826709a';
 
 /// Canonical repository identities recorded in the approved manifest.
 const String bridgeAssetsRepository = 'leehack/llama-web-bridge-assets';
@@ -394,10 +394,10 @@ const String bridgeNativeReleaseTag = 'v1.0.0-4';
 const String bridgeApprovedNativePin = 'v1.0.0-4';
 
 /// The asset repository release that published the pinned bridge assets.
-const String bridgeAssetsReleaseId = '454541989';
+const String bridgeAssetsReleaseId = '454836373';
 
 /// The asset repository commit the pinned bridge asset tag points at.
-const String bridgeAssetsTagCommit = '056f474f389feaa4e02a62a3125549cb9154fabf';
+const String bridgeAssetsTagCommit = '00866ed50f48ea4f9622c1b5e380f27405567033';
 
 /// SHA-256 hash of the exact approved published manifest.json.
 ///
@@ -1193,6 +1193,7 @@ const List<String> tagHistoryFiles = <String>[
   // Register with bridgeTagPins once #2153 makes this tag canonical.
   'packages/genkit_llamadart/example/dartpad/lib/bridge_bootstrap_web.dart',
   'website/docs/changelog/recent-releases.md',
+  'test/e2e/webgpu/fixtures/single_thread_legacy_assets_url.txt',
   'test/fixtures/lfm2_quoted_tool_delimiter.md',
   'test/fixtures/release_prep/pr_2114_description.md',
   'test/fixtures/release_prep/pr_2114_github_squash_body.txt',

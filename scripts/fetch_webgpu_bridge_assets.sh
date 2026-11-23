@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(git rev-parse --show-toplevel)"
 OUT_DIR="${WEBGPU_BRIDGE_OUT_DIR:-$ROOT_DIR/example/chat_app/web/webgpu_bridge}"
 ASSETS_REPO="${WEBGPU_BRIDGE_ASSETS_REPO:-leehack/llama-web-bridge-assets}"
-ASSETS_TAG="${WEBGPU_BRIDGE_ASSETS_TAG:-v0.1.92}"
+ASSETS_TAG="${WEBGPU_BRIDGE_ASSETS_TAG:-v0.1.93}"
 CDN_BASE="${WEBGPU_BRIDGE_CDN_BASE:-https://cdn.jsdelivr.net/gh/${ASSETS_REPO}@${ASSETS_TAG}}"
 CURL_DOWNLOAD_ARGS=(
   --connect-timeout 15
@@ -19,7 +19,7 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 Downloads prebuilt WebGPU bridge assets into the chat_app web directory.
 
 Default source:
-  https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@v0.1.92
+  https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@v0.1.93
 
 Environment variables:
   WEBGPU_BRIDGE_ASSETS_REPO   Asset repo in owner/repo format
@@ -31,7 +31,7 @@ Usage:
   ./scripts/fetch_webgpu_bridge_assets.sh
 
 Examples:
-  WEBGPU_BRIDGE_ASSETS_TAG=v0.1.92 ./scripts/fetch_webgpu_bridge_assets.sh
+  WEBGPU_BRIDGE_ASSETS_TAG=v0.1.93 ./scripts/fetch_webgpu_bridge_assets.sh
   WEBGPU_BRIDGE_ASSETS_REPO=acme/llama-web-bridge-assets WEBGPU_BRIDGE_ASSETS_TAG=v2 ./scripts/fetch_webgpu_bridge_assets.sh
 USAGE
   exit 0
@@ -85,6 +85,10 @@ download_required "llama_webgpu_core.js"
 download_required "llama_webgpu_core.wasm"
 download_optional "llama_webgpu_core_mem64.js"
 download_optional "llama_webgpu_core_mem64.wasm"
+download_optional "llama_webgpu_core_st.js"
+download_optional "llama_webgpu_core_st.wasm"
+download_optional "llama_webgpu_core_mem64_st.js"
+download_optional "llama_webgpu_core_mem64_st.wasm"
 download_optional "manifest.json"
 download_optional "sha256sums.txt"
 
@@ -161,6 +165,12 @@ if command -v shasum >/dev/null 2>&1 || command -v sha256sum >/dev/null 2>&1; th
     if [[ -f "llama_webgpu_core_mem64.wasm" ]]; then
       files+=("llama_webgpu_core_mem64.wasm")
     fi
+
+    for file in llama_webgpu_core{,_mem64}_st.{js,wasm}; do
+      if was_downloaded "$file" && [[ -f "$file" ]]; then
+        files+=("$file")
+      fi
+    done
 
     if command -v shasum >/dev/null 2>&1; then
       shasum -a 256 "${files[@]}" > sha256sums.txt

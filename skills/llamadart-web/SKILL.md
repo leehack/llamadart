@@ -56,8 +56,18 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   `Cross-Origin-Embedder-Policy: require-corp` (`credentialless` isolates only
   in Chromium-based browsers; it does not isolate Safari). Without
   isolation (`window.crossOriginIsolated == false`) assets `v0.1.85+`
-  reject the load at once and llamadart throws `LlamaUnsupportedException`
-  naming COOP/COEP; earlier assets wait minutes for the init timeout before a generic error.
+  reject with `LlamaUnsupportedException` naming COOP/COEP by default.
+  When the host cannot isolate the page, run `dart run llamadart:web_setup`
+  and set `window.__llamadartBridgeAllowSingleThreadCore = true` before the
+  first GGUF load. This requires matching v0.1.93+ assets and affects only
+  non-isolated pages. For custom hosting, configure
+  `__llamadartBridgeCoreModuleUrlSt` / `__llamadartBridgeWasmUrlSt` and
+  `__llamadartBridgeCoreModuleUrlMem64St` / `__llamadartBridgeWasmUrlMem64St`.
+  The bridge checks and initializes the core before model loading.
+  Verify `core_preflight_threading:single-thread` in
+  `llamadart.webgpu.runtime_notes`. A single-thread core runs streamed model
+  staging and rejects forced fetch-backed loading. It can offload GPU layers
+  when the adapter supports WebGPU.
 - Treat WebGPU as a runtime capability. A supported browser (Chrome/Edge 128+,
   Firefox 129+, Safari 17.4+) can still lack an adapter, features or memory.
   Prove a first load with a small quantized GGUF, `contextSize: 2048` or less
@@ -182,7 +192,7 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   embeddings, tokenizer, LoRA, state or usage. Use GGUF for anything more.
 - `flutter build web` only copies what is in `web/`: run the setup tool (or
   commit `web/webgpu_bridge/`) before building, and set the COOP/COEP headers on the
-  production host too, not only on the dev server.
+  production host for threaded GGUF.
 
 ## Examples
 
