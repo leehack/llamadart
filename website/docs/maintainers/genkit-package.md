@@ -80,11 +80,14 @@ selected lane participates in the existing truthful aggregate.
 
 The adapter CI job runs two parallel legs. The first checks lower bounds: on
 Dart 3.12.0, before Flutter is set up, it uses exact runtime dependency minima,
-including published llamadart 0.19.7, then restores the package. It then
+including published llamadart 0.20.6, then restores the package. It then
 resolves published dependencies and checks docs, tests and publication. The
 second creates an ignored `pubspec_overrides.yaml` to test against checkout
 core, analyzes/tests again, runs the real-model contracts and checks browser
-contracts. It deletes that override even on failure. Neither override nor package lockfile ships in either archive.
+contracts. The checkout-core leg also runs the DartPad example's Flutter
+analysis, widget tests and browser bootstrap test. It deletes both overrides
+even on failure. Overrides and lockfiles are excluded from the standalone
+adapter archive.
 
 For model-backed qualification, reuse the adapter's existing real-model tests
 and local fixture environment variables described in its
