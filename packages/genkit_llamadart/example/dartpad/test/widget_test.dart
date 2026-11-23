@@ -3,13 +3,13 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart' hide Action;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:genkit/genkit.dart';
 import 'package:genkit/plugin.dart';
 import 'package:genkit_llamadart/genkit_llamadart.dart';
 import 'package:genkit_llamadart_dartpad_example/main.dart';
 import 'package:llamadart/llamadart.dart' as llama;
+import 'package:material_ui/material_ui.dart' hide Action;
 
 void main() {
   for (final label in ['GGUF', 'LiteRT-LM']) {
