@@ -4321,6 +4321,49 @@ class StableDiffusionPinSyncTest(unittest.TestCase):
                 text,
             )
 
+    def test_writes_all_published_windows_runtime_libraries(self) -> None:
+        manifest, release = _sd_fixture("v0.2.0", SD_BUNDLES)
+        artifact = next(
+            item for item in manifest["artifacts"]
+            if item["kind"] == "runtime" and item["target"] == "windows-x64"
+        )
+        artifact["libraries"] = [
+            "vcruntime140_1.dll", "stable-diffusion.dll", "msvcp140.dll",
+            "vcruntime140.dll", "msvcp140_codecvt_ids.dll",
+        ]
+        result = self.run_sync("v0.2.0", manifest, release)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = self.run_sync("v0.2.0", manifest, release)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            f"'windows-x64',\n    sha256: '{artifact['sha256']}',\n"
+            "    requiredLibraries: {\n"
+            + "".join(f"      '{name}',\n" for name in sorted(artifact["libraries"]))
+            + "    },",
+            self.pins.read_text(encoding="utf-8"),
+        )
+
+    def test_rejects_malformed_windows_runtime_libraries_before_writing(self) -> None:
+        original = self.pins.read_bytes()
+        for libraries, reason in (
+            ("stable-diffusion.dll", "non-empty list"),
+            ([], "non-empty list"),
+            (["stable-diffusion.dll", "stable-diffusion.dll"], "duplicated"),
+            (["stable-diffusion.dll", "../msvcp140.dll"], "invalid"),
+            (["msvcp140.dll"], "must include the primary library"),
+        ):
+            with self.subTest(libraries=libraries):
+                manifest, release = _sd_fixture("v0.2.0", SD_BUNDLES)
+                artifact = next(
+                    item for item in manifest["artifacts"]
+                    if item["kind"] == "runtime" and item["target"] == "windows-x64"
+                )
+                artifact["libraries"] = libraries
+                result = self.run_sync("v0.2.0", manifest, release)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn(reason, result.stderr)
+                self.assertEqual(self.pins.read_bytes(), original)
+
     def test_rejects_untrusted_or_incomplete_releases(self) -> None:
         def missing_bundle(manifest: dict, release: dict) -> None:
             manifest["artifacts"] = [

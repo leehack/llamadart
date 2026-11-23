@@ -1,0 +1,340 @@
+{
+  "schemaVersion": 1,
+  "package": "stable-diffusion-native",
+  "tag": "v0.4.0-1",
+  "source": {
+    "repository": "leehack/stable-diffusion-native",
+    "commit": "88fc12d931c5d9727c0a89fd9727a9eed701e6b6"
+  },
+  "upstream": {
+    "repository": "leejet/stable-diffusion.cpp",
+    "commit": "5dcfa79801213f23e27b3e83617350ebb8ea93aa",
+    "patches": [
+      "fp8_metal_f16_load.patch",
+      "ggml_apple_vm_allocate.patch",
+      "ggml_metal_apple_vm_allocate.patch",
+      "intrinsic_tiny_decoder_policy.patch",
+      "loader_scratch_vm_allocate.patch",
+      "lora_immediate_fallback.patch",
+      "pickle_line_span.patch",
+      "torch_zip_entry_lookup.patch"
+    ]
+  },
+  "artifacts": [
+    {
+      "target": "macos-arm64",
+      "kind": "runtime",
+      "file": "stable-diffusion-native-runtime-macos-arm64-v0.4.0-1.tar.gz",
+      "sha256": "7ba9cbfc3f37193c945bfbd0816b048d138f057076490e94d7c024543a10478d",
+      "size": 16730968,
+      "library": "libstable-diffusion.dylib",
+      "accelerators": [
+        "metal",
+        "cpu"
+      ]
+    },
+    {
+      "target": "macos-arm64",
+      "kind": "symbols",
+      "file": "stable-diffusion-native-symbols-macos-arm64-v0.4.0-1.tar.gz",
+      "sha256": "3342dbe5035f37c61783dd49128316541e29b04ad83cad7f1f847e49bf15bff5",
+      "size": 17055850,
+      "library": "libstable-diffusion.dylib",
+      "accelerators": [
+        "metal",
+        "cpu"
+      ]
+    },
+    {
+      "target": "macos-x64",
+      "kind": "runtime",
+      "file": "stable-diffusion-native-runtime-macos-x64-v0.4.0-1.tar.gz",
+      "sha256": "d873ece9051f6713d776e4e4ea762866ebc9c0dabb371e894609bb4828d8a2e5",
+      "size": 16745913,
+      "library": "libstable-diffusion.dylib",
+      "accelerators": [
+        "metal",
+        "cpu"
+      ]
+    },
+    {
+      "target": "macos-x64",
+      "kind": "symbols",
+      "file": "stable-diffusion-native-symbols-macos-x64-v0.4.0-1.tar.gz",
+      "sha256": "d0f7bd44aab6ac8fcf3e8f6d7b82a21f0b87b6ca6760efc89da0575aac416151",
+      "size": 17053686,
+      "library": "libstable-diffusion.dylib",
+      "accelerators": [
+        "metal",
+        "cpu"
+      ]
+    },
+    {
+      "target": "ios-arm64",
+      "kind": "runtime",
+      "file": "stable-diffusion-native-runtime-ios-arm64-v0.4.0-1.tar.gz",
+      "sha256": "10fd003b6e4742abf4815960d2105ba60b39a3fda36b1c021754b254f98d4b66",
+      "size": 16322490,
+      "library": "libstable-diffusion.dylib",
+      "accelerators": [
+        "metal",
+        "cpu"
+      ]
+    },
+    {
+      "target": "ios-arm64",
+      "kind": "symbols",
+      "file": "stable-diffusion-native-symbols-ios-arm64-v0.4.0-1.tar.gz",
+      "sha256": "5834f6d1b68916b176797e09f40c13e745a9de93474bba664c5319e145d28892",
+      "size": 16629613,
+      "library": "libstable-diffusion.dylib",
+      "accelerators": [
+        "metal",
+        "cpu"
+      ]
+    },
+    {
+      "target": "ios-arm64-sim",
+      "kind": "runtime",
+      "file": "stable-diffusion-native-runtime-ios-arm64-sim-v0.4.0-1.tar.gz",
+      "sha256": "2a84e5bedf05fba1eb151c45d2b47cfc11137db743bb69b5309dde4c2acb05b3",
+      "size": 16730544,
+      "library": "libstable-diffusion.dylib",
+      "accelerators": [
+        "metal",
+        "cpu"
+      ]
+    },
+    {
+      "target": "ios-arm64-sim",
+      "kind": "symbols",
+      "file": "stable-diffusion-native-symbols-ios-arm64-sim-v0.4.0-1.tar.gz",
+      "sha256": "22e3e491bb0acf8a277abb75b887e8594ab643fadd46e38dfe46426469697add",
+      "size": 17055201,
+      "library": "libstable-diffusion.dylib",
+      "accelerators": [
+        "metal",
+        "cpu"
+      ]
+    },
+    {
+      "target": "ios-x64-sim",
+      "kind": "runtime",
+      "file": "stable-diffusion-native-runtime-ios-x64-sim-v0.4.0-1.tar.gz",
+      "sha256": "f5ce1616472c5ba8cbcb03cc4c52156b2856e2dd384e4578db97b147ffb152ff",
+      "size": 16756261,
+      "library": "libstable-diffusion.dylib",
+      "accelerators": [
+        "metal",
+        "cpu"
+      ]
+    },
+    {
+      "target": "ios-x64-sim",
+      "kind": "symbols",
+      "file": "stable-diffusion-native-symbols-ios-x64-sim-v0.4.0-1.tar.gz",
+      "sha256": "5ff22907664896b71af64edce583195920d67e4b473fba9eff482a3ab927ed9d",
+      "size": 17070369,
+      "library": "libstable-diffusion.dylib",
+      "accelerators": [
+        "metal",
+        "cpu"
+      ]
+    },
+    {
+      "target": "android-arm64",
+      "kind": "runtime",
+      "file": "stable-diffusion-native-runtime-android-arm64-v0.4.0-1.tar.gz",
+      "sha256": "b0bac4c11847536d3562e155bca021292666963729514ae80eec86d6a15f2613",
+      "size": 15698826,
+      "library": "libstable-diffusion.so",
+      "accelerators": [
+        "cpu"
+      ]
+    },
+    {
+      "target": "android-arm64",
+      "kind": "symbols",
+      "file": "stable-diffusion-native-symbols-android-arm64-v0.4.0-1.tar.gz",
+      "sha256": "c6b415ea36ae16570e274a6a7c69be4dd91d22d7890ce986c596284f562ab770",
+      "size": 68311387,
+      "library": "libstable-diffusion.so",
+      "accelerators": [
+        "cpu"
+      ]
+    },
+    {
+      "target": "linux-x64",
+      "kind": "runtime",
+      "file": "stable-diffusion-native-runtime-linux-x64-v0.4.0-1.tar.gz",
+      "sha256": "02db0554b8eee4adf5d46f75ee5869d5fb81d75de0059d55136cd614b70368fb",
+      "size": 16807207,
+      "library": "libstable-diffusion.so",
+      "accelerators": [
+        "cpu"
+      ]
+    },
+    {
+      "target": "linux-x64",
+      "kind": "symbols",
+      "file": "stable-diffusion-native-symbols-linux-x64-v0.4.0-1.tar.gz",
+      "sha256": "7d0f0ff46cc99545c4bf5a7e753f61788500b5975a3871c82f6bfa09662708bb",
+      "size": 17161362,
+      "library": "libstable-diffusion.so",
+      "accelerators": [
+        "cpu"
+      ]
+    },
+    {
+      "target": "linux-x64-vulkan",
+      "kind": "runtime",
+      "file": "stable-diffusion-native-runtime-linux-x64-vulkan-v0.4.0-1.tar.gz",
+      "sha256": "ff7104003c6bdb3a2bd2fc04ac11bdb636192a71aa33f57d18f2673624a6e6f3",
+      "size": 27100630,
+      "library": "libstable-diffusion.so",
+      "accelerators": [
+        "vulkan",
+        "cpu"
+      ]
+    },
+    {
+      "target": "linux-x64-vulkan",
+      "kind": "symbols",
+      "file": "stable-diffusion-native-symbols-linux-x64-vulkan-v0.4.0-1.tar.gz",
+      "sha256": "4bc2a50c2b4950b1d4335da7b91057247eabaf9cbadda42b4b5bf84cef5e6f76",
+      "size": 27538061,
+      "library": "libstable-diffusion.so",
+      "accelerators": [
+        "vulkan",
+        "cpu"
+      ]
+    },
+    {
+      "target": "linux-arm64",
+      "kind": "runtime",
+      "file": "stable-diffusion-native-runtime-linux-arm64-v0.4.0-1.tar.gz",
+      "sha256": "5b1425402f8c3ab704b2c3817dc5d57f78a1054669a6bd5d170fa14e8790df12",
+      "size": 16365272,
+      "library": "libstable-diffusion.so",
+      "accelerators": [
+        "cpu"
+      ]
+    },
+    {
+      "target": "linux-arm64",
+      "kind": "symbols",
+      "file": "stable-diffusion-native-symbols-linux-arm64-v0.4.0-1.tar.gz",
+      "sha256": "c3090ef692c5500d62032017a2f51bb61b8a07bd7541df5cabb921b4c68d616c",
+      "size": 16744138,
+      "library": "libstable-diffusion.so",
+      "accelerators": [
+        "cpu"
+      ]
+    },
+    {
+      "target": "linux-arm64-vulkan",
+      "kind": "runtime",
+      "file": "stable-diffusion-native-runtime-linux-arm64-vulkan-v0.4.0-1.tar.gz",
+      "sha256": "5201da9d08501d9f5d27e7e78c8d3c83624ef6a27417339fef03813539aa6180",
+      "size": 26635867,
+      "library": "libstable-diffusion.so",
+      "accelerators": [
+        "vulkan",
+        "cpu"
+      ]
+    },
+    {
+      "target": "linux-arm64-vulkan",
+      "kind": "symbols",
+      "file": "stable-diffusion-native-symbols-linux-arm64-vulkan-v0.4.0-1.tar.gz",
+      "sha256": "1c2e1f45dc0e1c32ca04b2eaf234bc2f566b732b2f20758c71b310d057fa2bbc",
+      "size": 27095797,
+      "library": "libstable-diffusion.so",
+      "accelerators": [
+        "vulkan",
+        "cpu"
+      ]
+    },
+    {
+      "target": "windows-x64",
+      "kind": "runtime",
+      "file": "stable-diffusion-native-runtime-windows-x64-v0.4.0-1.tar.gz",
+      "sha256": "d09e8b322fcbdbfb09869e7f6362ec9a52d0c36efb3e3f2b1a90d445bbfd0ff9",
+      "size": 15531231,
+      "library": "stable-diffusion.dll",
+      "libraries": [
+        "msvcp140.dll",
+        "msvcp140_codecvt_ids.dll",
+        "stable-diffusion.dll",
+        "vcruntime140.dll",
+        "vcruntime140_1.dll"
+      ],
+      "accelerators": [
+        "cpu"
+      ]
+    },
+    {
+      "target": "windows-x64",
+      "kind": "symbols",
+      "file": "stable-diffusion-native-symbols-windows-x64-v0.4.0-1.tar.gz",
+      "sha256": "1e76b5372ade429838a4df893878f7bad7015343f26eb42a13e1febca19c099a",
+      "size": 15220733,
+      "library": "stable-diffusion.dll",
+      "accelerators": [
+        "cpu"
+      ]
+    },
+    {
+      "target": "windows-x64-vulkan",
+      "kind": "runtime",
+      "file": "stable-diffusion-native-runtime-windows-x64-vulkan-v0.4.0-1.tar.gz",
+      "sha256": "5c5663f5460c933236d48da579affd7af0beee167a10bda64ef45e7f4a9439f0",
+      "size": 27995157,
+      "library": "stable-diffusion.dll",
+      "libraries": [
+        "msvcp140.dll",
+        "msvcp140_codecvt_ids.dll",
+        "stable-diffusion.dll",
+        "vcruntime140.dll",
+        "vcruntime140_1.dll"
+      ],
+      "accelerators": [
+        "vulkan",
+        "cpu"
+      ]
+    },
+    {
+      "target": "windows-x64-vulkan",
+      "kind": "symbols",
+      "file": "stable-diffusion-native-symbols-windows-x64-vulkan-v0.4.0-1.tar.gz",
+      "sha256": "a62944dc97f13dc4b6cb1374201e6b917b3e313c984feea53223986f5a73db5a",
+      "size": 27687808,
+      "library": "stable-diffusion.dll",
+      "accelerators": [
+        "vulkan",
+        "cpu"
+      ]
+    },
+    {
+      "target": "apple",
+      "kind": "xcframework",
+      "file": "stable-diffusion-native-apple-xcframework-v0.4.0-1.zip",
+      "sha256": "3a9d99a0f818c1511c62b585d3170c41c68f35756143979fe29f4a476bece3ce",
+      "size": 83807150,
+      "library": "stable_diffusion.framework",
+      "accelerators": [
+        "metal",
+        "cpu"
+      ],
+      "slices": [
+        "ios-arm64",
+        "ios-arm64_x86_64-simulator",
+        "macos-arm64_x86_64"
+      ],
+      "minimumOS": {
+        "ios": "16.4",
+        "macos": "13.3"
+      }
+    }
+  ]
+}
