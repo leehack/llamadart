@@ -644,7 +644,7 @@ void main() {
   });
 
   testWidgets(
-    'LiteRT-LM Gemma warns before loading and sends the plain prompt',
+    'LiteRT-LM Gemma 4 E2B warns before loading and sends the plain prompt',
     (tester) async {
       final loading = Completer<void>();
       final runtime = _LocalRuntime()..loading = loading.future;
