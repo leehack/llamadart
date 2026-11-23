@@ -2222,7 +2222,7 @@ runs:
 
 /// `coverage` version `pubspec.yaml` pins and the LCOV formatter was verified
 /// against.
-const _pinnedCoverageVersion = '1.16.0';
+const _pinnedCoverageVersion = '1.16.1';
 
 final _systemPackageCommand = RegExp(
   r'\bapt(-get)?\b|\bdpkg\b|install-deps|--with-deps',

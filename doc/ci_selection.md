@@ -296,7 +296,7 @@ The synthetic Actions upload/download roundtrip now runs on workflow/selector
 changes; ordinary runtime work retains real failure-diagnostic upload behavior.
 The new workflow contract tests validate the actual selection/aggregate wiring.
 
-Coverage tooling is pinned to **1.16.0**, with the **70%** threshold retained
+Coverage tooling is pinned to **1.16.1**, with the **70%** threshold retained
 and enforced post-merge.
 This version parses `--workers` but does not forward it to `HitMap.parseFiles`,
 which loops over inputs sequentially. Adding `--workers 2` or `4` therefore
