@@ -11,18 +11,16 @@ and its guides are canonical for adapter behavior.
 
 ## Install the published combination
 
-This example targets published **genkit_llamadart 3.9.0**, **Genkit 1.0.0** and
-**llamadart 0.19.7**, on Dart **3.12+**. The adapter remains independently
-versioned after its source moves into this repository. Core's Dart floor remains
-3.10.7. Installing this optional adapter raises the application requirement.
-The next adapter release targets llamadart 0.20.6.
+This example uses **genkit_llamadart 3.10.0** and **Genkit 1.0.0** on Dart
+**3.12+**. The adapter supports **llamadart 0.20.6 or newer in the 0.20 minor**.
+Use **llamadart 0.20.7** for GGUF in DartPad.
 
 ```bash
-dart pub add 'genkit:1.0.0' 'genkit_llamadart:3.9.0' 'llamadart:0.19.7'
+dart pub add 'genkit:1.0.0' 'genkit_llamadart:3.10.0' 'llamadart:0.20.7'
 ```
 
 For a Flutter app use `flutter pub add`. Apple SwiftPM apps using GGUF also add
-`llamadart_llama_cpp_flutter:0.19.7` directly. A LiteRT-LM app instead needs its
+`llamadart_llama_cpp_flutter:0.20.7` directly. A LiteRT-LM app instead needs its
 matching companion; see [installation](../getting-started/installation).
 iOS requires 16.4+ and macOS 14.0+. On Windows install the matching Microsoft
 Visual C++ runtime. CPU is the baseline; GPU placement needs its own qualification.
@@ -98,6 +96,9 @@ Dispose the prepared handle before shutting down Genkit; disposal is terminal.
 - [Media tasks](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/media-models.md), [model preparation](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/model-preparation.md) and [observability](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/observability.md).
 
 ## Browser setup
+
+Try local inference in Chrome with the
+[Genkit DartPad Preview example](https://preview.dartpad.dev/?package=genkit_llamadart&root=example/dartpad&file=example/dartpad/lib/main.dart).
 
 The native filesystem quickstart above is not a complete browser deployment.
 The adapter has browser capability guards, but Genkit/browser integration and
