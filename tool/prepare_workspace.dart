@@ -55,6 +55,11 @@ const List<WorkspacePackage> workspacePackages = <WorkspacePackage>[
     prepareForRootQualityGates: false,
   ),
   WorkspacePackage(
+    'packages/genkit_llamadart/example/dartpad',
+    WorkspacePackageManager.flutter,
+    prepareForRootQualityGates: false,
+  ),
+  WorkspacePackage(
     'packages/llamadart_validation',
     WorkspacePackageManager.dart,
     prepareForRootQualityGates: false,

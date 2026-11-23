@@ -25,6 +25,9 @@ void main() {
         'LICENSE',
         'lib/genkit_llamadart.dart',
         'example/genkit_llamadart_example.dart',
+        'example/dartpad/pubspec.yaml',
+        'example/dartpad/lib/main.dart',
+        'example/dartpad/lib/bridge_bootstrap_web.dart',
         'doc/usage.md',
         'skills/genkit-llamadart-getting-started/SKILL.md',
       ]) {
@@ -37,6 +40,8 @@ void main() {
       for (final path in [
         'pubspec_overrides.yaml',
         'pubspec.lock',
+        'example/dartpad/pubspec_overrides.yaml',
+        'example/dartpad/pubspec.lock',
         '.dart_tool',
         '.github',
       ]) {

@@ -11,12 +11,16 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:html/dom.dart' as html;
+import 'package:html/parser.dart' as html_parser;
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:llamadart/src/web_setup/web_bridge_setup.dart';
+import 'package:markdown/markdown.dart' as md;
 
 /// The file whose default decides what a fresh vendoring run downloads.
 import '../release/pr_changelog.dart';
 import 'check_released_changelog_sections.dart';
+import 'release_note_case_folding.dart';
 
 const String bridgeTagSourcePath = 'scripts/fetch_webgpu_bridge_assets.sh';
 
@@ -496,21 +500,20 @@ final RegExp _runtimeBaselineParagraph = RegExp(
 /// The runtime tags a `Runtime baseline:` paragraph states, each read from the
 /// source that pins it. A missing group fails, so a reworded paragraph cannot
 /// disable the check.
-final List<({String label, RegExp claim, RegExp source})>
-_runtimeBaselineClaims = <({String label, RegExp claim, RegExp source})>[
+final _runtimeBaselineClaims = [
   (
     label: 'native llama.cpp',
-    claim: RegExp(r'native llama\.cpp `([^`]+)`'),
+    wording: 'native llama.cpp',
     source: _nativeLlamaCppTag,
   ),
   (
     label: 'native LiteRT-LM',
-    claim: RegExp(r'native LiteRT-LM (?:uses|stays) `([^`]+)`'),
+    wording: 'native LiteRT-LM uses',
     source: RegExp(r"const liteRtLmReleaseTag = '([^']+)';"),
   ),
   (
     label: 'stable-diffusion',
-    claim: RegExp(r'stable-diffusion (?:uses|stays) `([^`]+)`'),
+    wording: 'stable-diffusion uses',
     source: RegExp(r"const stableDiffusionReleaseTag = '([^']+)';"),
   ),
 ];
@@ -580,7 +583,9 @@ List<String> findRuntimeBaselineDrift(Directory repoRoot) {
     }
     final paragraph = paragraphs.single.group(0)!;
     for (final claim in _runtimeBaselineClaims) {
-      final found = claim.claim.firstMatch(paragraph)?.group(1);
+      final found = RegExp(
+        '${RegExp.escape(claim.wording)} `([^`]+)`',
+      ).firstMatch(paragraph)?[1];
       if (found == null) {
         problems.add(
           '$path: the Runtime baseline paragraph no longer states the '
@@ -1192,6 +1197,8 @@ const List<String> tagHistoryFiles = <String>[
   'CHANGELOG.md',
   'doc/changelog_archive.md',
   'doc/multimodal_embeddings_web.md',
+  // Register with bridgeTagPins once #2153 makes this tag canonical.
+  'packages/genkit_llamadart/example/dartpad/lib/bridge_bootstrap_web.dart',
   'website/docs/changelog/recent-releases.md',
   'test/e2e/webgpu/fixtures/single_thread_legacy_assets_url.txt',
   'test/fixtures/lfm2_quoted_tool_delimiter.md',
@@ -1340,15 +1347,591 @@ Future<List<String>> findBridgeProblems(
     ),
 ];
 
-final _unchangedFrom = RegExp(r'\(\s*unchanged\s+from\b', caseSensitive: false);
+final _unchangedFrom = RegExp(
+  r'\(\s*unchanged\s+(?:from|since)\b|'
+  r'\bunchanged\s+(?:from|since)\s+v?\d+\.\d+\.\d+\b',
+  caseSensitive: false,
+);
+final _preparedBridgeWording = RegExp('WebGPU bridge assets|default WebGPU');
+final _releaseWhitespace = RegExp(r'\s+');
+final _blockIndent = RegExp(
+  r'^[ \t]*(?:>[ \t]*|(?:[-+*]|[0-9]{1,9}[.)])[ \t]+)*',
+);
+final _footnoteWhitespace = RegExp(r'[ \t\r\n]+');
+final _footnoteEdgeWhitespace = RegExp(r'^[ \t\r\n]+|[ \t\r\n]+$');
+final _anchorProtocol = RegExp(r'^([^/:]*):');
+const _anchorProtocols = {
+  'http',
+  'https',
+  'mailto',
+  'xmpp',
+  'github-windows',
+  'github-mac',
+};
 
-String _stripVerifiedRuntimeRetention(
+String _expandBlockTabs(String line) {
+  final firstTab = line.indexOf('\t');
+  if (firstTab < 0) return line;
+  final end = _blockIndent.matchAsPrefix(line)!.end;
+  if (firstTab >= end) return line;
+  // Count container markers in the source column before the parser removes them.
+  final indent = StringBuffer(line.substring(0, firstTab));
+  var column = firstTab;
+  for (var i = firstTab; i < end; i++) {
+    if (line[i] == '\t') {
+      final spaces = 4 - column % 4;
+      indent.write(' ' * spaces);
+      column += spaces;
+    } else {
+      indent.write(line[i]);
+      column++;
+    }
+  }
+  return '$indent${line.substring(end)}';
+}
+
+String _normalizeFootnoteLabel(String label) {
+  final folded = foldReleaseNoteLabel(label);
+  return folded
+      .replaceAll(_footnoteEdgeWhitespace, '')
+      .replaceAll(_footnoteWhitespace, ' ');
+}
+
+const _markdownProseTags = {
+  'p',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'th',
+  'td',
+};
+const _markdownContainers = {
+  'blockquote',
+  'ol',
+  'ul',
+  'li',
+  'table',
+  'thead',
+  'tbody',
+  'tr',
+};
+const _htmlContextTags = {'pre', ..._markdownContainers, 'th', 'td'};
+const _markdownBlockTags = {
+  ..._markdownProseTags,
+  ..._markdownContainers,
+  'pre',
+  'hr',
+  'div',
+};
+const _htmlBlockTags = {
+  ..._markdownBlockTags,
+  'address',
+  'article',
+  'aside',
+  'caption',
+  'center',
+  'dd',
+  'details',
+  'dialog',
+  'dir',
+  'dl',
+  'dt',
+  'fieldset',
+  'figcaption',
+  'figure',
+  'footer',
+  'form',
+  'header',
+  'hgroup',
+  'main',
+  'menu',
+  'nav',
+  'search',
+  'section',
+  'summary',
+  'tfoot',
+};
+// GFM escapes these tags before they can change HTML tokenization.
+final _gfmFilteredTag = RegExp(
+  r'<(?=/?(?:title|textarea|style|xmp|iframe|noembed|noframes|script|plaintext)'
+  r'(?:[ \t\r\n\f/>]))',
+  caseSensitive: false,
+);
+final _versionCodeSpan = RegExp(
+  r'^v?\d+\.\d+\.\d+(?:[-+][\w.+-]+)?$',
+  caseSensitive: false,
+);
+
+class _ReleaseHeading extends md.Element {
+  _ReleaseHeading(List<md.Node> children) : super('h2', children);
+}
+
+class _ReleaseHeadingSyntax extends md.HeaderSyntax {
+  const _ReleaseHeadingSyntax();
+
+  static final _levelTwo = RegExp(r'^ {0,3}##[ \t]');
+
+  @override
+  bool canParse(md.BlockParser parser) =>
+      super.canParse(parser) && _levelTwo.hasMatch(parser.current.content);
+
+  @override
+  md.Node parse(md.BlockParser parser) {
+    final heading = super.parse(parser) as md.Element;
+    return _ReleaseHeading(heading.children!);
+  }
+}
+
+class _ReleaseFootnote extends md.Element {
+  _ReleaseFootnote(this.label, List<md.Node> children) : super('li', children);
+
+  final String label;
+}
+
+class _QuotedLine extends md.Line {
+  _QuotedLine(super.content);
+}
+
+class _ReleaseBlockquoteSyntax extends md.BlockquoteSyntax {
+  const _ReleaseBlockquoteSyntax();
+
+  static final _codeFence = md.FencedCodeBlockSyntax().pattern;
+  static final _indent = md.CodeBlockSyntax().pattern;
+
+  @override
+  md.Node parse(md.BlockParser parser) {
+    final (:lines, :lazy) = _parseQuotedLines(parser);
+    final children = md.BlockParser(
+      lines,
+      parser.document,
+    ).parseLines(disabledSetextHeading: lazy, parentSyntax: this);
+    return md.Element('blockquote', children);
+  }
+
+  ({List<md.Line> lines, bool lazy}) _parseQuotedLines(md.BlockParser parser) {
+    final lines = <md.Line>[];
+    var lazy = false;
+    while (!parser.isDone) {
+      final current = parser.current;
+      final content = current.content;
+      if (pattern.hasMatch(content)) {
+        var markerEnd = content.indexOf('>') + 1;
+        if (content.startsWith(' ', markerEnd) ||
+            content.startsWith('\t', markerEnd)) {
+          markerEnd++;
+        }
+        lines.add(_QuotedLine(content.substring(markerEnd)));
+        lazy = false;
+      } else {
+        final lastLine = lines.last;
+        final otherMatched = parser.blockSyntaxes.firstWhere(
+          (syntax) => syntax.canParse(parser),
+        );
+        if (lastLine.isBlankLine ||
+            _codeFence.hasMatch(lastLine.content) ||
+            (otherMatched is! md.ParagraphSyntax &&
+                !(otherMatched is md.CodeBlockSyntax &&
+                    !_indent.hasMatch(lastLine.content)))) {
+          break;
+        }
+        lines.add(current);
+        lazy = true;
+      }
+      parser.advance();
+    }
+    return (lines: lines, lazy: lazy);
+  }
+}
+
+class _ReleaseFootnoteSyntax extends md.FootnoteDefSyntax {
+  const _ReleaseFootnoteSyntax();
+
+  @override
+  md.Node parse(md.BlockParser parser) {
+    final current = parser.current.content;
+    final match = pattern.firstMatch(current)!;
+    final label = _normalizeFootnoteLabel(match[2]!);
+    (parser.document as _ReleaseMarkdown).definedFootnotes.add(label);
+    final firstContent = current.substring(match.end);
+    parser.advance();
+    final lines = [
+      md.Line(firstContent),
+      ..._parseFootnoteLines(
+        parser,
+        startAfterBlank: firstContent.trim().isEmpty,
+      ),
+    ];
+    final children = md.BlockParser(lines, parser.document).parseLines();
+    // Retain the definition's position so it can be attributed to its release.
+    return _ReleaseFootnote(label, children);
+  }
+
+  List<md.Line> _parseFootnoteLines(
+    md.BlockParser parser, {
+    required bool startAfterBlank,
+  }) {
+    final lines = <md.Line>[];
+    var shouldBeBlock = startAfterBlank;
+    final interruptingSyntaxes = parser.blockSyntaxes.where(
+      (syntax) =>
+          syntax is! md.EmptyBlockSyntax && syntax.pattern.pattern.isNotEmpty,
+    );
+    while (!parser.isDone) {
+      final current = parser.current;
+      final line = current.content;
+      if (line.startsWith('    ')) {
+        final rest = line.substring(4);
+        lines.add(md.Line(rest));
+        shouldBeBlock = rest.trim().isEmpty;
+      } else if (line.isEmpty && current is! _QuotedLine) {
+        // GFM keeps an unindented blank only if the raw line was empty.
+        lines.add(current);
+        shouldBeBlock = true;
+      } else if (current.isBlankLine ||
+          shouldBeBlock ||
+          interruptingSyntaxes.any((syntax) => syntax.pattern.hasMatch(line))) {
+        break;
+      } else {
+        lines.add(current);
+      }
+      parser.advance();
+    }
+    return lines;
+  }
+}
+
+final _footnoteEntity = RegExp(
+  r'&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6});',
+);
+final _footnoteNamedEntities = md.Document(
+  encodeHtml: false,
+  withDefaultBlockSyntaxes: false,
+  withDefaultInlineSyntaxes: false,
+  inlineSyntaxes: [md.DecodeHtmlSyntax()],
+);
+final _backtickRun = RegExp(r'`+');
+final _footnoteNonTextTag = RegExp(
+  r'<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\x00-\x20]*>'
+  '|${md.EmailAutolinkSyntax().pattern.pattern}'
+  r'|<!--(?:>|->|[\s\S]*?-->)'
+  '|${md.InlineHtmlSyntax().pattern.pattern}',
+);
+
+String _decodeCommonMarkEntity(String entity) {
+  if (!entity.startsWith('&#')) {
+    return _footnoteNamedEntities.parseInline(entity).single.textContent;
+  }
+  final isHex = entity[2].toLowerCase() == 'x';
+  final value = int.parse(
+    entity.substring(isHex ? 3 : 2, entity.length - 1),
+    radix: isHex ? 16 : 10,
+  );
+  if (value == 0 || value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) {
+    return '\uFFFD';
+  }
+  return String.fromCharCode(value);
+}
+
+bool _isAsciiPunctuation(int code) =>
+    (code >= 0x21 && code <= 0x2f) ||
+    (code >= 0x3a && code <= 0x40) ||
+    (code >= 0x5b && code <= 0x60) ||
+    (code >= 0x7b && code <= 0x7e);
+
+String? _extractFootnoteReferenceLabel(String raw) {
+  final label = StringBuffer();
+  var sawCaret = false;
+  var index = 0;
+  // GFM takes adjacent inline text before processing emphasis and stops at the
+  // first break, code span, autolink, or raw HTML node.
+  while (index < raw.length) {
+    var token = raw[index];
+    index++;
+    if (token == '\r' || token == '\n') break;
+
+    if (token == r'\' && index < raw.length) {
+      final next = raw[index];
+      if (next == '\r' || next == '\n') break;
+      if (_isAsciiPunctuation(raw.codeUnitAt(index))) {
+        token = next;
+        index++;
+      }
+    } else if (token == '&') {
+      final entity = _footnoteEntity.matchAsPrefix(raw, index - 1);
+      if (entity != null) {
+        token = _decodeCommonMarkEntity(entity[0]!);
+        index = entity.end;
+      }
+    } else if (token == '`') {
+      final run = _backtickRun.matchAsPrefix(raw, index - 1)!;
+      final length = run.end - run.start;
+      if (_backtickRun
+          .allMatches(raw, run.end)
+          .any((candidate) => candidate.end - candidate.start == length)) {
+        break;
+      }
+      token = run[0]!;
+      index = run.end;
+    } else if (token == '<' &&
+        _footnoteNonTextTag.matchAsPrefix(raw, index - 1) != null) {
+      break;
+    }
+
+    if (!sawCaret) {
+      if (!token.startsWith('^') ||
+          (token.length == 1 && index == raw.length)) {
+        return null;
+      }
+      sawCaret = true;
+      token = token.substring(1);
+    }
+    label.write(token);
+  }
+  return sawCaret ? label.toString() : null;
+}
+
+class _ReleaseLinkSyntax extends md.LinkSyntax {
+  @override
+  Iterable<md.Node>? close(
+    md.InlineParser parser,
+    covariant md.SimpleDelimiter opener,
+    md.Delimiter? closer, {
+    String? tag,
+    required List<md.Node> Function() getChildren,
+  }) {
+    final closePos = parser.pos;
+    final link = super.close(
+      parser,
+      opener,
+      closer,
+      tag: tag,
+      getChildren: getChildren,
+    );
+    if (link != null) return link;
+
+    final label = _extractFootnoteReferenceLabel(
+      parser.source.substring(opener.endPos, closePos),
+    );
+    if (label == null) return null;
+
+    // A failed lookup may have scanned past the first closing bracket.
+    parser.pos = closePos;
+    getChildren();
+    final document = parser.document as _ReleaseMarkdown;
+    final folded = _normalizeFootnoteLabel(label);
+    if (folded.isNotEmpty &&
+        utf8.encode(label).length <= 999 &&
+        document.definedFootnotes.contains(folded)) {
+      document.referencedFootnotes.add(folded);
+      return [
+        md.Element('sup', [md.Element.text('a', '1')]),
+      ];
+    }
+    final literal = const HtmlEscape(HtmlEscapeMode.element).convert(label);
+    return [md.Text('[^$literal]')];
+  }
+}
+
+class _ReleaseMarkdown extends md.Document {
+  _ReleaseMarkdown()
+    : super(
+        extensionSet: md.ExtensionSet.gitHubFlavored,
+        blockSyntaxes: const [
+          _ReleaseHeadingSyntax(),
+          _ReleaseFootnoteSyntax(),
+          _ReleaseBlockquoteSyntax(),
+        ],
+        encodeHtml: true,
+        inlineSyntaxes: [
+          // markdown 7.3.1's inline HTML syntax misses these legal comments.
+          md.TextSyntax(r'<!--(?:>|->|[\s\S]*?-->)', startCharacter: 0x3c),
+          md.TextSyntax(r'!(?=\[\^)', startCharacter: 0x21),
+          _ReleaseLinkSyntax(),
+        ],
+      );
+
+  final definedFootnotes = <String>{};
+  final referencedFootnotes = <String>{};
+}
+
+Iterable<_ReleaseFootnote> _footnoteDefinitions(Iterable<md.Node> nodes) sync* {
+  for (final node in nodes.whereType<md.Element>()) {
+    if (node is _ReleaseFootnote) yield node;
+    if (node.children case final children?) {
+      yield* _footnoteDefinitions(children);
+    }
+  }
+}
+
+List<md.Element> _renderedReleaseFootnotes(
+  List<md.Node> section,
+  List<md.Node> document,
+  Set<String> referenceLabels,
+) {
+  if (referenceLabels.isEmpty) return [];
+  final firstDefinitions = <String, _ReleaseFootnote>{};
+  for (final definition in _footnoteDefinitions(document)) {
+    firstDefinitions.putIfAbsent(definition.label, () => definition);
+  }
+  final owned = _footnoteDefinitions(section).toSet();
+  return [
+    for (final label in referenceLabels)
+      if (firstDefinitions[label] case final definition?
+          when owned.contains(definition))
+        md.Element('li', definition.children),
+  ];
+}
+
+class _ReleaseHtmlText {
+  _ReleaseHtmlText({this.includeTitles = false});
+
+  final bool includeTitles;
+  String _openContext = '';
+
+  List<String> read(String fragment) {
+    final units = <String>[];
+    final text = StringBuffer();
+
+    void addUnit(String value) {
+      final unit = value.replaceAll(_releaseWhitespace, ' ').trim();
+      if (unit.isNotEmpty) units.add(unit);
+    }
+
+    void flush() {
+      addUnit(text.toString());
+      text.clear();
+    }
+
+    void visit(html.Node node, {bool literal = false}) {
+      if (node is html.Text) {
+        if (!literal) text.write(node.data);
+      } else if (node is html.Element) {
+        final tag = node.localName;
+        if (tag == 'br') {
+          if (!literal) text.write(' ');
+          return;
+        }
+        if (includeTitles &&
+            ((tag == 'a' && _retainsAnchor(node)) || tag == 'img')) {
+          if (node.attributes['title'] case final title?) addUnit(title);
+        }
+        if (tag == 'img') {
+          if (!literal) text.write(node.attributes['alt'] ?? '');
+          return;
+        }
+        final code = tag == 'code' && !_versionCodeSpan.hasMatch(node.text);
+        final block = !literal && (_htmlBlockTags.contains(tag) || code);
+        if (block) flush();
+        for (final child in node.nodes) {
+          visit(child, literal: literal || tag == 'pre' || code);
+        }
+        if (block) flush();
+      }
+    }
+
+    final parser = html_parser.HtmlParser(
+      _openContext + fragment.replaceAll(_gfmFilteredTag, '&lt;'),
+    );
+    parser.parseFragment().nodes.forEach(visit);
+    // Preserve only pre and container context across fragments. HTML end tags
+    // in a container can close an inherited pre, and container end tags can
+    // close a pre opened inside them.
+    final openTags = parser.tree.openElements
+        .map((node) => node.localName)
+        .toList();
+    final context = openTags.lastIndexWhere(_htmlContextTags.contains);
+    _openContext = context < 0
+        ? ''
+        : openTags.skip(1).take(context).map((tag) => '<$tag>').join();
+    flush();
+    return units;
+  }
+}
+
+bool _retainsAnchor(html.Element anchor) {
+  final attributes = anchor.attributes;
+  if (attributes.containsKey('id') || attributes.containsKey('name')) {
+    return true;
+  }
+  final href = attributes['href'];
+  if (href == null) return false;
+  final protocol = _anchorProtocol.firstMatch(href)?[1];
+  return protocol == null || _anchorProtocols.contains(protocol.toLowerCase());
+}
+
+bool _isMarkdownBlock(md.Node node) =>
+    node is md.Element && _markdownBlockTags.contains(node.tag);
+
+({List<md.Node> claim, Iterable<md.Node> rest}) _bridgeItemParts(
+  md.Element item,
+) {
+  final children = item.children!;
+  final first = children.firstOrNull;
+  if (first is md.Element && first.tag == 'p') {
+    return (claim: first.children!, rest: children.skip(1));
+  }
+  final claim = children.takeWhile((node) => !_isMarkdownBlock(node)).toList();
+  return (claim: claim, rest: children.skip(claim.length));
+}
+
+Iterable<String> _releaseTextUnits(
+  Iterable<md.Node> nodes,
+  _ReleaseHtmlText htmlText, {
+  md.Element? verifiedBridge,
+  md.Element? verifiedBaseline,
+  bool inListItem = false,
+}) sync* {
+  final inlineRun = <md.Node>[];
+  for (final node in nodes) {
+    if (node is _ReleaseFootnote) continue;
+    if (inListItem && !_isMarkdownBlock(node)) {
+      inlineRun.add(node);
+      continue;
+    }
+    if (inlineRun.isNotEmpty) {
+      yield* htmlText.read(md.renderToHtml(inlineRun));
+      inlineRun.clear();
+    }
+    if (identical(node, verifiedBaseline)) continue;
+    if (node is md.Text) {
+      yield* htmlText.read(node.textContent);
+    } else if (node is md.Element && node.tag != 'pre') {
+      final children = identical(node, verifiedBridge)
+          ? _bridgeItemParts(node).rest
+          : node.children ?? const <md.Node>[];
+      final container = _htmlContextTags.contains(node.tag);
+      if (container) htmlText.read('<${node.tag}>');
+      if (_markdownProseTags.contains(node.tag)) {
+        yield* htmlText.read(md.renderToHtml(children.toList()));
+      } else {
+        yield* _releaseTextUnits(
+          children,
+          htmlText,
+          verifiedBridge: verifiedBridge,
+          verifiedBaseline: verifiedBaseline,
+          inListItem: node.tag == 'li',
+        );
+      }
+      if (container) htmlText.read('</${node.tag}>');
+    }
+  }
+  if (inlineRun.isNotEmpty) {
+    yield* htmlText.read(md.renderToHtml(inlineRun));
+  }
+}
+
+String _stripVerifiedRuntimeRetentionHtml(
   String baseline,
   String previousNativePins,
   String suffix,
 ) {
   for (final claim in _runtimeBaselineClaims) {
-    final shown = claim.claim.firstMatch(baseline);
+    final shown = RegExp(
+      '${RegExp.escape(claim.wording)} <code>([^<]+)</code>',
+    ).firstMatch(baseline);
     if (shown == null || !baseline.startsWith(suffix, shown.end)) continue;
     final previous = claim.source.allMatches(previousNativePins).singleOrNull;
     if (previous?[1] == shown[1]) {
@@ -1408,57 +1991,102 @@ List<String> findPreparedReleaseNotesDrift(
       manifest: bridgeManifestSha256,
     );
     final unchangedSuffix = ' (unchanged from $previousVersion)';
+    final bridgeUnchanged = bridge == previousBridge;
     for (final (index, file) in files.indexed) {
       final path = releasedChangelogs[index];
-      final sections = ChangelogHistory.parse(file.readAsStringSync()).sections;
+      final source = file.readAsStringSync();
+      final sections = ChangelogHistory.parse(source).sections;
       if (sections.keys.first != version) {
         problems.add('$path must begin with the exact release $version.');
         continue;
       }
-      final visibleLines = visibleReleaseLines(sections.values.first).toList();
-      final section = visibleLines.join('\n');
-      final article = index == 0 ? 'the ' : '';
-      final claims = _bridgePinBullet
-          .allMatches(section)
-          .map((match) => match[0]!.trimRight())
+      final markdown = _ReleaseMarkdown();
+      final document = markdown.parseLines(
+        const LineSplitter().convert(source).map(_expandBlockTabs).toList(),
+      );
+      bool isReleaseHeading(md.Node node) =>
+          node is _ReleaseHeading && sections.containsKey(node.textContent);
+
+      final section = document
+          .skipWhile(
+            (node) => !isReleaseHeading(node) || node.textContent != version,
+          )
+          .skip(1)
+          .takeWhile((node) => !isReleaseHeading(node))
           .toList();
-      final expected = bridge == previousBridge
-          ? '- Keep ${article}default WebGPU bridge assets at `$bridge`$unchangedSuffix.'
-          : '- Aligned ${article}default WebGPU bridge assets to `$bridge`';
-      if (claims.length != 1 ||
-          (bridge == previousBridge
-              ? claims.single != expected
-              : !RegExp(
-                  '^${RegExp.escape(expected)}(?:[ .,:].*)?\$',
-                ).hasMatch(claims.single))) {
+      final article = index == 0 ? 'the ' : '';
+      final bridgeClaim = [
+        for (final list in section.whereType<md.Element>())
+          if (list.tag == 'ul')
+            for (final item in list.children!.whereType<md.Element>())
+              if (item.tag == 'li' &&
+                  _preparedBridgeWording.hasMatch(
+                    _ReleaseHtmlText()
+                        .read(md.renderToHtml(_bridgeItemParts(item).claim))
+                        .join(' '),
+                  ))
+                item,
+      ].singleOrNull;
+      final expectedBridgeHtml = md.renderToHtml(
+        markdown.parseInline(
+          bridgeUnchanged
+              ? 'Keep ${article}default WebGPU bridge assets at `$bridge`$unchangedSuffix.'
+              : 'Aligned ${article}default WebGPU bridge assets to `$bridge`',
+        ),
+      );
+      final actualBridgeHtml = bridgeClaim == null
+          ? null
+          : md.renderToHtml(_bridgeItemParts(bridgeClaim).claim);
+      final matchingBridge =
+          actualBridgeHtml != null &&
+          (bridgeUnchanged
+              ? actualBridgeHtml == expectedBridgeHtml
+              : RegExp(
+                  '^${RegExp.escape(expectedBridgeHtml)}(?:[ .,:].*)?\$',
+                  dotAll: true,
+                ).hasMatch(actualBridgeHtml));
+      if (!matchingBridge) {
         problems.add(
           '$path must contain exactly one matching WebGPU bridge claim for this release.',
         );
       }
-      final baseline = _runtimeBaselineParagraph
-          .allMatches(section)
-          .singleOrNull?[0];
+      final baseline = section.whereType<md.Element>().where((node) {
+        return node.tag == 'p' &&
+            _ReleaseHtmlText()
+                .read(md.renderToHtml(node.children!))
+                .join(' ')
+                .startsWith('Runtime baseline');
+      }).singleOrNull;
       final matchingBaseline =
           baseline != null &&
-          _stripVerifiedRuntimeRetention(
-                baseline,
+          _stripVerifiedRuntimeRetentionHtml(
+                md.renderToHtml(baseline.children!),
                 previousNativePins,
                 unchangedSuffix,
               ) ==
-              expectedBaseline;
+              md.renderToHtml(markdown.parseInline(expectedBaseline));
       if (!matchingBaseline) {
         problems.add(
           '$path must contain one complete Runtime baseline matching the candidate pins.',
         );
       }
-      final unverified = visibleLines
-          .where(
-            (line) =>
-                (!matchingBaseline || line != baseline) &&
-                (bridge != previousBridge || line.trimRight() != expected),
-          )
-          .join('\n');
-      if (_unchangedFrom.hasMatch(unverified)) {
+      final footnotes = _renderedReleaseFootnotes(
+        section,
+        document,
+        markdown.referencedFootnotes,
+      );
+      if (_releaseTextUnits(
+            section,
+            _ReleaseHtmlText(includeTitles: true),
+            verifiedBridge: bridgeUnchanged && matchingBridge
+                ? bridgeClaim
+                : null,
+            verifiedBaseline: matchingBaseline ? baseline : null,
+          ).any(_unchangedFrom.hasMatch) ||
+          _releaseTextUnits(
+            footnotes,
+            _ReleaseHtmlText(includeTitles: true),
+          ).any(_unchangedFrom.hasMatch)) {
         problems.add(
           '$path contains an (unchanged from ...) claim that does not match the previous release.',
         );

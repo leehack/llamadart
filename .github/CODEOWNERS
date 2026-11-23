@@ -66,6 +66,7 @@ test/unit/tooling/release_prep_heading_test.dart @leehack
 tool/release/companion_pub_preflight.dart @leehack
 test/unit/tooling/pub_content_limits_test.dart @leehack
 tool/testing/check_webgpu_bridge_tag.dart @leehack
+tool/testing/release_note_case_folding.dart @leehack
 tool/testing/check_native_release_digests.dart @leehack
 tool/native/sync_native_release_pins.py @leehack
 tool/native/test_sync_native_release_pins.py @leehack

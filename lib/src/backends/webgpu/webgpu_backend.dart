@@ -5,7 +5,6 @@ import 'dart:js_interop_unsafe';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
 import 'package:web/web.dart';
 
 import '../../core/engine/engine_observer.dart';
@@ -39,13 +38,6 @@ import 'webgpu_speculative.dart';
 @JS('Object.keys')
 external JSArray _objectKeys(JSObject obj);
 
-@JS('WeakMap')
-extension type _BridgeIdentities._(JSObject _) implements JSObject {
-  external factory _BridgeIdentities();
-  external JSNumber? get(JSObject constructor);
-  external void set(JSObject constructor, JSNumber identity);
-}
-
 /// Optional `createCompletion` options the loaded bridge core applies, as its
 /// `getCompletionCapabilities()` reports them.
 typedef _WebGpuCompletionCapabilities = ({
@@ -59,8 +51,6 @@ typedef _WebGpuCompletionCapabilities = ({
   bool lazyGrammar,
   Set<SpeculativeDecodingStrategy> speculativeDecoding,
 });
-
-typedef _CoreLoaderKeys = ({Digest wasm32, Digest? memory64});
 
 const String _webTtsStreamingUnsupportedReason =
     'Streaming text-to-speech is not available on Web: the WebGPU bridge '
@@ -115,15 +105,6 @@ class WebGpuLlamaBackend
       'Single-thread GGUF loading needs llama-web-bridge-assets v0.1.93+ and '
       'matching single-thread core assets. Run dart run llamadart:web_setup '
       'or serve the page with cross-origin isolation (COOP/COEP).';
-  static const String _coreLoaderUnavailable =
-      'The WebGPU core loader is unavailable. Reload the page or use a '
-      'different core loader URL.';
-  // A rejected dynamic import stays in the browser's module map after disposal.
-  static final Set<Digest> _failedCoreLoaders = {};
-  static final Set<_CoreLoaderKeys> _failedUnidentifiedCoreLoaders = {};
-  static final _constructorIdentities = _BridgeIdentities();
-  static final _factoryIdentities = Expando<int>();
-  static int _nextBridgeIdentity = 0;
   static const int _maxInt32 = 0x7fffffff;
   static const _WebGpuCompletionCapabilities _noCompletionCapabilities = (
     presencePenalty: false,
@@ -151,7 +132,6 @@ class WebGpuLlamaBackend
   final bool? _promptSpeechToTextSupportOverride;
 
   LlamaWebGpuBridge? _bridge;
-  _CoreLoaderKeys? _coreLoaderKeys;
   bool _usingBridge = false;
   bool? _activeJsBackedModelStaging;
   bool _isReady = false;
@@ -361,33 +341,50 @@ class WebGpuLlamaBackend
   }
 
   WebGpuBridgeConfig _createBridgeConfig({
-    required int Function() bridgeIdentity,
     required bool allowSingleThreadCore,
     required bool? jsBackedModelStaging,
   }) {
+    final assetUrls = _bridgeAssetUrls(
+      singleThread: allowSingleThreadCore,
+    ).toList();
+    void log(LlamaLogLevel level, JSAny? message) {
+      if (!_shouldEmitConsole(level)) return;
+      if (message.isA<JSString>() || message.isA<JSObject>()) {
+        final text = message.isA<JSString>()
+            ? (message as JSString).toDart
+            : message as JSObject;
+        _emitConsoleText(
+          level,
+          webGpuBridgeErrorText(text, sourceUrls: assetUrls),
+        );
+      } else {
+        _emitConsole(level, message);
+      }
+    }
+
     final logger = JSObject();
     logger.setProperty(
       'debug'.toJS,
       (JSAny? msg) {
-        _emitConsole(LlamaLogLevel.debug, msg);
+        log(LlamaLogLevel.debug, msg);
       }.toJS,
     );
     logger.setProperty(
       'log'.toJS,
       (JSAny? msg) {
-        _emitConsole(LlamaLogLevel.info, msg);
+        log(LlamaLogLevel.info, msg);
       }.toJS,
     );
     logger.setProperty(
       'warn'.toJS,
       (JSAny? msg) {
-        _emitConsole(LlamaLogLevel.warn, msg);
+        log(LlamaLogLevel.warn, msg);
       }.toJS,
     );
     logger.setProperty(
       'error'.toJS,
       (JSAny? msg) {
-        _emitConsole(LlamaLogLevel.error, msg);
+        log(LlamaLogLevel.error, msg);
       }.toJS,
     );
 
@@ -412,37 +409,6 @@ class WebGpuLlamaBackend
     final preferMemory64 =
         _preferMemory64Override ??
         _getGlobalOptionalBool('__llamadartBridgePreferMemory64');
-    final moduleUrl =
-        _getGlobalString('__llamadartBridgeModuleUrl') ?? _bridgeScriptUrl;
-    Digest loaderKey(String? reference, String variant) {
-      if (reference != null) {
-        try {
-          return sha256.convert(utf8.encode(URL(reference).href));
-        } catch (_) {
-          // Relative imports resolve inside the bridge bundle or worker.
-        }
-      }
-      // The bridge resolves its own defaults, which may be rewritten by a
-      // bundler. Include the constructor when the exact URL is unavailable.
-      final identity = jsonEncode([
-        bridgeIdentity(),
-        moduleUrl,
-        workerModuleUrl,
-        reference,
-        if (reference == null) ...[allowSingleThreadCore, variant],
-      ]);
-      return sha256.convert(utf8.encode(identity));
-    }
-
-    _coreLoaderKeys = (
-      wasm32: loaderKey(coreModuleUrl, 'wasm32'),
-      memory64:
-          preferMemory64 == false ||
-              (coreModuleUrl != null && coreModuleUrlMem64 == null)
-          ? null
-          : loaderKey(coreModuleUrlMem64, 'memory64'),
-    );
-    _checkCoreLoaderFailures(allowSingleThreadCore: allowSingleThreadCore);
     final threadPoolSizeHint = _getGlobalPositiveInt(
       '__llamadartBridgeThreadPoolSize',
     );
@@ -472,40 +438,6 @@ class WebGpuLlamaBackend
       config.jsBackedModelStaging = jsBackedModelStaging;
     }
     return config;
-  }
-
-  LlamaUnsupportedException _coreLoaderError({
-    required bool allowSingleThreadCore,
-  }) => LlamaUnsupportedException(
-    allowSingleThreadCore
-        ? '$_coreLoaderUnavailable $_singleThreadCoreUnavailable'
-        : _coreLoaderUnavailable,
-  );
-
-  void _rememberCoreLoaderFailure(String? variant) {
-    final keys = _coreLoaderKeys;
-    if (keys == null) return;
-    final failed = switch (variant) {
-      'wasm32' => keys.wasm32,
-      'memory64' => keys.memory64,
-      _ => keys.memory64 == null ? keys.wasm32 : null,
-    };
-    if (failed == null) {
-      _failedUnidentifiedCoreLoaders.add(keys);
-    } else {
-      _failedCoreLoaders.add(failed);
-    }
-  }
-
-  void _checkCoreLoaderFailures({required bool allowSingleThreadCore}) {
-    final keys = _coreLoaderKeys;
-    if (keys != null &&
-        (_failedUnidentifiedCoreLoaders.contains(keys) ||
-            (_failedCoreLoaders.contains(keys.wasm32) &&
-                (keys.memory64 == null ||
-                    _failedCoreLoaders.contains(keys.memory64))))) {
-      throw _coreLoaderError(allowSingleThreadCore: allowSingleThreadCore);
-    }
   }
 
   Future<void> _waitForPreloadedBridge() async {
@@ -539,8 +471,6 @@ class WebGpuLlamaBackend
     if (factory != null) {
       _bridge = factory(
         _createBridgeConfig(
-          bridgeIdentity: () =>
-              _factoryIdentities[factory] ??= ++_nextBridgeIdentity,
           allowSingleThreadCore: allowSingleThreadCore,
           jsBackedModelStaging: jsBackedModelStaging,
         ),
@@ -585,7 +515,6 @@ class WebGpuLlamaBackend
     }
     _bridge = LlamaWebGpuBridge(
       _createBridgeConfig(
-        bridgeIdentity: () => _constructorIdentity(constructor as JSObject),
         allowSingleThreadCore: allowSingleThreadCore,
         jsBackedModelStaging: jsBackedModelStaging,
       ),
@@ -593,19 +522,10 @@ class WebGpuLlamaBackend
     return true;
   }
 
-  static int _constructorIdentity(JSObject constructor) {
-    final existing = _constructorIdentities.get(constructor);
-    if (existing != null) return existing.toDartInt;
-    final identity = ++_nextBridgeIdentity;
-    _constructorIdentities.set(constructor, identity.toJS);
-    return identity;
-  }
-
   Future<void> _safeDisposeBridge() async {
     final bridge = _bridge;
     final abortController = _generationAbort?.controller;
     _bridge = null;
-    _coreLoaderKeys = null;
     _singleThreadPreflightNotes = null;
     _activeJsBackedModelStaging = null;
     _generationAbort = null;
@@ -647,10 +567,7 @@ class WebGpuLlamaBackend
         _activeJsBackedModelStaging != jsBackedModelStaging) {
       await _safeDisposeBridge();
     }
-    if (_usingBridge && _bridge != null) {
-      _checkCoreLoaderFailures(allowSingleThreadCore: allowSingleThreadCore);
-      return;
-    }
+    if (_usingBridge && _bridge != null) return;
 
     final ready = await _ensureBridge(
       allowSingleThreadCore: allowSingleThreadCore,
@@ -769,6 +686,7 @@ class WebGpuLlamaBackend
       _bridgeWorkerUrl,
       if (!singleThread) _bridgeWasmUrl,
       _getGlobalString('__llamadartBridgeModuleUrl'),
+      _getGlobalString('__llamadartBridgeAssetSource'),
       _getGlobalString('__llamadartBridgeWorkerUrl'),
       _getGlobalString('__llamadartBridgeCoreModuleUrl$suffix'),
       _getGlobalString('__llamadartBridgeCoreModuleUrlMem64$suffix'),
@@ -1685,7 +1603,8 @@ class WebGpuLlamaBackend
           } catch (_) {}
           throw LlamaUnsupportedException(
             'ComputeDevice.gpu needs WebGPU for llama.cpp on the Web, but the '
-            'runtime loaded the model without GPU layers.$gpuDetail Use '
+            'runtime loaded the model without GPU layers.'
+            '${webGpuBridgeErrorText(gpuDetail, sourceUrls: sourceUrls)} Use '
             'ComputeDevice.auto or cpu.',
           );
         }
@@ -1714,21 +1633,13 @@ class WebGpuLlamaBackend
         if (webGpuCoreAssetError(e) case (
           code: 'CORE_ASSET_UNAVAILABLE',
           :final asset,
-          :final variant,
         )) {
-          if (asset == 'loader') {
-            _rememberCoreLoaderFailure(variant);
-          }
           await _safeDisposeBridge();
-          if (asset == 'loader') {
-            throw _coreLoaderError(
-              allowSingleThreadCore: allowSingleThreadCore,
-            );
-          }
           if (allowSingleThreadCore) {
             throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
           }
           final unavailable = switch (asset) {
+            'loader' => 'core loader',
             'wasm' => 'core Wasm binary',
             'worker' => 'bridge worker',
             _ => 'core asset',
@@ -3815,18 +3726,22 @@ class WebGpuLlamaBackend
     final bridge = _requireBridge();
     final metadata = bridge.getModelMetadata();
     final out = <String, String>{};
+    final assetUrls = _bridgeAssetUrls(
+      singleThread: _allowSingleThreadCore,
+    ).toList();
     if (metadata != null) {
       final keys = _objectKeys(metadata);
       for (int i = 0; i < keys.length; i++) {
         final key = (keys.getProperty(i.toJS) as JSString).toDart;
         final value = metadata.getProperty(key.toJS);
-        if (value.isA<JSString>()) {
-          out[key] = (value as JSString).toDart;
-        } else if (value.isA<JSNumber>()) {
-          out[key] = (value as JSNumber).toDartInt.toString();
-        } else {
-          out[key] = value.toString();
-        }
+        final text = value.isA<JSString>()
+            ? (value as JSString).toDart
+            : value.isA<JSNumber>()
+            ? (value as JSNumber).toDartInt.toString()
+            : value.toString();
+        out[key] = key.startsWith('llamadart.webgpu.')
+            ? webGpuBridgeErrorText(text, sourceUrls: assetUrls)
+            : text;
       }
     }
 

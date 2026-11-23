@@ -11,11 +11,13 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 import 'package:llamadart/src/hook/native_release_pins.dart';
+import 'package:llamadart/src/hook/windows_file_version.dart';
 
 import '../../../hook/build.dart' as build_hook;
 import '../../support/hook_project_root.dart';
 import '../../support/hooks_runner_layout.dart';
 import '../../support/native_bundle_cache.dart';
+import '../../support/windows_version_resource.dart';
 
 const _stableDiffusionAssetId = 'package:llamadart/stable_diffusion';
 const _primaryAssetId = 'package:llamadart/llamadart';
@@ -53,6 +55,13 @@ void main() {
     ],
     'macos-arm64': const ['libllamadart.dylib'],
     'ios-x86_64-sim': const ['libllamadart.dylib'],
+    'windows-x64': const [
+      'llamadart-windows-x64.dll',
+      'llama-windows-x64.dll',
+      'ggml-windows-x64.dll',
+      'ggml-base-windows-x64.dll',
+      'ggml-cpu-windows-x64.dll',
+    ],
     'windows-arm64': const [
       'llamadart-windows-arm64.dll',
       'llama-windows-arm64.dll',
@@ -70,9 +79,14 @@ void main() {
         'ios-arm64',
         'ios-x64-sim',
       }.contains(spec.bundle))
-        spec.bundle: spec.requiredLibraries.single,
+        spec.bundle: spec.primaryLibrary,
   };
   final liteRtLmBundles = {
+    'windows-x64': Directory(
+      project.resolve(
+        '.dart_tool/llamadart/litert_lm/$liteRtLmVersion/windows/x64',
+      ),
+    ),
     'linux-x64': Directory(
       project.resolve(
         '.dart_tool/llamadart/litert_lm/$liteRtLmVersion/linux/x64',
@@ -116,6 +130,192 @@ void main() {
   });
 
   tearDownAll(project.delete);
+
+  group('Windows Stable Diffusion libraries', () {
+    const shared = ['msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll'];
+    const codecvt = 'msvcp140_codecvt_ids.dll';
+    const primary = 'stable-diffusion.dll';
+    const companionId = '${_stableDiffusionAssetId}_msvcp140_codecvt_ids';
+    const older = (14, 44, 35211, 0);
+    const current = (14, 52, 37029, 0);
+    const newer = (14, 53, 1, 0);
+    final sd = stableDiffusionBundle('windows-x64');
+
+    Future<void> writeDlls(
+      Directory directory,
+      List<String> names,
+      WindowsFileVersion version,
+      String label,
+    ) async {
+      await directory.create(recursive: true);
+      for (final name in names) {
+        await File(
+          path.join(directory.path, name),
+        ).writeAsBytes(windowsDllWithVersion(version, label: label));
+      }
+    }
+
+    Future<void> bundle(Object runtimes, void Function(BuildOutput) check) =>
+        project.testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.windows,
+          targetArchitecture: Architecture.x64,
+          userDefines: _userDefines({
+            'llamadart_native_runtimes': runtimes,
+            'llamadart_native_backends': ['cpu'],
+            'llamadart_stable_diffusion_backends': ['cpu'],
+          }),
+          check: (_, output) => check(output),
+        );
+
+    setUp(() async {
+      await _writeLibraries(sd, {primary: 'stable-diffusion'});
+      await writeDlls(
+        nativeBundle('windows-x64'),
+        shared,
+        current,
+        'llama_cpp',
+      );
+      await markExtractedBundle(nativeBundle('windows-x64'));
+      await writeDlls(
+        liteRtLmBundles['windows-x64']!,
+        shared,
+        current,
+        'litert_lm',
+      );
+      await writeDlls(sd, [...shared, codecvt], older, 'stable_diffusion');
+    });
+
+    test(
+      'emits only the five selected DLLs for Stable Diffusion alone',
+      () async {
+        await bundle(['stable_diffusion'], (output) {
+          final assets = _windowsAssetsByFile(output);
+          expect(assets.keys, unorderedEquals([primary, ...shared, codecvt]));
+          expect(assets[primary]!.id, _stableDiffusionAssetId);
+          for (final name in [...shared, codecvt]) {
+            final id = path.basenameWithoutExtension(name);
+            expect(assets[name]!.id, '${_stableDiffusionAssetId}_$id');
+            expect(_windowsAssetVersion(assets[name]!), older);
+          }
+        });
+      },
+    );
+
+    for (final (runtimes, previousOwner, assetPrefix) in const [
+      (['llama_cpp', 'stable_diffusion'], 'llama_cpp', ''),
+      (['litert_lm', 'stable_diffusion'], 'litert_lm', 'litert_lm_'),
+      ('all', 'llama_cpp', ''),
+    ]) {
+      test(
+        '$runtimes keeps the newer shared DLLs from $previousOwner',
+        () async {
+          await bundle(runtimes, (output) {
+            final assets = _windowsAssetsByFile(output);
+            expect(assets[primary]!.id, _stableDiffusionAssetId);
+            expect(assets[codecvt]!.id, companionId);
+            expect(_windowsAssetVersion(assets[codecvt]!), older);
+            for (final name in shared) {
+              final id = path.basenameWithoutExtension(name);
+              final asset = assets[name]!;
+              expect(asset.id, 'package:llamadart/$assetPrefix$id');
+              expect(
+                File.fromUri(asset.file!).readAsBytesSync(),
+                windowsDllWithVersion(current, label: previousOwner),
+              );
+            }
+          });
+        },
+      );
+    }
+
+    for (final (sdVersion, winner, expected) in const [
+      (newer, 'stable_diffusion', newer),
+      (current, 'litert_lm', current),
+    ]) {
+      test(
+        'Stable Diffusion version $sdVersion leaves $winner bytes',
+        () async {
+          await writeDlls(sd, shared, sdVersion, 'stable_diffusion');
+          await bundle(['litert_lm', 'stable_diffusion'], (output) {
+            final assets = _windowsAssetsByFile(output);
+            for (final name in shared) {
+              final id = path.basenameWithoutExtension(name);
+              final asset = assets[name]!;
+              expect(asset.id, 'package:llamadart/litert_lm_$id');
+              expect(
+                File.fromUri(asset.file!).readAsBytesSync(),
+                windowsDllWithVersion(expected, label: winner),
+              );
+            }
+          });
+        },
+      );
+    }
+
+    test('rejects different files when a shared DLL lacks a version', () async {
+      await File(path.join(sd.path, shared.first)).writeAsString('unversioned');
+      await expectLater(
+        bundle(['litert_lm', 'stable_diffusion'], (_) => fail('must reject')),
+        throwsA(
+          isA<Exception>().having(
+            (error) => '$error',
+            'message',
+            allOf(
+              contains('LiteRT-LM'),
+              contains('stable_diffusion'),
+              contains('both ship a different `msvcp140.dll`'),
+            ),
+          ),
+        ),
+      );
+    });
+  });
+
+  test(
+    'a locked v0.4.0 Apple companion still links with upgrade guidance',
+    () async {
+      final defines = await _flutterAppleApp(
+        companions: const [_stableDiffusionCompanionName],
+        defines: {
+          'llamadart_native_runtimes': ['stable_diffusion'],
+        },
+        editManifest: (manifest) => manifest.replaceFirst(
+          'let stableDiffusionTag = "$stableDiffusionReleaseTag"',
+          'let stableDiffusionTag = "v0.4.0"',
+        ),
+      );
+      final logs = await _captureHookLog(
+        () => project.testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.iOS,
+          targetArchitecture: Architecture.arm64,
+          targetIOSSdk: IOSSdk.iPhoneOS,
+          userDefines: defines,
+          check: (_, output) {
+            expect(
+              _stableDiffusionAsset(output).linkMode,
+              isA<LookupInProcess>(),
+            );
+          },
+        ),
+      );
+      expect(
+        logs,
+        contains(
+          allOf(
+            startsWith('WARNING: '),
+            contains(
+              'stable-diffusion-native@v0.4.0, an earlier stable_diffusion',
+            ),
+            contains('Compatibility: no Apple changes'),
+            contains('^0.20.7'),
+            contains('v0.4.0-1'),
+          ),
+        ),
+      );
+    },
+  );
 
   test('unset, empty, unrecognised and both selections never bundle '
       'stable_diffusion', () async {
@@ -872,10 +1072,10 @@ dependencies:
     (
       '0.19.11',
       'Resolve llamadart_stable_diffusion_flutter with a Package.swift pin '
-          'matching leehack/stable-diffusion-native@v0.4.0',
+          'matching leehack/stable-diffusion-native@v0.4.0-1',
     ),
-    ('0.20.0', 'Depend on `llamadart_stable_diffusion_flutter: ^0.20.0`'),
-    ('0.20.1', 'Depend on `llamadart_stable_diffusion_flutter: ^0.20.0`'),
+    ('0.20.0', 'Depend on `llamadart_stable_diffusion_flutter: ^0.20.7`'),
+    ('0.20.1', 'Depend on `llamadart_stable_diffusion_flutter: ^0.20.7`'),
   ]) {
     test('core $core: the stable_diffusion companion rejection gives matching '
         'pin guidance', () async {
@@ -1037,6 +1237,22 @@ Set<String> _codeAssetIds(BuildOutput output) => output.assets.encodedAssets
     .where((asset) => asset.isCodeAsset)
     .map((asset) => asset.asCodeAsset.id)
     .toSet();
+
+Map<String, CodeAsset> _windowsAssetsByFile(BuildOutput output) {
+  final assets = output.assets.encodedAssets
+      .where((asset) => asset.isCodeAsset)
+      .map((asset) => asset.asCodeAsset)
+      .toList();
+  final byFile = {
+    for (final asset in assets)
+      path.basename(asset.file!.toFilePath()).toLowerCase(): asset,
+  };
+  expect(byFile, hasLength(assets.length));
+  return byFile;
+}
+
+WindowsFileVersion? _windowsAssetVersion(CodeAsset asset) =>
+    windowsFileVersion(File.fromUri(asset.file!).readAsBytesSync());
 
 CodeAsset _stableDiffusionAsset(BuildOutput output) => output
     .assets

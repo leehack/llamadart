@@ -161,8 +161,8 @@ GPU support still depends on the device, driver and model. If GPU engine
 creation fails, `ComputeDevice.auto` retries on the CPU with a warning;
 `ComputeDevice.gpu` fails instead.
 
-Image generation
-is not available on the web. On iOS, use
+Image generation is not available on the web. The Windows x64 image
+runtime bundles its Visual C++ runtime DLLs. On iOS, use
 `ImageModelPlacement(vaeOnCpu: true)` for CPU VAE decoding with Metal
 diffusion, or choose CPU generation. The pinned `v0.4.0` runtime splits Metal graphs, so a full VAE
 is admitted on iOS Metal. Device qualification for v0.4.0 is pending.

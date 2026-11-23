@@ -192,9 +192,7 @@ LlamaUnsupportedException? webGpuCrossOriginIsolationError(Object error) {
 }
 
 /// The stable fields carried by a bridge core-asset error on either runtime.
-({String code, String? asset, String? variant})? webGpuCoreAssetError(
-  Object error,
-) {
+({String code, String? asset})? webGpuCoreAssetError(Object error) {
   try {
     final object = error as JSObject;
     String? string(String key) {
@@ -204,7 +202,7 @@ LlamaUnsupportedException? webGpuCrossOriginIsolationError(Object error) {
 
     final code = string('code');
     if (string('name') == 'CoreAssetError' && code != null) {
-      return (code: code, asset: string('asset'), variant: string('variant'));
+      return (code: code, asset: string('asset'));
     }
   } catch (_) {
     // Primitive rejections carry no bridge error code.

@@ -16,9 +16,11 @@ class StageTest(unittest.TestCase):
             source.mkdir()
             expected = ['pubspec.yaml', 'README.md', 'CHANGELOG.md', 'LICENSE',
                         'lib/genkit_llamadart.dart', 'skills/guide/SKILL.md', 'doc/usage.md',
-                        'test/test.dart', 'example/main.dart']
+                        'test/test.dart', 'example/main.dart', 'example/dartpad/pubspec.yaml',
+                        'example/dartpad/lib/main.dart']
             excluded = ['pubspec_overrides.yaml', 'pubspec.lock', '.github/workflows/publish.yml',
-                        '.dart_tool/assets.dill', 'build/output', 'coverage/lcov.info', 'run.log']
+                        '.dart_tool/assets.dill', 'build/output', 'coverage/lcov.info', 'run.log',
+                        'example/dartpad/pubspec.lock', 'example/dartpad/pubspec_overrides.yaml']
             for name in expected + excluded:
                 path = source / name
                 path.parent.mkdir(parents=True, exist_ok=True)
