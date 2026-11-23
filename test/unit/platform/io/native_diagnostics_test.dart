@@ -206,6 +206,47 @@ void main() {
       );
     },
   );
+  for (final owner in ['stable_diffusion_', '', 'litert_lm_']) {
+    test(
+      'Windows SD diagnostics preload companions from asset prefix "$owner"',
+      () {
+        List<String> asset(String filename) => [
+          'absolute',
+          File(filename).absolute.path,
+        ];
+        const dlls = [
+          'vcruntime140',
+          'vcruntime140_1',
+          'msvcp140',
+          'msvcp140_codecvt_ids',
+        ];
+        final entries = {
+          'package:llamadart/stable_diffusion': asset('stable-diffusion.dll'),
+          for (final dll in dlls.reversed)
+            'package:llamadart/$owner$dll': asset('$owner$dll.dll'),
+          if (owner != 'litert_lm_')
+            'package:llamadart/litert_lm_msvcp140': asset('fallback.dll'),
+        };
+        final target = parseNativeDiagnosticManifest(
+          manifest(entries, abi: 'windows_x64'),
+          'windows_x64',
+          'stable_diffusion',
+        )!;
+        expect(target.companions, [
+          for (final dll in dlls) File('$owner$dll.dll').absolute.path,
+        ]);
+        expect(
+          parseNativeDiagnosticManifest(
+            manifest(entries),
+            'macos_arm64',
+            'stable_diffusion',
+          )!.companions,
+          isEmpty,
+        );
+      },
+    );
+  }
+
   test('text report names the checked target source', () {
     final manifestProbe = nativeDiagnosticObservation(
       'litert_lm',
