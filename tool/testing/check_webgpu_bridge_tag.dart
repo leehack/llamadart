@@ -81,6 +81,13 @@ final List<BridgeTagPin> bridgeTagPins = <BridgeTagPin>[
     ),
   ),
   BridgeTagPin(
+    'packages/genkit_llamadart/example/dartpad/lib/bridge_bootstrap_web.dart',
+    RegExp(
+      r"^const String defaultBridgeAssetsTag = '(v\d+\.\d+\.\d+)';$",
+      multiLine: true,
+    ),
+  ),
+  BridgeTagPin(
     'packages/llamadart_studio/web/index.html',
     RegExp(
       r"^\s*const defaultBridgeAssetsTag = '(v\d+\.\d+\.\d+)';$",
@@ -1197,8 +1204,6 @@ const List<String> tagHistoryFiles = <String>[
   'CHANGELOG.md',
   'doc/changelog_archive.md',
   'doc/multimodal_embeddings_web.md',
-  // Register with bridgeTagPins once #2153 makes this tag canonical.
-  'packages/genkit_llamadart/example/dartpad/lib/bridge_bootstrap_web.dart',
   'website/docs/changelog/recent-releases.md',
   'test/e2e/webgpu/fixtures/single_thread_legacy_assets_url.txt',
   'test/fixtures/lfm2_quoted_tool_delimiter.md',

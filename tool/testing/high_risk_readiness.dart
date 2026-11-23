@@ -388,6 +388,7 @@ const rawTextConsumedSources = <String>{
   'lib/src/backends/litert_lm/litert_lm_runtime.dart',
   'lib/src/hook/native_release_pins.dart',
   'lib/src/web_setup/web_bridge_setup.dart',
+  'packages/genkit_llamadart/example/dartpad/lib/bridge_bootstrap_web.dart',
 };
 
 final _generatedDartPath = RegExp(

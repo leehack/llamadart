@@ -1263,16 +1263,6 @@ void main() {
     },
   );
 
-  test('Genkit DartPad pins the bridge with single-thread core preflight', () {
-    const path =
-        'packages/genkit_llamadart/example/dartpad/lib/bridge_bootstrap_web.dart';
-    expect(
-      File(path).readAsStringSync(),
-      contains("const String defaultBridgeAssetsTag = 'v0.1.93';"),
-      reason: path,
-    );
-  });
-
   test('tracked Studio bootstrap pins are registered and cannot drift', () {
     const path = 'packages/llamadart_studio/web/index.html';
     final root = _fakeRepo(
@@ -1288,20 +1278,27 @@ void main() {
     expect(findBridgeTagDrift(root, 'v9.9.9'), contains(contains('$path:')));
   });
 
-  test('the DartPad bootstrap pin cannot drift', () {
-    const path = 'example/dartpad_gguf/lib/bridge_bootstrap_web.dart';
-    final root = _fakeRepo(
-      'v9.9.9',
-      files: {path: "const String defaultBridgeAssetsTag = 'v9.9.9';\n"},
-    );
-    Process.runSync('git', ['init', '--quiet'], workingDirectory: root.path);
-    Process.runSync('git', ['add', '-A'], workingDirectory: root.path);
-    expect(findUnregisteredTagSites(root, 'v9.9.9'), isEmpty);
-    File(
-      '${root.path}/$path',
-    ).writeAsStringSync("const String defaultBridgeAssetsTag = 'v9.9.8';\n");
-    expect(findBridgeTagDrift(root, 'v9.9.9'), contains(contains('$path:')));
-  });
+  for (final path in [
+    'example/dartpad_gguf/lib/bridge_bootstrap_web.dart',
+    'packages/genkit_llamadart/example/dartpad/lib/bridge_bootstrap_web.dart',
+  ]) {
+    test('the DartPad bootstrap pin cannot drift in $path', () {
+      final root = _fakeRepo(
+        'v9.9.9',
+        files: {path: "const String defaultBridgeAssetsTag = 'v9.9.9';\n"},
+      );
+      Process.runSync('git', ['init', '--quiet'], workingDirectory: root.path);
+      Process.runSync('git', ['add', '-A'], workingDirectory: root.path);
+      expect(findUnregisteredTagSites(root, 'v9.9.9'), isEmpty);
+      File(
+        '${root.path}/$path',
+      ).writeAsStringSync("const String defaultBridgeAssetsTag = 'v9.9.8';\n");
+      expect(
+        findBridgeTagDrift(root, 'v9.9.9'),
+        contains('$path: pins v9.9.8, expected v9.9.9'),
+      );
+    });
+  }
 
   test('the checked-in pins all quote the source of truth', () {
     final repoRoot = Directory.current;
