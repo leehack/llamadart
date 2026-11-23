@@ -4,17 +4,24 @@ on:
   pull_request:
     branches: [main]
     types: [opened, reopened, synchronize, edited, ready_for_review, labeled, unlabeled]
+  push:
+    branches: [main]
+  # The docs version cut pushes to main using GITHUB_TOKEN.
+  workflow_run:
+    workflows: [Docs Version Cut]
+    types: [completed]
 
 permissions:
   contents: read
 
 concurrency:
-  group: pr-changelog-${{ github.event.pull_request.number }}
+  group: pr-changelog-${{ github.event.pull_request.number || 'main' }}
   cancel-in-progress: false
 
 jobs:
   changelog:
     name: PR changelog
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -27,16 +34,46 @@ jobs:
           sdk: 3.13.1
       - run: dart tool/release/pr_changelog.dart --event
 
+  open-preps:
+    name: Find open core release preps
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      numbers: ${{ steps.list.outputs.numbers }}
+    steps:
+      - id: list
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          numbers="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls?base=main&state=open&per_page=100" |
+            jq -c --arg repo "$GITHUB_REPOSITORY" '
+              [.[][] | select(.head.repo.full_name == $repo)
+              | select(.head.ref | startswith("release/genkit_llamadart-") | not)
+              | select(any(.labels[]; .name == "release-prep") or
+                       (.head.ref | test("^release/(prep-[0-9]+\\.[0-9]+\\.[0-9]+([-+][A-Za-z0-9._-]+)?|[0-9]+\\.[0-9]+\\.[0-9]+([-+][A-Za-z0-9._-]+)?-prep)$")))
+              | .number]')"
+          echo "numbers=$numbers" >> "$GITHUB_OUTPUT"
+
   release-prep:
-    name: Verify release prep
-    needs: changelog
-    # The implicit success() would skip this check after a body validation failure.
+    name: Verify release prep${{ matrix.number != 0 && format(' (#{0})', matrix.number) || '' }}
+    needs: [changelog, open-preps]
+    # Keep checking the protected changelogs after a prep loses its label.
     if: >-
       !cancelled() &&
-      (github.event.label.name == 'release-prep' ||
-       (github.event.pull_request.head.repo.full_name == github.repository &&
-        (contains(github.event.pull_request.labels.*.name, 'release-prep') ||
-         startsWith(github.event.pull_request.head.ref, 'release/'))))
+      (github.event_name == 'pull_request' &&
+       (github.event.label.name == 'release-prep' ||
+        github.event.pull_request.head.repo.full_name == github.repository) ||
+       github.event_name != 'pull_request' &&
+       needs.open-preps.outputs.numbers != '[]' &&
+       needs.open-preps.result == 'success')
+    strategy:
+      fail-fast: false
+      matrix:
+        number: ${{ fromJSON(needs.open-preps.outputs.numbers || '[0]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -44,6 +81,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Require PR changelog validation to pass
+        if: github.event_name == 'pull_request'
         env:
           CHANGELOG_RESULT: ${{ needs.changelog.result }}
         shell: bash
@@ -52,9 +90,29 @@ jobs:
             echo 'PR changelog validation did not pass. See the PR changelog job.' >&2
             exit 1
           fi
+      - name: Read current release prep PR
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ matrix.number }}
+        shell: bash
+        run: |
+          snapshot="$RUNNER_TEMP/release-prep-event.json"
+          main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+          if ! gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" |
+            jq -e --arg repo "$GITHUB_REPOSITORY" --argjson number "$PR_NUMBER" --arg main "$main" '
+              select(.number == $number and .state == "open" and
+                     .head.repo.full_name == $repo and .base.repo.full_name == $repo and .base.ref == "main" and
+                     (.head.sha | test("^[0-9a-f]{40}$")) and (.base.sha | test("^[0-9a-f]{40}$")) and
+                     .base.sha == $main)
+              | {pull_request: .}' > "$snapshot"; then
+            echo "Could not read open PR #$PR_NUMBER against current main $main." >&2
+            exit 1
+          fi
+          echo "PR_EVENT_PATH=$snapshot" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ matrix.number != 0 && format('refs/pull/{0}/merge', matrix.number) || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: dart-lang/setup-dart@v1
@@ -66,13 +124,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base="$(jq -r .pull_request.base.sha "$GITHUB_EVENT_PATH")"
-          head="$(jq -r .pull_request.head.sha "$GITHUB_EVENT_PATH")"
+          snapshot="${PR_EVENT_PATH:-$GITHUB_EVENT_PATH}"
+          base="$(jq -r .pull_request.base.sha "$snapshot")"
+          head="$(jq -r .pull_request.head.sha "$snapshot")"
           if [[ "$(git show -s --format=%P HEAD)" != "$base $head" ]]; then
             echo "Tested merge must have the PR base and head as parents." >&2
             exit 1
           fi
-          dart tool/testing/check_released_changelog_sections.dart > "$RUNNER_TEMP/changelog-policy.txt"
+          echo "Verifying PR head $head against main $base."
+          if [[ -n "${PR_EVENT_PATH:-}" ]]; then
+            body_check="$RUNNER_TEMP/pr_changelog.dart"
+            git show "$base:tool/release/pr_changelog.dart" > "$body_check"
+            GITHUB_EVENT_PATH="$snapshot" dart "$body_check" --event
+          fi
+          GITHUB_EVENT_NAME=pull_request GITHUB_EVENT_PATH="$snapshot" GITHUB_SHA="$(git rev-parse HEAD)" \
+            dart tool/testing/check_released_changelog_sections.dart > "$RUNNER_TEMP/changelog-policy.txt"
           cat "$RUNNER_TEMP/changelog-policy.txt"
           if grep -Fxq 'Core release prep: true' "$RUNNER_TEMP/changelog-policy.txt"; then
             # The final squash can preserve whitespace by appending attribution.
@@ -96,7 +162,7 @@ jobs:
                 combined) attribution="$coauthor"$'\n'"$signoff"; description='with co-author and sign-off trailers' ;;
                 plain) attribution=''; description='without trailers' ;;
               esac
-              jq -r '.pull_request | "\(.title) (#\(.number))\n\n\(.body)"' "$GITHUB_EVENT_PATH" > "$message"
+              jq -r '.pull_request | "\(.title) (#\(.number))\n\n\(.body)"' "$snapshot" > "$message"
               if [[ -n "$attribution" ]]; then
                 printf '\n%s\n' "$attribution" >> "$message"
               fi
@@ -106,7 +172,7 @@ jobs:
                 exit 1
               fi
             done
-            number="$(jq -r .pull_request.number "$GITHUB_EVENT_PATH")"
+            number="$(jq -r .pull_request.number "$snapshot")"
             # GraphQL expands the query variables.
             # shellcheck disable=SC2016
             gh api graphql -f owner="${GITHUB_REPOSITORY%/*}" -f name="${GITHUB_REPOSITORY#*/}" \
