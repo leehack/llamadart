@@ -13,6 +13,7 @@ dependencies:
   genkit_google_genai: 1.2.0
   genkit_llamadart:
     path: ../..
+  http: ^1.6.0
   llamadart: ^0.20.6
 
 dev_dependencies:

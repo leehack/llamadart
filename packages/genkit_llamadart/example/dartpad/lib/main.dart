@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:genkit/genkit.dart';
 import 'package:genkit_google_genai/genkit_google_genai.dart';
 import 'package:genkit_llamadart/genkit_llamadart.dart';
+import 'package:http/http.dart' as http;
 
 import 'bridge_bootstrap.dart';
 
@@ -29,7 +30,9 @@ const _qwen = LlamaModelDefinition(
   supportsTools: false,
   supportsConstrainedOutput: false,
 );
-const _geminiModelName = 'gemini-3.5-flash-lite';
+// The pinned plugin routes this model through streamGenerateContent, whose
+// CORS preflight allows the request headers used in DartPad.
+const _geminiModelName = 'gemini-3.1-flash-lite';
 
 void main() => runApp(const GenkitDartPadApp());
 
@@ -202,27 +205,33 @@ class _PlaygroundState extends State<_Playground> {
       _status = 'Generating…';
     });
 
+    bool isCurrent() => mounted && _cancellation == cancellation;
+
+    Future<GenerateResult<Object?>> generate() => ai.generate<Object?, Object>(
+      // Qwen3 uses the prompt's soft switch with its built-in template.
+      prompt: isLiteRtLm ? '$prompt\n/no_think' : prompt,
+      config: isGemini
+          ? GeminiOptions(maxOutputTokens: 256)
+          : LlamaDartGenerationConfig(
+              maxTokens: 128,
+              // LiteRT-LM Web uses the model's default conversation template.
+              enableThinking: isLiteRtLm,
+            ),
+      cancel: cancellation.token,
+      onChunk: (chunk) {
+        if (isCurrent()) setState(() => _output.write(chunk.text));
+      },
+    );
+
+    String status;
     try {
-      final result = await ai.generate<Object?, Object>(
-        // Qwen3 uses the prompt's soft switch with its built-in template.
-        prompt: isLiteRtLm ? '$prompt\n/no_think' : prompt,
-        config: isGemini
-            ? GeminiOptions(maxOutputTokens: 256)
-            : LlamaDartGenerationConfig(
-                maxTokens: 128,
-                // LiteRT-LM Web uses the model's default conversation template.
-                enableThinking: isLiteRtLm,
-              ),
-        cancel: cancellation.token,
-        onChunk: (chunk) {
-          if (mounted && !cancellation.token.isCancelled) {
-            setState(() => _output.write(chunk.text));
-          }
-        },
-      );
-      if (!mounted) return;
-      _status = switch (result.finishReason) {
-        _ when cancellation.token.isCancelled => 'Stopped.',
+      final result = await (isGemini
+          ? http.runWithClient(
+              generate,
+              () => _GeminiClient(http.Client(), cancellation.token),
+            )
+          : generate());
+      status = switch (result.finishReason) {
         FinishReason.aborted => 'Stopped.',
         FinishReason.failed =>
           isGemini
@@ -233,14 +242,25 @@ class _PlaygroundState extends State<_Playground> {
         _ => 'Done.',
       };
     } catch (_) {
-      _status = cancellation.token.isCancelled
-          ? 'Stopped.'
-          : isGemini
+      status = isGemini
           ? 'Gemini request failed. Check your API key and connection.'
           : 'Generation failed.';
-    } finally {
-      if (mounted) setState(() => _cancellation = null);
     }
+    if (!isCurrent()) return;
+    setState(() {
+      _cancellation = null;
+      _status = status;
+    });
+  }
+
+  void _stop() {
+    final cancellation = _cancellation;
+    if (cancellation == null) return;
+    setState(() {
+      _cancellation = null;
+      _status = 'Stopped.';
+    });
+    cancellation.cancel();
   }
 
   Future<void> _close(Genkit? ai, LlamaDartPlugin? local) async {
@@ -318,7 +338,7 @@ class _PlaygroundState extends State<_Playground> {
               const SizedBox(height: 8),
               FilledButton(
                 onPressed: _cancellation != null
-                    ? () => _cancellation?.cancel()
+                    ? _stop
                     : !_loading && _ai != null && _prompt.text.trim().isNotEmpty
                     ? _generate
                     : null,
@@ -339,4 +359,33 @@ class _PlaygroundState extends State<_Playground> {
       ),
     );
   }
+}
+
+class _GeminiClient extends http.BaseClient {
+  _GeminiClient(this._client, this._token);
+
+  final http.Client _client;
+  final CancellationToken _token;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    if (request is! http.Request) return _client.send(request);
+    // BrowserClient.close() no longer tracks the fetch after headers arrive.
+    // The abort trigger also cancels reads from a stalled response body.
+    final abortable =
+        http.AbortableRequest(
+            request.method,
+            request.url,
+            abortTrigger: _token.whenCancelled,
+          )
+          ..followRedirects = request.followRedirects
+          ..maxRedirects = request.maxRedirects
+          ..persistentConnection = request.persistentConnection
+          ..headers.addAll(request.headers)
+          ..bodyBytes = request.bodyBytes;
+    return _client.send(abortable);
+  }
+
+  @override
+  void close() => _client.close();
 }

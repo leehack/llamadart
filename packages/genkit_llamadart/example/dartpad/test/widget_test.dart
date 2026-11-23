@@ -37,8 +37,15 @@ void main() {
 
       await _tap(tester, 'Stop');
       expect(runtime.canceled, isTrue);
+      expect(find.text('Generate'), findsOneWidget);
       expect(find.text('Stopped.'), findsOneWidget);
       expect(find.text('A fox'), findsOneWidget);
+
+      runtime.chunks.add(_chunk(' late'));
+      unawaited(runtime.chunks.close());
+      await tester.pumpAndSettle();
+      expect(find.text('A fox'), findsOneWidget);
+      expect(find.textContaining('late'), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
       await tester.pumpAndSettle();
@@ -120,6 +127,47 @@ void main() {
     await tester.pumpAndSettle();
     expect(plugin.cancellations, 2);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Stop releases the UI while Gemini is silent', (tester) async {
+    final finish = Completer<void>();
+    addTearDown(() {
+      if (!finish.isCompleted) finish.complete();
+    });
+    final plugin = _GeminiPlugin()..finishFirstRequest = finish.future;
+    await _connectGemini(tester, plugin);
+
+    await _tap(tester, 'Generate');
+    expect(find.text('A cloud fox'), findsOneWidget);
+    await _tap(tester, 'Stop');
+    expect(plugin.cancellations, 1);
+    expect(find.text('Stopped.'), findsOneWidget);
+    expect(find.text('A cloud fox'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Generate'))
+          .onPressed,
+      isNotNull,
+    );
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, 'GGUF'))
+          .enabled,
+      isTrue,
+    );
+
+    await _tap(tester, 'Generate');
+    expect(plugin.requests, hasLength(2));
+    finish.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Stop'), findsOneWidget);
+    expect(find.text('Generating…'), findsOneWidget);
+    expect(find.text('A cloud fox'), findsOneWidget);
+    expect(find.textContaining('late'), findsNothing);
+
+    await _tap(tester, 'Stop');
+    await _tap(tester, 'GGUF');
+    expect(find.text('Load the GGUF model to begin.'), findsOneWidget);
   });
 
   testWidgets('Gemini errors never surface provider data or the API key', (
@@ -242,10 +290,7 @@ class _LocalRuntime
   }
 
   @override
-  void cancelGeneration() {
-    canceled = true;
-    unawaited(chunks.close());
-  }
+  void cancelGeneration() => canceled = true;
 
   @override
   Future<void> dispose() async {
@@ -262,13 +307,14 @@ class _GeminiPlugin extends GenkitPlugin {
   final requests = <ModelRequest>[];
   int cancellations = 0;
   bool fail = false;
+  Future<void>? finishFirstRequest;
 
   @override
   String get name => 'googleai';
 
   @override
   Action? resolve(ActionType actionType, String name) {
-    if (actionType != ActionType.model || name != 'gemini-3.5-flash-lite') {
+    if (actionType != ActionType.model || name != 'gemini-3.1-flash-lite') {
       return null;
     }
     return Model(
@@ -276,10 +322,11 @@ class _GeminiPlugin extends GenkitPlugin {
       fn: (request, context) async {
         requests.add(request);
         if (fail) throw StateError('Provider rejected $_fakeKey');
+        final stalled = requests.length == 1 ? finishFirstRequest : null;
         final done = Completer<void>();
         final remove = context.cancel!.onCancel(() {
           cancellations++;
-          done.complete();
+          if (stalled == null) done.complete();
         });
         try {
           context.sendChunk(
@@ -288,7 +335,12 @@ class _GeminiPlugin extends GenkitPlugin {
               content: [TextPart(text: 'A cloud fox')],
             ),
           );
-          await done.future;
+          await (stalled ?? done.future);
+          if (stalled != null) {
+            context.sendChunk(
+              ModelResponseChunk(index: 0, content: [TextPart(text: ' late')]),
+            );
+          }
           return ModelResponse(finishReason: FinishReason.aborted);
         } finally {
           remove();

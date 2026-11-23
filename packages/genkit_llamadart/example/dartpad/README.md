@@ -8,7 +8,7 @@ in genkit_llamadart 3.10.0.
 | --- | --- | --- |
 | GGUF | SmolLM2-135M-Instruct Q4_K_M (about 106 MB) | llamadart 0.20.7 or newer in DartPad. Runs in the browser. |
 | LiteRT-LM | Qwen3-0.6B dynamic INT4 (about 343 MB) | llamadart 0.20.6 or newer and Chrome with WebGPU. Runs in the browser. |
-| Gemini | Gemini 3.5 Flash-Lite | A Gemini API key and access to Google's API. Prompts are sent to Google. |
+| Gemini | Gemini 3.1 Flash-Lite | A Gemini API key and access to Google's API. Prompts are sent to Google. |
 
 Choose a model and select **Load** or **Connect**. Enter a prompt and select
 **Generate**. **Stop** cancels the request and keeps the text already streamed.
