@@ -9,6 +9,141 @@ import 'package:llamadart/src/backends/webgpu/webgpu_errors.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('JS-backed staging errors', () {
+    const url = 'https://alice:private@example.com/model.gguf?signature=signed';
+
+    for (final (code, guidance) in [
+      ('MODEL_STAGING_UNSUPPORTED', 'v0.1.92+'),
+      ('MODEL_TENSOR_SIZE_LIMIT_EXCEEDED', 'preferMemory64: true'),
+    ]) {
+      test('$code maps to unsupported with guidance', () {
+        final error = JSObject()
+          ..['name'] = 'ModelStagingError'.toJS
+          ..['code'] = code.toJS
+          ..['message'] = 'Failed to open $url'.toJS;
+        expect(
+          webGpuModelStagingError(error, sourceUrls: [url]),
+          isA<LlamaUnsupportedException>()
+              .having((e) => e.message, 'code', contains(code))
+              .having((e) => e.message, 'guidance', contains(guidance)),
+        );
+      });
+    }
+
+    test(
+      'describes individual and combined tensor sizes at the wasm32 limit',
+      () {
+        final error = JSObject()
+          ..['name'] = 'ModelStagingError'.toJS
+          ..['code'] = 'MODEL_TENSOR_SIZE_LIMIT_EXCEEDED'.toJS;
+        expect(
+          webGpuModelStagingError(error),
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'wasm32 limit',
+            contains('individually or in total, exceed the wasm32 4 GiB limit'),
+          ),
+        );
+      },
+    );
+
+    test('recognizes the legacy name with a bridge transfer-length message', () {
+      for (final message in [
+        'Model response did not match its declared decoded size.',
+        'Model response ended before its declared byte length.',
+        'Model response exceeded its declared byte length.',
+        'Model response reported conflicting Content-Range and X-Linked-Size totals.',
+        'Model response staged 16 bytes, expected 32.',
+        'Model response staged 16 bytes, expected at least 32.',
+      ]) {
+        final error = JSObject()
+          ..['name'] = 'ModelTransferLengthError'.toJS
+          ..['message'] = message.toJS;
+        expect(
+          webGpuModelStagingError(error),
+          isA<LlamaModelException>()
+              .having(
+                (e) => e.message,
+                'code',
+                contains('MODEL_TRANSFER_LENGTH_ERROR'),
+              )
+              .having((e) => e.details, 'detail', message),
+        );
+        error['code'] = 'OTHER'.toJS;
+        expect(webGpuModelStagingError(error), isNull);
+        error.delete('code'.toJS);
+        error['name'] = 'Error'.toJS;
+        expect(webGpuModelStagingError(error), isNull);
+      }
+    });
+
+    for (final (name, code, expectedCode) in [
+      (
+        'ModelStagingError',
+        'MODEL_STAGING_ALLOCATION_FAILED',
+        'MODEL_STAGING_ALLOCATION_FAILED',
+      ),
+      (
+        'ModelStagingError',
+        'MODEL_STAGING_MOUNT_FAILED',
+        'MODEL_STAGING_MOUNT_FAILED',
+      ),
+      (
+        'ModelTransferLengthError',
+        'MODEL_TRANSFER_LENGTH_ERROR',
+        'MODEL_TRANSFER_LENGTH_ERROR',
+      ),
+    ]) {
+      test('$name ($code) maps to a redacted model error', () {
+        final error = JSObject()
+          ..['name'] = name.toJS
+          ..['code'] = code.toJS
+          ..['message'] =
+              'Failed to open $url (signed) at /jsmodels-7/hidden.gguf'.toJS;
+        expect(
+          webGpuModelStagingError(error, sourceUrls: [url]),
+          isA<LlamaModelException>()
+              .having((e) => e.message, 'code', contains(expectedCode))
+              .having(
+                (e) => e.details,
+                'detail',
+                allOf(
+                  contains('Failed to open <path>'),
+                  isNot(contains('example.com')),
+                  isNot(contains('hidden.gguf')),
+                  isNot(contains('alice')),
+                  isNot(contains('private')),
+                  isNot(contains('signed')),
+                ),
+              ),
+        );
+      });
+    }
+
+    test('does not classify unrelated error types or message text', () {
+      for (final (name, code) in [
+        ('Error', 'OTHER'),
+        ('ModelTransferLengthError', 'OTHER'),
+        ('Error', 'MODEL_TRANSFER_LENGTH_ERROR'),
+        ('Error', 'MODEL_STAGING_UNSUPPORTED'),
+      ]) {
+        final error = JSObject()
+          ..['name'] = name.toJS
+          ..['code'] = code.toJS
+          ..['message'] = 'ModelStagingError MODEL_STAGING_UNSUPPORTED'.toJS;
+        expect(webGpuModelStagingError(error), isNull);
+      }
+      expect(
+        webGpuModelStagingError(StateError('ModelTransferLengthError')),
+        isNull,
+      );
+      final error = JSObject()
+        ..['name'] = 'ModelTransferLengthError'.toJS
+        ..['message'] = 'Model response could not be downloaded.'.toJS;
+      expect(webGpuModelStagingError(error), isNull);
+    });
+  });
+
   test('grammar failures preserve the typed category without loose matching', () {
     for (final (message, matcher) in <(String, Matcher)>[
       (

@@ -693,11 +693,43 @@ exec cat "$FIXTURE_GITHUB_SQUASH"
           );
           expect(
             rejected.stderr,
+            contains('Squash variant with co-author trailer failed'),
+          );
+          expect(
+            rejected.stderr,
             contains(
               'End the receipt block with no trailing attribution or whitespace.',
             ),
           );
         }
+
+        repo.git(['checkout', '--detach', merge]);
+        setBody(body);
+        repo.write(
+          script.path,
+          r'''
+if grep -q '^Signed-off-by:' "$3" && ! grep -q '^Co-authored-by:' "$3"; then
+  exit 1
+fi
+''' +
+              script.readAsStringSync(),
+        );
+        final signoffRejected = await run();
+        expect(
+          signoffRejected.exitCode,
+          1,
+          reason: '${signoffRejected.stdout}\n${signoffRejected.stderr}',
+        );
+        expect(
+          'Release notes input verified.'.allMatches(
+            signoffRejected.stdout as String,
+          ),
+          hasLength(1),
+        );
+        expect(
+          signoffRejected.stderr,
+          contains('Squash variant with sign-off trailer failed.'),
+        );
       },
       skip: Platform.isWindows ? 'Runs the Bash workflow step.' : false,
       timeout: const Timeout(Duration(minutes: 2)),

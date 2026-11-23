@@ -315,15 +315,16 @@ part of this batch.
 python3 -m unittest discover -s test/ci -p 'test_*.py'
 dart run tool/testing/run_local_e2e.dart --scenario ci-selection
 actionlint .github/workflows/ci.yml .github/workflows/validation_bundles.yml
-actionlint -ignore '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$' .github/workflows/chat_app_hf_static_deploy.yml
+actionlint -ignore '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$' .github/workflows/chat_app_hf_static_deploy.yml .github/workflows/chat_app_hf_pr_preview.yml .github/workflows/chat_app_hf_pr_preview_sweep.yml
 ```
 
 Actionlint 1.7.12 rejects GitHub's documented `concurrency.queue` key
 ([upstream issue](https://github.com/rhysd/actionlint/issues/657),
 [pending fix](https://github.com/rhysd/actionlint/pull/654)). Retain its unfiltered
 diagnostic as evidence before the second invocation: that invocation excludes
-only this known schema diagnostic for the reusable deploy workflow. Its queue
-policy is covered by the workflow tests; other lint diagnostics still fail.
+only this known schema diagnostic for the listed workflows. Workflow tests
+cover queue settings and require the preview sweep to share the preview write
+group. Other lint diagnostics still fail.
 
 Tests cover docs-only and package changes, shared/runtime/unknown inputs,
 platform targets, workflow changes, actual Git rename/deletion histories,
@@ -391,6 +392,14 @@ A push that changes Web Chat inputs deploys through its own CI run, so a superse
 artifact is never uploaded over it. The Laya Tetris deploy runs the same guard
 with its workflow's `paths` filter as the input list, since a push outside that
 filter starts no Laya Tetris run.
+
+Both static Space workflows pass `--max-folder-bytes 250000000`. The deploy
+helper rejects oversized folders, symlinks and scan errors before any Hub call.
+It warns when the Space reports at least 750 MB of `usedStorage`. After a
+successful upload, `--squash-history` calls `super_squash_history` on the
+Space's `main` branch. This preserves the uploaded files and collapses their
+Space deployment history to one commit, keeping old artifacts from accumulating
+against the 1 GB repository limit.
 
 Chat app deployments share a serialized, non-cancelling group with
 [`queue: max`](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency#example-queueing-multiple-pending-runs).

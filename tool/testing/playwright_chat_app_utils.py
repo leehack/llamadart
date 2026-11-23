@@ -95,16 +95,54 @@ def append_console_log(
     return record
 
 
+def _settle_textbox_focus(textbox) -> None:
+    evaluate = getattr(textbox, "evaluate", None)
+    if callable(evaluate):
+        # Flutter attaches text input and restores its value on the next frame.
+        evaluate(
+            "() => new Promise((resolve) => "
+            "requestAnimationFrame(() => requestAnimationFrame(resolve)))"
+        )
+
+
+def _read_textbox_value(textbox) -> str | None:
+    input_value = getattr(textbox, "input_value", None)
+    if callable(input_value):
+        value = input_value(timeout=250)
+        if isinstance(value, str):
+            return value
+    return None
+
+
 def enter_chat_prompt(
-    page, prompt: str, *, timeout_ms: int = 30000, button_name: str = "Send message"
+    page,
+    prompt: str,
+    *,
+    timeout_ms: int = 30000,
+    button_name: str = "Send message",
+    retry_interval_ms: int = 500,
 ) -> None:
+    deadline = time.monotonic() + timeout_ms / 1000
+    retry_interval_s = max(50, retry_interval_ms) / 1000
     textbox = page.get_by_role("textbox").last
-    textbox.click()
+    button = page.get_by_role("button", name=button_name)
     modifier = "Meta" if platform.system() == "Darwin" else "Control"
-    page.keyboard.press(f"{modifier}+A")
-    page.keyboard.press("Backspace")
-    page.keyboard.type(prompt)
-    wait_for_send_enabled(page, timeout_ms=timeout_ms, button_name=button_name)
+    normalized_prompt = prompt.replace("\r\n", "\n")
+
+    def prompt_matches() -> bool:
+        actual = _read_textbox_value(textbox)
+        return actual is None or actual.replace("\r\n", "\n") == normalized_prompt
+
+    while time.monotonic() < deadline:
+        textbox.click()
+        _settle_textbox_focus(textbox)
+        page.keyboard.press(f"{modifier}+A")
+        page.keyboard.press("Backspace")
+        page.keyboard.type(prompt)
+        attempt_deadline = min(deadline, time.monotonic() + retry_interval_s)
+        if _wait_for_button_enabled(button, attempt_deadline, matches=prompt_matches):
+            return
+    raise TimeoutError(f"Timed out waiting for {button_name} button to enable")
 
 
 def wait_for_send_enabled(
@@ -112,14 +150,21 @@ def wait_for_send_enabled(
 ) -> None:
     deadline = time.monotonic() + (timeout_ms / 1000)
     button = page.get_by_role("button", name=button_name)
+    if not _wait_for_button_enabled(button, deadline):
+        raise TimeoutError(f"Timed out waiting for {button_name} button to enable")
+
+
+def _wait_for_button_enabled(
+    button, deadline: float, *, matches: Callable[[], bool] | None = None
+) -> bool:
     while time.monotonic() < deadline:
         try:
-            if button.is_enabled(timeout=250):
-                return
+            if button.is_enabled(timeout=250) and (matches is None or matches()):
+                return True
         except PlaywrightTimeoutError:
             pass
         time.sleep(0.05)
-    raise TimeoutError(f"Timed out waiting for {button_name} button to enable")
+    return False
 
 
 def normalized_words(text: str) -> list[str]:

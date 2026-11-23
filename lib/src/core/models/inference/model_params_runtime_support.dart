@@ -26,6 +26,7 @@ List<String> modelParamsUnsupportedBy(
     ] else ...[
       if (params.preferMemory64 != null) 'preferMemory64',
       if (params.modelBytesHint != null) 'modelBytesHint',
+      if (params.jsBackedModelStaging != null) 'jsBackedModelStaging',
     ],
   ],
   LlamaRuntime.liteRtLm => [
@@ -58,6 +59,7 @@ List<String> modelParamsUnsupportedBy(
     if (params.gpuMemoryFit != null) 'gpuMemoryFit',
     if (params.preferMemory64 != null) 'preferMemory64',
     if (params.modelBytesHint != null) 'modelBytesHint',
+    if (params.jsBackedModelStaging != null) 'jsBackedModelStaging',
   ],
 };
 
@@ -120,7 +122,8 @@ String unsupportedModelParamsMessage(
     (LlamaRuntime.llamaCpp, false) =>
       'llama.cpp does not apply these ModelParams natively: $fields. The '
           'liteRtLm* fields apply only to LiteRT-LM (.litertlm) models, and '
-          'preferMemory64 and modelBytesHint only to llama.cpp on the Web. '
+          'preferMemory64, modelBytesHint and jsBackedModelStaging only to '
+          'llama.cpp on the Web. '
           'Leave them unset for this model.',
     (LlamaRuntime.llamaCpp, true) =>
       'llama.cpp on the Web does not apply these ModelParams: $fields. The '

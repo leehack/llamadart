@@ -56,6 +56,33 @@ void main() {
     required bool web,
   }) => modelParamsUnsupportedBy(params, runtime, web: web);
 
+  test('only Web llama.cpp accepts explicit JS-backed staging', () {
+    for (final value in [null, true, false]) {
+      final params = ModelParams(jsBackedModelStaging: value);
+      checkModelParamsSupportedBy(params, LlamaRuntime.llamaCpp, web: true);
+      for (final (runtime, web) in [
+        (LlamaRuntime.llamaCpp, false),
+        (LlamaRuntime.liteRtLm, false),
+        (LlamaRuntime.liteRtLm, true),
+      ]) {
+        if (value == null) {
+          checkModelParamsSupportedBy(params, runtime, web: web);
+        } else {
+          expect(
+            () => checkModelParamsSupportedBy(params, runtime, web: web),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (e) => e.message,
+                'message',
+                contains('jsBackedModelStaging'),
+              ),
+            ),
+          );
+        }
+      }
+    }
+  });
+
   test('unsupported LiteRT options do not advertise unavailable LoRA', () {
     try {
       checkModelParamsSupportedBy(

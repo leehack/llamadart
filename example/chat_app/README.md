@@ -692,6 +692,10 @@ await prefs.setInt('preferred_backend', backendIndex);
   `llamadart.webgpu.runtime_notes`. This core uses one
   CPU thread, can offload GPU layers, and uses streamed staging. Fetch-backed
   loading requires the threaded runtime.
+- Web GGUF loads can use `LlamaCppModelParams(jsBackedModelStaging: true)`
+  with matching bridge assets v0.1.92+. The app leaves the setting unset,
+  which lets the bridge enable staging on supported WebKit cores. Set
+  `jsBackedModelStaging: false` in Dart to opt out.
 - Chat app defaults to wasm32-first for stability. You can opt into wasm64 preference with
   `window.__llamadartBridgeEnableMem64 = true` before bridge bootstrap.
 - Fetch-backed loading is disabled by default. Set
@@ -761,6 +765,8 @@ await prefs.setInt('preferred_backend', backendIndex);
   tests `main`'s tip in full first. See `doc/ci_selection.md`.
 - Required repository secret: `HF_TOKEN` (write access to your Space repo).
 - Required repository variable: `HF_CHAT_APP_SPACE_REPO` in `owner/space` format.
+- The workflow caps the upload folder at 250 MB and squashes the Space's
+  deployment history after each successful upload.
 - The workflow-generated Space `README.md` already injects required COI headers
   for large-model web runtime support.
 
@@ -771,9 +777,14 @@ await prefs.setInt('preferred_backend', backendIndex);
   sources, or the web bridge asset script.
 - Creates or updates a per-PR static Space named
   `llamadart-chat-pr-<number>` and comments the preview URL on the PR.
-- Deletes the preview Space when the PR is closed.
-- Required repository secret: `HF_TOKEN` with write/create access to the preview
-  namespace.
+- Deletes the preview Space when the close event runs the workflow. GitHub
+  can skip that event's workflow when the PR has merge conflicts.
+- `chat_app_hf_pr_preview_sweep.yml` runs daily on `main` and sweeps
+  `leehack/llamadart-chat-pr-<number>` Spaces for closed PRs. Each deletion
+  waits in the PR's preview write queue and checks that the PR is still closed.
+  Run it manually with `gh workflow run chat_app_hf_pr_preview_sweep.yml --ref main`.
+- Required repository secret: `HF_TOKEN` with create, write, and delete access
+  to the preview namespace.
 - Optional repository variable: `HF_CHAT_APP_PREVIEW_NAMESPACE`. If omitted,
   the workflow uses the owner portion of `HF_CHAT_APP_SPACE_REPO`.
 - Fork PRs are skipped so repository secrets are not exposed to untrusted code.

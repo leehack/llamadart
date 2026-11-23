@@ -6,7 +6,26 @@ import '../bin/run.dart' as launcher;
 
 void main() {
   late Directory output;
+  late Directory kernelDir;
+  late String runKernel;
   final fixtures = Directory('test/fixtures/windows_native_log');
+  setUpAll(() async {
+    kernelDir = Directory.systemTemp.createTempSync('run-report-kernel-');
+    runKernel = '${kernelDir.path}/run.dill';
+    final compiled = await Process.run(Platform.resolvedExecutable, [
+      'compile',
+      'kernel',
+      'bin/run.dart',
+      '-o',
+      runKernel,
+    ]);
+    expect(
+      compiled.exitCode,
+      0,
+      reason: 'stdout:\n${compiled.stdout}\nstderr:\n${compiled.stderr}',
+    );
+  });
+  tearDownAll(() => kernelDir.deleteSync(recursive: true));
   setUp(() {
     output = Directory.systemTemp.createTempSync('run-native-report-');
     File(
@@ -71,14 +90,17 @@ void main() {
   test('CLI rejects missing capture before runtime or model work', () async {
     final missing = '${output.path}/missing-cli';
     final run = await Process.run(Platform.resolvedExecutable, [
-      '--packages=.dart_tool/package_config.json',
-      'bin/run.dart',
+      runKernel,
       '--native-log',
       missing,
       '--profile',
       'tiny-gguf-cuda',
     ]);
-    expect(run.exitCode, 1);
+    expect(
+      run.exitCode,
+      1,
+      reason: 'stdout:\n${run.stdout}\nstderr:\n${run.stderr}',
+    );
     expect('${run.stderr}', contains(missing));
     expect('${run.stderr}', contains('Cannot open file'));
     expect('${run.stdout}', isNot(contains('LLAMADART_VALIDATION')));
@@ -86,15 +108,64 @@ void main() {
   test('CLI rejects invalid UTF-8 capture before model work', () async {
     final log = File('${output.path}/invalid-cli')..writeAsBytesSync([0xff]);
     final run = await Process.run(Platform.resolvedExecutable, [
-      '--packages=.dart_tool/package_config.json',
-      'bin/run.dart',
+      runKernel,
       '--native-log',
       log.path,
       '--profile',
       'tiny-gguf-cuda',
     ]);
-    expect(run.exitCode, 1);
+    expect(
+      run.exitCode,
+      1,
+      reason: 'stdout:\n${run.stdout}\nstderr:\n${run.stderr}',
+    );
     expect('${run.stderr}', contains('Failed to decode'));
     expect('${run.stdout}', isNot(contains('LLAMADART_VALIDATION')));
+  });
+
+  test(
+    'CLI rejects missing capture with a truncated native-assets manifest',
+    () async {
+      final truncatedDir = Directory.systemTemp.createTempSync(
+        'run-truncated-assets-',
+      );
+      addTearDown(() => truncatedDir.deleteSync(recursive: true));
+      File(
+        '${truncatedDir.path}/.dart_tool/native_assets.yaml',
+      ).createSync(recursive: true);
+      final run = await Process.run(Platform.resolvedExecutable, [
+        runKernel,
+        '--native-log',
+        '${truncatedDir.path}/missing',
+        '--profile',
+        'tiny-gguf-cuda',
+      ], workingDirectory: truncatedDir.path);
+      expect(
+        run.exitCode,
+        1,
+        reason: 'stdout:\n${run.stdout}\nstderr:\n${run.stderr}',
+      );
+      expect('${run.stderr}', contains('Cannot open file'));
+    },
+  );
+
+  test('validation tests do not invoke dart run', () {
+    // Dart run can rewrite the native-assets manifest while another test
+    // subprocess is compiling.
+    final dartRun = RegExp(
+      r'''Platform\s*\.\s*resolvedExecutable\s*,\s*(?:<String>\s*)?\[\s*(['"])run\1''',
+    );
+    final offenders = <String>[];
+    for (final file in Directory(
+      'test',
+    ).listSync(recursive: true).whereType<File>()) {
+      if (!file.path.endsWith('_test.dart')) continue;
+      final source = file.readAsStringSync();
+      for (final match in dartRun.allMatches(source)) {
+        final line = source.substring(0, match.start).split('\n').length;
+        offenders.add('${file.path}:$line');
+      }
+    }
+    expect(offenders, isEmpty);
   });
 }

@@ -263,6 +263,33 @@ the memory64 core URL from
 [Add the bridge to your app](#add-the-bridge-to-your-app). Qwen3-TTS needs
 memory64.
 
+## JS-backed model and projector staging
+
+Use `ModelParams.jsBackedModelStaging` or `LlamaCppModelParams.jsBackedModelStaging`:
+
+- Omit it or pass `null` to use the bridge default. Supported WebKit cores use
+  JavaScript-backed staging automatically. Other browsers use standard WASMFS.
+- Pass `true` to require JavaScript-backed staging for the GGUF and projector.
+  This needs matching v0.1.92+ bridge and worker scripts and a core with
+  staging ABI v3 or later.
+  Forced fetch-backed loading is incompatible, and automatic fetch-backed
+  loading is disabled.
+- Pass `false` to disable JavaScript-backed staging, including on WebKit.
+  Dart accepts this setting on older bridges and verifies the reported mode.
+
+JavaScript-backed staging moves the download buffer out of Wasm linear memory.
+Split GGUFs and projectors stage data in 64 MiB JavaScript chunks and release the
+staged files after load. An eligible single-file GGUF on a staging ABI v4 core
+can keep weights in one mapped Wasm heap block when mmap is enabled, mlock is
+off, and at most one GPU layer is effective. The download and native tensor
+load still require memory. Budget for both JavaScript and Wasm memory, plus
+GPU allocations when offloading. The wasm32 path still enforces a 4 GiB tensor
+payload limit.
+
+An explicit projector load stops on a typed transfer-length failure. Restoring
+a previously loaded projector after a worker restart can still trigger another
+restart. See [llama-web-bridge#329](https://github.com/leehack/llama-web-bridge/issues/329).
+
 ## What differs from native
 
 The feature-by-runtime table is in the
@@ -433,6 +460,11 @@ When retries run out, the load throws an error with runtime hints such as
 | Memory, OOM, `bad_alloc` or abort during load | Model or config pressure | Reduce model size, context, threads or GPU layers; use memory64. |
 | Safari forces CPU | Safari safeguard | Set `__llamadartBridgeAdaptiveSafariGpu` from the loaded assets, or `__llamadartAllowSafariWebGpu` for testing. |
 | Works on `localhost` but not hosted | Deployment | Check base href, asset paths, COOP/COEP headers and service-worker cache. |
+| `MODEL_STAGING_UNSUPPORTED` | Missing staging capability in the bridge, worker or core | Run `dart run llamadart:web_setup` with matching v0.1.92+ assets. |
+| `MODEL_TENSOR_SIZE_LIMIT_EXCEEDED` | An individual tensor or the combined tensor data exceeds the wasm32 4 GiB limit | Use `preferMemory64: true` on a browser with memory64 support. |
+| `MODEL_STAGING_ALLOCATION_FAILED` | JavaScript staging allocation failed | Close other memory-intensive pages or use a smaller model. |
+| `MODEL_STAGING_MOUNT_FAILED` | The staging filesystem could not be mounted or retained | Reload the page and check that the bridge, worker and core assets match. |
+| `MODEL_TRANSFER_LENGTH_ERROR` | The response body length differs from its declared size | Check the model or projector origin and its range responses. |
 | `CrossOriginIsolationError` or "needs cross-origin isolation" | Page is not isolated | Send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`; `credentialless` does not isolate Safari. See the [single-thread opt-in](#single-threaded-gguf-without-isolation) for hosts that cannot set the headers. |
 | `ComputeDevice.gpu` fails with "without GPU layers" and `gpu_unavailable:adapter_missing_shader_f16` | Adapter lacks `shader-f16` | WebGPU needs `shader-f16`. On Linux with an NVIDIA GPU, Chrome exposes it only with driver 615.71 or newer; older drivers run on the CPU. |
 | GPU output unstable, CPU fine | Adapter, feature or driver | Check adapter features such as `shader-f16`; lower GPU layers. |
@@ -475,10 +507,11 @@ worker and restores the model on the next call.
 
 ## Pinned bridge assets
 
-This llamadart version pins bridge assets `v0.1.90`, which include the
-API-version-1 media embedding contract and `thinkingBudgetMultiEnd`.
+This llamadart version pins bridge assets `v0.1.92`, which include the
+staging capability flag, API-version-1 media embedding contract, and
+`thinkingBudgetMultiEnd`.
 
-- The pinned `v0.1.90` bridge assets embed llama.cpp `v1.0.0`, matching the native runtime `v1.0.0-4`.
+- The pinned `v0.1.92` bridge assets embed llama.cpp `v1.0.0`, matching the native runtime `v1.0.0-4`.
 - Opt-in fetch-backed loads use the full GGUF URL and reuse the same WasmFS
   fetch worker across model loads. The model origin must serve valid HTTP
   byte ranges.
@@ -489,7 +522,7 @@ Provenance and the pinned manifest digest are in
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.90 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.92 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -497,7 +530,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.90';
+  window.__llamadartBridgeAssetsTag = 'v0.1.92';
 </script>
 ```
 

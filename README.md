@@ -35,7 +35,7 @@ LFM2 replies cut off at a reported length limit expose raw `partialToolCalls` di
 
 ```yaml
 dependencies:
-  llamadart: ^0.20.5
+  llamadart: ^0.20.6
 ```
 
 ```bash
@@ -56,10 +56,10 @@ companion shares its core's `MAJOR.MINOR` and constrains `llamadart` to it.
 
 ```yaml
 dependencies:
-  llamadart: ^0.20.5
-  llamadart_llama_cpp_flutter: ^0.20.5 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.20.5 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.20.5 # Apple image generation, opt-in
+  llamadart: ^0.20.6
+  llamadart_llama_cpp_flutter: ^0.20.6 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.20.6 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.20.6 # Apple image generation, opt-in
 ```
 
 Pairing rules, the SwiftPM bootstrap and the privacy manifest are in
@@ -72,6 +72,9 @@ core with `window.__llamadartBridgeAllowSingleThreadCore = true`. It uses one
 CPU thread and supports WebGPU offload. Fetch-backed model loading requires
 the threaded core. Lazy tool-call grammars and custom grammar roots follow the
 loaded core's `lazyGrammar` capability.
+Set `ModelParams.jsBackedModelStaging` to opt into or out of JavaScript-backed
+GGUF and projector staging. Explicit opt-in requires bridge assets v0.1.92+
+and omission keeps the bridge's WebKit default.
 
 llamadart also ships [agent skills](https://dart.dev/tools/pub/package-skills)
 that teach coding agents its APIs. Install them from your app's root:
@@ -179,7 +182,7 @@ Current default runtime pins:
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v1.0.0-4` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.19.1-7` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.90` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.92` |
 
 The Web backend reuses cached HTTP(S) projectors through the pinned bridge.
 If a direct WebAssembly core abort unloads the model, catch

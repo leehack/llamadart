@@ -70,16 +70,16 @@ const String _approvedManifestJson = '''
 {
   "artifacts": {
     "llama_webgpu_bridge.d.ts": {
-      "sha256": "1d032299591d9f7d453994d083341c6a1f923fcb34dc86c11dd65470e02ef181",
-      "size_bytes": 28340
+      "sha256": "bab791021bb7a2654127b7e3eced01f408e7960d75699596f5fe6f7ad6af56a6",
+      "size_bytes": 28814
     },
     "llama_webgpu_bridge.js": {
-      "sha256": "afe2aa6317fc029d2fd4a337a8ca475843defca8db3d14705828fcd88108bf12",
-      "size_bytes": 423426
+      "sha256": "c72d480fba9feef0405562bebd7a70b7e44fc63562ad1d7da8018753856d4018",
+      "size_bytes": 424423
     },
     "llama_webgpu_bridge_worker.js": {
-      "sha256": "84d7b0448e37bb5fc3e567f437e55e2445171c4c0945ad1aa7de4b7c2db24388",
-      "size_bytes": 422468
+      "sha256": "4c708c879eeaad19dc55c7f01fdd3ab901b8f83e69f63e0669a36024f32d3ef7",
+      "size_bytes": 423465
     },
     "llama_webgpu_core.js": {
       "sha256": "63decaee039c8f91b5923494a44bff7b7f3d83e3eafefff40cef274868069b82",
@@ -115,8 +115,8 @@ const String _approvedManifestJson = '''
     }
   },
   "assets_repository": "leehack/llama-web-bridge-assets",
-  "bridge_assets_tag": "v0.1.90",
-  "bridge_commit": "c281e07766e8ad9d231e275ea81196124f6fd6ac",
+  "bridge_assets_tag": "v0.1.92",
+  "bridge_commit": "d7236223d2393d51dab541df6caf3ef88f06d49b",
   "bridge_repository": "leehack/llama-web-bridge",
   "capabilities": {
     "memory64": true,
@@ -147,16 +147,16 @@ const String _approvedManifestJson = '''
   "emscripten_version": "6.0.8",
   "files": {
     "llama_webgpu_bridge.d.ts": {
-      "sha256": "1d032299591d9f7d453994d083341c6a1f923fcb34dc86c11dd65470e02ef181",
-      "size_bytes": 28340
+      "sha256": "bab791021bb7a2654127b7e3eced01f408e7960d75699596f5fe6f7ad6af56a6",
+      "size_bytes": 28814
     },
     "llama_webgpu_bridge.js": {
-      "sha256": "afe2aa6317fc029d2fd4a337a8ca475843defca8db3d14705828fcd88108bf12",
-      "size_bytes": 423426
+      "sha256": "c72d480fba9feef0405562bebd7a70b7e44fc63562ad1d7da8018753856d4018",
+      "size_bytes": 424423
     },
     "llama_webgpu_bridge_worker.js": {
-      "sha256": "84d7b0448e37bb5fc3e567f437e55e2445171c4c0945ad1aa7de4b7c2db24388",
-      "size_bytes": 422468
+      "sha256": "4c708c879eeaad19dc55c7f01fdd3ab901b8f83e69f63e0669a36024f32d3ef7",
+      "size_bytes": 423465
     },
     "llama_webgpu_core.js": {
       "sha256": "63decaee039c8f91b5923494a44bff7b7f3d83e3eafefff40cef274868069b82",
@@ -191,15 +191,15 @@ const String _approvedManifestJson = '''
       "size_bytes": 10476055
     }
   },
-  "github_run_id": "44943814942",
-  "github_run_url": "https://github.com/leehack/llama-web-bridge/actions/runs/44943814942",
+  "github_run_id": "45031773094",
+  "github_run_url": "https://github.com/leehack/llama-web-bridge/actions/runs/45031773094",
   "llama_cpp_commit": "b1b770d90d94cad9e9ea5b993bdbc383a522fb28",
   "llama_cpp_tag": "v1.0.0",
   "native_commit": "4b480fbf303d69c1f67416a25986bd0913728ede",
   "native_manifest_sha256": "7d8e69971e2e3bd73d258005c86d5f47d0cd96e1d7f08a23fdf44dd244ea1316",
   "native_release_tag": "v1.0.0-4",
   "native_repository": "leehack/llamadart-native",
-  "orchestrator_correlation_id": "manual-v0.1.90-c281e07",
+  "orchestrator_correlation_id": "manual-v0.1.92-d723622",
   "qualification_gates": {
     "multimodal": "passed",
     "speech_to_text": "required-automated-qualification",
@@ -208,9 +208,9 @@ const String _approvedManifestJson = '''
   },
   "release_channel": "stable",
   "release_rebuild": 0,
-  "release_tag": "v0.1.90",
+  "release_tag": "v0.1.92",
   "schema_version": 2,
-  "source_commit": "c281e07766e8ad9d231e275ea81196124f6fd6ac",
+  "source_commit": "d7236223d2393d51dab541df6caf3ef88f06d49b",
   "source_repository": "leehack/llama-web-bridge",
   "unproven_capabilities": {
     "hardware_gpu_acceleration": "unavailable-on-hosted-runners",
@@ -231,7 +231,7 @@ Future<List<String>> _verifyManifestJson(
 }) {
   final bytes = utf8.encode(manifestJson);
   return verifyManifest(
-    expectedTag: 'v0.1.90',
+    expectedTag: 'v0.1.92',
     expectedLlamaCppTag: bridgeLlamaCppTag,
     expectedLlamaCppCommit: bridgeLlamaCppCommit,
     expectedBridgeCommit: bridgeSourceCommit,
@@ -320,6 +320,7 @@ void main() {
           '$_keptBridgeClaim\n$_keptBridgeClaim',
         ),
         valid.replaceFirst(_preparedBaseline, ''),
+        valid.replaceFirst('native LiteRT-LM uses', 'native LiteRT-LM stays'),
         '$valid$_preparedBaseline\n',
         valid.replaceFirst('@litert-lm/core@0.19.0', '@litert-lm/core@0.18.0'),
         valid.replaceFirst(
@@ -336,6 +337,56 @@ void main() {
       }
     },
   );
+
+  test('prep CLI reads prior native pins from the requested tag', () async {
+    final root = _preparedReleaseRepo();
+    final candidatePubspec = File('${root.path}/$rootPubspecPath');
+    final candidatePins = File('${root.path}/$nativeLlamaCppTagPath');
+    final pubspec = candidatePubspec.readAsStringSync();
+    final pins = candidatePins.readAsStringSync();
+    final coreChangelog = File('${root.path}/CHANGELOG.md');
+    final notes = coreChangelog.readAsStringSync();
+    final script = File('tool/testing/check_webgpu_bridge_tag.dart').absolute;
+    final packages = File('.dart_tool/package_config.json').absolute.path;
+    void git(List<String> args) {
+      final result = Process.runSync(
+        'git',
+        args,
+        workingDirectory: root.path,
+        environment: {
+          'GIT_AUTHOR_NAME': 'Release fixture',
+          'GIT_AUTHOR_EMAIL': 'release-fixture@example.invalid',
+          'GIT_COMMITTER_NAME': 'Release fixture',
+          'GIT_COMMITTER_EMAIL': 'release-fixture@example.invalid',
+        },
+      );
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+    }
+
+    git(['init', '--quiet']);
+    candidatePubspec.writeAsStringSync(pubspec.replaceFirst('1.2.3', '1.2.2'));
+    candidatePins.writeAsStringSync(pins.replaceFirst('v1.0.0-3', 'v1.0.0-2'));
+    git(['add', rootPubspecPath, nativeLlamaCppTagPath, bridgeTagSourcePath]);
+    git(['commit', '--quiet', '-m', 'Last release']);
+    git(['tag', 'v1.2.2']);
+    candidatePubspec.writeAsStringSync(pubspec);
+    candidatePins.writeAsStringSync(pins);
+    coreChangelog.writeAsStringSync(
+      notes.replaceFirst('`v1.0.0-3`', '`v1.0.0-3` (unchanged from 1.2.2)'),
+    );
+
+    final result = await Process.run(Platform.resolvedExecutable, [
+      '--packages=$packages',
+      script.path,
+      '--release-prep',
+      'v1.2.2',
+    ], workingDirectory: root.path);
+    expect(result.exitCode, 1, reason: '${result.stdout}');
+    expect(
+      result.stderr,
+      contains('CHANGELOG.md must contain one complete Runtime baseline'),
+    );
+  });
 
   for (final path in _preparedChangelogs) {
     test(
@@ -358,6 +409,123 @@ void main() {
         expect(verify(), contains(startsWith('$path ')));
       },
     );
+    test(
+      'strict prep ignores retention examples in comments and code in $path',
+      () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        final valid = changelog.readAsStringSync();
+        const badClaim = '(unchanged from 1.2.1)';
+        changelog.writeAsStringSync(
+          '$valid\n<!-- Another runtime $badClaim. -->\n'
+          '```markdown\n- Example $badClaim.\n```\n'
+          '- Pass the prompt unchanged from the caller.\n',
+        );
+        expect(_verifyPreparedRelease(root), isEmpty);
+      },
+    );
+
+    for (final (shape, example) in [
+      ('quoted backticks', '> ```html\n> <!--\n> ```'),
+      ('nested quoted tildes', '> > ~~~~html\n>> ~~~\n> > <!--\n> > ~~~~'),
+      (
+        'literal quote marker in a fence',
+        '> ```html\n> > Literal code (unchanged from 1.2.1).\n> > ```\n> <!--\n> ````',
+      ),
+      ('unclosed nested fence', '> > ```html\n>> <!--'),
+      ('unclosed quoted comment', '> <!--\n> Hidden (unchanged from 1.2.1).'),
+    ]) {
+      test('strict prep keeps the baseline after $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        final valid = changelog.readAsStringSync();
+        changelog.writeAsStringSync(
+          valid.replaceFirst(
+            _preparedBaseline,
+            '$example\n\n$_preparedBaseline',
+          ),
+        );
+        expect(_verifyPreparedRelease(root), isEmpty);
+      });
+
+      test('strict prep checks visible claims after $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        final valid = changelog.readAsStringSync();
+        changelog.writeAsStringSync(
+          '$valid\n$example\n\n'
+          '- Native audio remains pinned to v9.9.8 (unchanged from 1.2.1).\n',
+        );
+        expect(
+          _verifyPreparedRelease(root),
+          contains(
+            allOf(
+              startsWith(path),
+              contains('does not match the previous release'),
+            ),
+          ),
+        );
+      });
+    }
+
+    test('strict prep ignores retention text in quoted code in $path', () {
+      final root = _preparedReleaseRepo();
+      final changelog = File('${root.path}/$path');
+      final valid = changelog.readAsStringSync();
+      changelog.writeAsStringSync(
+        '$valid\n> ```text\n> Literal marker (unchanged from 1.2.1).\n> ```\n',
+      );
+      expect(_verifyPreparedRelease(root), isEmpty);
+    });
+
+    for (final (shape, markup, ending) in [
+      ('inline emphasis', '<em><!-- previous release -->', '</em>'),
+      ('wrap hint', '<wbr><!-- editorial -->', ''),
+      ('line break', '<br> <!-- wrap -->', ''),
+    ]) {
+      test('strict prep rejects a wrapped claim with $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        final valid = changelog.readAsStringSync();
+        changelog.writeAsStringSync(
+          '$valid\nNative audio remains pinned to v9.9.8 (unchanged\n'
+          '$markup\nfrom 1.2.1$ending).\n',
+        );
+        expect(
+          _verifyPreparedRelease(root),
+          contains(
+            allOf(
+              startsWith(path),
+              contains('does not match the previous release'),
+            ),
+          ),
+        );
+      });
+    }
+
+    for (final (shape, example) in [
+      ('quoted indented code', '>     Literal example (unchanged from 1.2.1).'),
+      (
+        'quoted HTML code',
+        '> <pre><code>Literal example (unchanged from 1.2.1).</code></pre>',
+      ),
+      (
+        'quoted list-item fence',
+        '> - ```text\n>   Literal example (unchanged from 1.2.1).\n>   ```',
+      ),
+      (
+        'separate paragraphs',
+        'The public API is unchanged\n\n> From 1.2.1 onward, use the new CLI.',
+      ),
+    ]) {
+      test('strict prep accepts valid notes with $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        final valid = changelog.readAsStringSync();
+        changelog.writeAsStringSync('$valid\n$example\n');
+        expect(_verifyPreparedRelease(root), isEmpty);
+      });
+    }
   }
 
   for (final path in _preparedChangelogs) {
@@ -396,7 +564,7 @@ void main() {
   }
 
   test('default assets include the qualified media embedding API', () {
-    expect(readPinnedBridgeTag(Directory.current), 'v0.1.90');
+    expect(readPinnedBridgeTag(Directory.current), 'v0.1.92');
     expect(bridgeNativeReleaseTag, 'v1.0.0-4');
     expect(bridgeApprovedNativePin, 'v1.0.0-4');
     expect(
@@ -1488,8 +1656,8 @@ void main() {
     });
 
     test('immutable release identity stays pinned to the approved release', () {
-      expect(bridgeAssetsReleaseId, '453978695');
-      expect(bridgeAssetsTagCommit, 'de9a81631df869835109913eb89c5ca84a534da8');
+      expect(bridgeAssetsReleaseId, '454541989');
+      expect(bridgeAssetsTagCommit, '056f474f389feaa4e02a62a3125549cb9154fabf');
     });
 
     test('accepts equivalent CRLF documentation passages', () {

@@ -17,8 +17,12 @@ import json
 import os
 
 scenario = json.loads(os.environ["LLAMADART_TTS_SCENARIO"])
+race = scenario["race"]
 capture = {"text": "stale prompt", "keys": [], "polls": [], "fills": 0,
            "clicked": False, "elapsed": 0.0}
+if race:
+    capture.update(attempts=[], focusSettles=[], valueReads=[])
+attached = False
 
 class TimeoutError(Exception):
     pass
@@ -45,14 +49,36 @@ class _Keyboard:
         elif key == "Backspace" and self.selected:
             capture["text"] = ""
     def type(self, text):
+        global attached
         capture["text"] += text
+        if not race or len(capture["attempts"]) != 1:
+            return
+        if ((race == "wipeBeforeAttach" and not attached)
+                or race == "wipeFirstAttemptEvenAfterSettle"):
+            capture["text"] = ""
+            attached = True
+        elif race == "truncateFirstAttempt":
+            capture["text"] = text.split("\n", 1)[1]
 
 class _Textbox:
     @property
     def last(self):
         return self
     def click(self):
-        pass
+        if race:
+            capture["attempts"].append(capture["elapsed"])
+    def evaluate(self, script):
+        global attached
+        if not race:
+            return
+        capture["focusSettles"].append(script)
+        if script.count("requestAnimationFrame") == 2:
+            attached = True
+    def input_value(self, timeout):
+        if race:
+            value = capture["text"]
+            capture["valueReads"].append({"timeout": timeout, "text": value})
+            return value
     def fill(self, text):
         capture["fills"] += 1
 
@@ -67,6 +93,8 @@ class _Button:
             raise ValueError("unrelated page error")
         if self.name != scenario["button"]:
             return False
+        if race:
+            return bool(capture["text"])
         if len(capture["polls"]) == 1:
             raise TimeoutError("semantics temporarily absent")
         return (not scenario.get("disabled", False)
@@ -133,7 +161,10 @@ try:
                     "http://127.0.0.1:1/mmproj.gguf", "--prompt", scenario["prompt"]]
         driver.main()
     else:
-        utils.enter_chat_prompt(Page(), scenario["prompt"], timeout_ms=200)
+        if scenario["race"]:
+            utils.enter_chat_prompt(Page(), scenario["prompt"])
+        else:
+            utils.enter_chat_prompt(Page(), scenario["prompt"], timeout_ms=200)
 except SynthesisReached:
     pass
 finally:
@@ -142,6 +173,7 @@ finally:
 ''';
 
 void main() {
+  const prompt = 'Hello, exact TTS input!\nSecond line.';
   late Directory tempDir;
 
   setUp(() async {
@@ -160,6 +192,7 @@ void main() {
     String platform = 'Darwin',
     bool disabled = false,
     bool unrelatedError = false,
+    String? race,
   }) async {
     final capturePath = p.join(tempDir.path, 'capture.json');
     final result = await runBoundedProcess(
@@ -178,8 +211,9 @@ void main() {
           'platform': platform,
           'disabled': disabled,
           'unrelatedError': unrelatedError,
+          'race': race,
           'button': driver ? 'Synthesize speech' : 'Send message',
-          'prompt': 'Hello, exact TTS input!\nSecond line.',
+          'prompt': prompt,
         }),
       },
     );
@@ -249,4 +283,49 @@ void main() {
     expect(capture['clicked'], isFalse);
     expect(capture['elapsed'], 0);
   });
+
+  test('settles Flutter focus before typing the first prompt', () async {
+    final (:result, :capture) = await run(
+      driver: false,
+      race: 'wipeBeforeAttach',
+    );
+
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    expect(capture['text'], prompt);
+    expect(capture['attempts'], [0]);
+    expect(capture['focusSettles'], hasLength(1));
+  });
+
+  test('retypes the prompt after Flutter wipes the first attempt', () async {
+    final (:result, :capture) = await run(
+      driver: false,
+      race: 'wipeFirstAttemptEvenAfterSettle',
+    );
+
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    expect(capture['text'], prompt);
+    expect(capture['attempts'], [0, closeTo(0.5, 0.05)]);
+  });
+
+  test(
+    'retypes a truncated multiline prompt even when Send is enabled',
+    () async {
+      final (:result, :capture) = await run(
+        driver: false,
+        race: 'truncateFirstAttempt',
+      );
+
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      expect(capture['text'], prompt);
+      expect(capture['attempts'], [0, closeTo(0.5, 0.05)]);
+      expect((capture['valueReads'] as List).first, {
+        'timeout': 250,
+        'text': 'Second line.',
+      });
+      expect((capture['valueReads'] as List).last, {
+        'timeout': 250,
+        'text': prompt,
+      });
+    },
+  );
 }

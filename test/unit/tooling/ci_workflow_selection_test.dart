@@ -133,6 +133,15 @@ const String linuxVmRun =
     r'${{ steps.shard.outputs.files }}';
 
 void main() {
+  test('CI uses the updated payload when a release-prep label is added', () {
+    final pullRequest = readWorkflow('ci')['on']['pull_request'] as Map;
+    expect(pullRequest['branches'], ['main']);
+    expect(
+      pullRequest['types'],
+      unorderedEquals(['opened', 'synchronize', 'reopened', 'labeled']),
+    );
+  });
+
   test('CI artifact actions use full SHAs with version comments', () {
     final source = File('.github/workflows/ci.yml').readAsStringSync();
     final lines = const LineSplitter().convert(source);
@@ -634,6 +643,58 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
       expect(jsonEncode(deploy), isNot(contains('download-artifact@')));
     },
   );
+
+  test('preview sweep uses the same queued write group on trusted main', () {
+    final workflow = readWorkflow('chat_app_hf_pr_preview_sweep');
+    final triggers = workflow['on'] as Map;
+    expect(triggers.keys, unorderedEquals(['schedule', 'workflow_dispatch']));
+    expect(triggers['schedule'], [
+      {'cron': '23 6 * * *'},
+    ]);
+    final jobs = workflow['jobs'] as Map;
+    final list = jobs['list'] as Map;
+    final delete = jobs['delete'] as Map;
+    expect(list['if'], contains("github.ref == 'refs/heads/main'"));
+    expect(list['if'], contains("github.repository == 'leehack/llamadart'"));
+    expect(list['outputs'], {'prs': r'${{ steps.list.outputs.prs }}'});
+    expect(delete['needs'], 'list');
+    expect(
+      delete['if'],
+      "needs.list.outputs.prs != '' && needs.list.outputs.prs != '[]'",
+    );
+    expect(delete['strategy'], {
+      'fail-fast': false,
+      'max-parallel': 2,
+      'matrix': {'pr': r'${{ fromJSON(needs.list.outputs.prs) }}'},
+    });
+    final preview = readWorkflow('chat_app_hf_pr_preview')['jobs']['preview'];
+    final previewGroup = preview['concurrency']['group'] as String;
+    expect(delete['concurrency'], {
+      'group': previewGroup.replaceFirst(
+        'github.event.pull_request.number',
+        'matrix.pr',
+      ),
+      'cancel-in-progress': preview['concurrency']['cancel-in-progress'],
+      'queue': preview['concurrency']['queue'],
+    });
+    final previewOperation = (preview['steps'] as List).last;
+    for (final (job, operation) in [(list, 'list'), (delete, 'delete')]) {
+      expect(job['permissions'], {'contents': 'read', 'pull-requests': 'read'});
+      final steps = job['steps'] as List;
+      expect(steps.first['with'], {
+        'ref': r'${{ github.sha }}',
+        'persist-credentials': false,
+      });
+      final step = steps.last as Map;
+      expect(step['run'], 'python3 tool/ci/preview_sweep.py $operation');
+      expect(step['env']['HF_TOKEN'], previewOperation['env']['HF_TOKEN']);
+      expect(step['env']['GH_TOKEN'], previewOperation['env']['GH_TOKEN']);
+    }
+    expect(
+      (delete['steps'] as List).last['env']['PREVIEW_PR_NUMBER'],
+      r'${{ matrix.pr }}',
+    );
+  });
 
   test('model-store lane checks the package on its own selection', () async {
     final plan = await selected([
