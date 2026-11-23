@@ -483,16 +483,38 @@ class WebGpuDecisionHeads {
   }
 }
 
-/// Returns the message of a bridge [error] with URLs redacted by
-/// [redactUrlSecrets], parsing [sourceUrls] as the browser does.
+final RegExp _opaqueUrlScheme = RegExp(r'^(data|blob):', caseSensitive: false);
+final RegExp _opaqueUrlInText = RegExp(
+  r'''(?<![\w.+-])(?:(data):(?:<redacted>|(?=\S)[\s\S]*)|'''
+  r'''(blob):(?:<redacted>|[^\s"'<>]+))''',
+  caseSensitive: false,
+);
+
+/// Returns the message of a bridge [error] with opaque URLs removed and
+/// other URLs redacted by [redactUrlSecrets].
 String webGpuBridgeErrorText(
   Object error, {
   Iterable<String> sourceUrls = const <String>[],
-}) => redactUrlSecrets(
-  _bridgeErrorMessage(error),
-  sourceUrls: sourceUrls,
-  parseUrl: _parseBrowserUrl,
-);
+}) {
+  var text = _bridgeErrorMessage(error);
+  for (final url in sourceUrls) {
+    final scheme = _opaqueUrlScheme.firstMatch(url.trim());
+    if (scheme == null) continue;
+    final placeholder = '${scheme[1]!.toLowerCase()}:<redacted>';
+    // Match the whole configured URL before applying the free-form fallback.
+    text = text.replaceAll(url.trim(), placeholder);
+    final href = _parseBrowserUrl(url)?.href;
+    if (href != null) text = text.replaceAll(href, placeholder);
+  }
+  return redactUrlSecrets(
+    text.replaceAllMapped(
+      _opaqueUrlInText,
+      (match) => '${(match[1] ?? match[2])!.toLowerCase()}:<redacted>',
+    ),
+    sourceUrls: sourceUrls,
+    parseUrl: _parseBrowserUrl,
+  );
+}
 
 String _sourceDisplayUrl(String url) =>
     sourceUrlDisplay(url, parseUrl: _parseBrowserUrl);

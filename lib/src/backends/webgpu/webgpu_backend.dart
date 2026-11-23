@@ -60,7 +60,7 @@ typedef _WebGpuCompletionCapabilities = ({
   Set<SpeculativeDecodingStrategy> speculativeDecoding,
 });
 
-typedef _CoreLoaderKeys = ({Digest wasm32, Digest? memory64});
+typedef _CoreLoaderKeys = ({Digest wasm32, Digest? memory64, Digest? fallback});
 
 const String _webTtsStreamingUnsupportedReason =
     'Streaming text-to-speech is not available on Web: the WebGPU bridge '
@@ -120,7 +120,7 @@ class WebGpuLlamaBackend
       'different core loader URL.';
   // A rejected dynamic import stays in the browser's module map after disposal.
   static final Set<Digest> _failedCoreLoaders = {};
-  static final Set<_CoreLoaderKeys> _failedUnidentifiedCoreLoaders = {};
+  static final Set<Digest> _failedCoreLoaderFallbacks = {};
   static final _constructorIdentities = _BridgeIdentities();
   static final _factoryIdentities = Expando<int>();
   static int _nextBridgeIdentity = 0;
@@ -365,29 +365,47 @@ class WebGpuLlamaBackend
     required bool allowSingleThreadCore,
     required bool? jsBackedModelStaging,
   }) {
+    final assetUrls = _bridgeAssetUrls(
+      singleThread: allowSingleThreadCore,
+    ).toList();
+    void log(LlamaLogLevel level, JSAny? message) {
+      if (!_shouldEmitConsole(level)) return;
+      if (message.isA<JSString>() || message.isA<JSObject>()) {
+        final text = message.isA<JSString>()
+            ? (message as JSString).toDart
+            : message as JSObject;
+        _emitConsoleText(
+          level,
+          webGpuBridgeErrorText(text, sourceUrls: assetUrls),
+        );
+      } else {
+        _emitConsole(level, message);
+      }
+    }
+
     final logger = JSObject();
     logger.setProperty(
       'debug'.toJS,
       (JSAny? msg) {
-        _emitConsole(LlamaLogLevel.debug, msg);
+        log(LlamaLogLevel.debug, msg);
       }.toJS,
     );
     logger.setProperty(
       'log'.toJS,
       (JSAny? msg) {
-        _emitConsole(LlamaLogLevel.info, msg);
+        log(LlamaLogLevel.info, msg);
       }.toJS,
     );
     logger.setProperty(
       'warn'.toJS,
       (JSAny? msg) {
-        _emitConsole(LlamaLogLevel.warn, msg);
+        log(LlamaLogLevel.warn, msg);
       }.toJS,
     );
     logger.setProperty(
       'error'.toJS,
       (JSAny? msg) {
-        _emitConsole(LlamaLogLevel.error, msg);
+        log(LlamaLogLevel.error, msg);
       }.toJS,
     );
 
@@ -434,13 +452,30 @@ class WebGpuLlamaBackend
       return sha256.convert(utf8.encode(identity));
     }
 
+    final wasm32Key = loaderKey(coreModuleUrl, 'wasm32');
+    final memory64Key =
+        preferMemory64 == false ||
+            (coreModuleUrl != null && coreModuleUrlMem64 == null)
+        ? null
+        : loaderKey(coreModuleUrlMem64, 'memory64');
     _coreLoaderKeys = (
-      wasm32: loaderKey(coreModuleUrl, 'wasm32'),
-      memory64:
-          preferMemory64 == false ||
-              (coreModuleUrl != null && coreModuleUrlMem64 == null)
+      wasm32: wasm32Key,
+      memory64: memory64Key,
+      fallback: memory64Key == null
           ? null
-          : loaderKey(coreModuleUrlMem64, 'memory64'),
+          : sha256.convert(
+              utf8.encode(
+                jsonEncode([
+                  bridgeIdentity(),
+                  allowSingleThreadCore,
+                  moduleUrl,
+                  workerModuleUrl,
+                  wasm32Key.toString(),
+                  memory64Key.toString(),
+                  wasmUrlMem64 ?? wasmUrl,
+                ]),
+              ),
+            ),
     );
     _checkCoreLoaderFailures(allowSingleThreadCore: allowSingleThreadCore);
     final threadPoolSizeHint = _getGlobalPositiveInt(
@@ -485,22 +520,25 @@ class WebGpuLlamaBackend
   void _rememberCoreLoaderFailure(String? variant) {
     final keys = _coreLoaderKeys;
     if (keys == null) return;
-    final failed = switch (variant) {
-      'wasm32' => keys.wasm32,
-      'memory64' => keys.memory64,
-      _ => keys.memory64 == null ? keys.wasm32 : null,
-    };
-    if (failed == null) {
-      _failedUnidentifiedCoreLoaders.add(keys);
-    } else {
-      _failedCoreLoaders.add(failed);
+    final (:wasm32, :memory64, :fallback) = keys;
+    if (variant == 'memory64' && memory64 != null) {
+      _failedCoreLoaders.add(memory64);
+      return;
+    }
+    if (variant == 'wasm32' || memory64 == null) {
+      _failedCoreLoaders.add(wasm32);
+    }
+    // The bridge reports only the last failure after memory64 falls back to
+    // wasm32. Memory64 may have failed to initialize with a working loader.
+    if (fallback != null) {
+      _failedCoreLoaderFallbacks.add(fallback);
     }
   }
 
   void _checkCoreLoaderFailures({required bool allowSingleThreadCore}) {
     final keys = _coreLoaderKeys;
     if (keys != null &&
-        (_failedUnidentifiedCoreLoaders.contains(keys) ||
+        (_failedCoreLoaderFallbacks.contains(keys.fallback) ||
             (_failedCoreLoaders.contains(keys.wasm32) &&
                 (keys.memory64 == null ||
                     _failedCoreLoaders.contains(keys.memory64))))) {
@@ -769,6 +807,7 @@ class WebGpuLlamaBackend
       _bridgeWorkerUrl,
       if (!singleThread) _bridgeWasmUrl,
       _getGlobalString('__llamadartBridgeModuleUrl'),
+      _getGlobalString('__llamadartBridgeAssetSource'),
       _getGlobalString('__llamadartBridgeWorkerUrl'),
       _getGlobalString('__llamadartBridgeCoreModuleUrl$suffix'),
       _getGlobalString('__llamadartBridgeCoreModuleUrlMem64$suffix'),
@@ -1685,7 +1724,8 @@ class WebGpuLlamaBackend
           } catch (_) {}
           throw LlamaUnsupportedException(
             'ComputeDevice.gpu needs WebGPU for llama.cpp on the Web, but the '
-            'runtime loaded the model without GPU layers.$gpuDetail Use '
+            'runtime loaded the model without GPU layers.'
+            '${webGpuBridgeErrorText(gpuDetail, sourceUrls: sourceUrls)} Use '
             'ComputeDevice.auto or cpu.',
           );
         }
@@ -3815,18 +3855,22 @@ class WebGpuLlamaBackend
     final bridge = _requireBridge();
     final metadata = bridge.getModelMetadata();
     final out = <String, String>{};
+    final assetUrls = _bridgeAssetUrls(
+      singleThread: _allowSingleThreadCore,
+    ).toList();
     if (metadata != null) {
       final keys = _objectKeys(metadata);
       for (int i = 0; i < keys.length; i++) {
         final key = (keys.getProperty(i.toJS) as JSString).toDart;
         final value = metadata.getProperty(key.toJS);
-        if (value.isA<JSString>()) {
-          out[key] = (value as JSString).toDart;
-        } else if (value.isA<JSNumber>()) {
-          out[key] = (value as JSNumber).toDartInt.toString();
-        } else {
-          out[key] = value.toString();
-        }
+        final text = value.isA<JSString>()
+            ? (value as JSString).toDart
+            : value.isA<JSNumber>()
+            ? (value as JSNumber).toDartInt.toString()
+            : value.toString();
+        out[key] = key.startsWith('llamadart.webgpu.')
+            ? webGpuBridgeErrorText(text, sourceUrls: assetUrls)
+            : text;
       }
     }
 
