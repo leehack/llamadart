@@ -10,6 +10,7 @@ import 'package:llamadart/src/core/decision/decision_engine.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart' show Blob, BlobPropertyBag, URL, document;
 
+import '../../../support/fake_cross_origin_isolation.dart';
 import '../../../support/fake_webgpu_decision_bridge.dart';
 
 void main() {
@@ -31,6 +32,7 @@ void main() {
   );
 
   setUp(() {
+    addTearDown(fakeCrossOriginIsolation());
     bridges = <FakeDecisionBridge>[];
     withDecisionApi = true;
     engine = LlamaEngine(fakeBackend());

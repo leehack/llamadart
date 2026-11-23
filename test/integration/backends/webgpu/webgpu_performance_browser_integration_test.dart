@@ -8,12 +8,14 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 
+import '../../../support/fake_cross_origin_isolation.dart';
 import '../../../support/fake_webgpu_feature_bridge.dart';
 
 void main() {
   for (final batch in [false, true]) {
     test('Web null-diagnostics contract after generation, early cancel '
         'and embedding: batch=$batch', () async {
+      addTearDown(fakeCrossOriginIsolation());
       final bridge = FakeFeatureBridge();
       var embeddings = 0;
       bridge.object.setProperty(

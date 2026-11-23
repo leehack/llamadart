@@ -1746,7 +1746,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       group: LocalE2eScenarioGroup.webSmoke,
       description:
           'Check direct and worker single-thread wasm32 and memory64 loads '
-          'on a non-isolated page, typed opt-in and old-asset guards, and '
+          'on a non-isolated page, a one-time warning, opt-out and old-asset guards, and '
           'threaded controls on an isolated page.',
       requiresDevice: false,
       stepsBuilder: (context) => [

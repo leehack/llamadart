@@ -54,13 +54,15 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
 - Serve from a secure context (`https://`, `http://localhost` or
   `http://127.0.0.1`) and send `Cross-Origin-Opener-Policy: same-origin` with
   `Cross-Origin-Embedder-Policy: require-corp` (`credentialless` isolates only
-  in Chromium-based browsers; it does not isolate Safari). Without
-  isolation (`window.crossOriginIsolated == false`) assets `v0.1.85+`
-  reject with `LlamaUnsupportedException` naming COOP/COEP by default.
-  When the host cannot isolate the page, run `dart run llamadart:web_setup`
-  and set `window.__llamadartBridgeAllowSingleThreadCore = true` before the
-  first GGUF load. This requires matching v0.1.93+ assets and affects only
-  non-isolated pages. For custom hosting, configure
+  in Chromium-based browsers). When threads are unavailable (no cross-origin
+  isolation and no usable `SharedArrayBuffer`), GGUF loads automatically use the
+  single-thread core with matching v0.1.93+ assets from
+  `dart run llamadart:web_setup`. The first automatic selection warns once
+  about lower performance. Before the first GGUF load, set
+  `window.__llamadartBridgeAllowSingleThreadCore = true` to skip the warning or
+  `false` to require the threaded core. Missing or old assets and explicit
+  opt-out when threads are unavailable raise `LlamaUnsupportedException`.
+  For custom hosting, configure
   `__llamadartBridgeCoreModuleUrlSt` / `__llamadartBridgeWasmUrlSt` and
   `__llamadartBridgeCoreModuleUrlMem64St` / `__llamadartBridgeWasmUrlMem64St`.
   The bridge checks and initializes the core before model loading.

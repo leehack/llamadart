@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import platform
+import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -12,13 +13,14 @@ from playwright.sync_api import sync_playwright
 
 LEGACY_ASSETS_URL_FILE = Path("test/e2e/webgpu/fixtures/single_thread_legacy_assets_url.txt")
 LEGACY_BRIDGE_DIGESTS = {
-    "llama_webgpu_bridge.js": "c91d386f5b7a42c1a2d9ba9208203cea2e062bc494e98cfcccdfa398a2a2ba24",
-    "llama_webgpu_bridge_worker.js": "47bbfa0fe897e708455b9497e9aa41d2e94489c329300c33b12936fb3169deca",
+    "llama_webgpu_bridge.js": "c72d480fba9feef0405562bebd7a70b7e44fc63562ad1d7da8018753856d4018",
+    "llama_webgpu_bridge_worker.js": "4c708c879eeaad19dc55c7f01fdd3ab901b8f83e69f63e0669a36024f32d3ef7",
 }
 
 
 def run_case(browser, origin, model_url, *, worker, isolated=False,
-             opt_in=True, mem64=False, legacy=False, forced_fetch=False, gpu=False,
+             shared_memory_override=False,
+             opt_in=None, mem64=False, legacy=False, forced_fetch=False, gpu=False,
              allow_wasm64_retry=False):
     legacy_assets_url = (
         LEGACY_ASSETS_URL_FILE.read_text(encoding="utf-8").strip()
@@ -27,6 +29,18 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
     )
     page = browser.new_page()
     wasm_files = []
+    warnings = []
+    offload_logs = []
+
+    def track_console(message):
+        if message.type == "warning" and "lower performance" in message.text:
+            warnings.append(message.text)
+        if re.search(r"offloaded \d+/\d+ layers", message.text):
+            offload_logs.append(message.text)
+
+    page.on("console", track_console)
+    threaded = isolated or shared_memory_override
+    repeat = opt_in is None and not (threaded or legacy or forced_fetch or allow_wasm64_retry)
 
     def track_wasm(request):
         if request.url.startswith(f"{origin}/build/web_single_thread_core/bridge/"):
@@ -52,9 +66,9 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
     try:
         page.goto(f"{fixture}probe.html")
         assert page.evaluate("crossOriginIsolated") == isolated
-        assert page.evaluate("typeof SharedArrayBuffer === 'function'") == isolated
-        result = json.loads(page.evaluate(
-            """async ({ worker, optIn, mem64, legacyAssetsUrl, forcedFetch, gpu, modelUrl }) => {
+        assert page.evaluate("typeof SharedArrayBuffer === 'function'") == threaded
+        results = page.evaluate(
+            """async ({ worker, optIn, mem64, legacyAssetsUrl, forcedFetch, gpu, modelUrl, repeat }) => {
               const base = legacyAssetsUrl ?? new URL('bridge/', location.href).href;
               const asset = (file) => new URL(file, base).href;
               const {LlamaWebGpuBridge} = await import(asset('llama_webgpu_bridge.js'));
@@ -63,7 +77,7 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
                   super({ ...config, disableWorker: !worker });
                 }
               };
-              window.__llamadartBridgeAllowSingleThreadCore = optIn;
+              if (optIn !== null) window.__llamadartBridgeAllowSingleThreadCore = optIn;
               window.__llamadartBridgeAllowAutoRemoteFetchBackend = true;
               window.__llamadartBridgeForceRemoteFetchBackend = forcedFetch;
               window.__llamadartBridgeWorkerUrl = asset('llama_webgpu_bridge_worker.js');
@@ -77,25 +91,45 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
                 window.__llamadartBridgeCoreModuleUrlMem64St = asset('llama_webgpu_core_mem64_st.js');
                 window.__llamadartBridgeWasmUrlMem64St = asset('llama_webgpu_core_mem64_st.wasm');
               }
-              return window.runSingleThreadCore(modelUrl, mem64, gpu);
+              const load = async () => JSON.parse(await runSingleThreadCore(modelUrl, mem64, gpu));
+              const results = [await load()];
+              if (repeat) results.push(await load());
+              return results;
             }""",
             dict(worker=worker, optIn=opt_in, mem64=mem64, legacyAssetsUrl=legacy_assets_url,
-                 forcedFetch=forced_fetch, gpu=gpu, modelUrl=model_url),
-        ))
+                 forcedFetch=forced_fetch, gpu=gpu, modelUrl=model_url, repeat=repeat),
+        )
+        result = results[0]
         print(json.dumps(dict(
             worker=worker, isolated=isolated, opt_in=opt_in, mem64=mem64,
+            shared_memory_override=shared_memory_override,
             legacy=legacy, forced_fetch=forced_fetch, gpu=gpu, wasm_files=wasm_files, result=result,
+            repeat_result=results[1] if repeat else None, warnings=warnings, offload_logs=offload_logs,
         )), flush=True)
-        if legacy or not opt_in or (forced_fetch and not isolated):
+        if legacy or ((opt_in is False or forced_fetch) and not threaded):
+            assert not warnings, warnings
             assert "unsupported" in result, result
             detail = result["unsupported"]
-            expected = "v0.1.93+" if legacy else (
-                "COOP/COEP" if not opt_in else "fetch-backed"
+            expected = ("v0.1.93+", "llamadart:web_setup", "COOP/COEP") if legacy else (
+                ("COOP/COEP", "require-corp") if opt_in is False else ("fetch-backed",)
             )
-            assert expected in detail, result
+            assert all(text in detail for text in expected), result
             return
 
         assert result.get("output", "").strip(), result
+        automatic = opt_in is None and not threaded
+        assert len(warnings) == (1 if automatic else 0), warnings
+        if automatic:
+            assert all(text in warnings[0] for text in (
+                "Cross-Origin-Opener-Policy: same-origin",
+                "Cross-Origin-Embedder-Policy: require-corp",
+                "__llamadartBridgeAllowSingleThreadCore = false",
+            )), warnings
+        if repeat:
+            assert results[1]["output"] == result["output"], results
+            for key in ("core_variant", "execution"):
+                assert results[1][key] == result[key], results
+            assert "core_preflight_threading:single-thread" in results[1]["runtime_notes"], results
         assert result["execution"] == ("worker" if worker else "main-thread"), result
         assert not result.get("worker_fallback_reason"), result
         expected_core = "wasm64" if mem64 else "wasm32"
@@ -107,9 +141,10 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
         else:
             assert result["core_variant"] == expected_core, result
         notes = result["runtime_notes"].split(";")
-        if isolated:
+        if threaded:
             assert "core_pthreads:1" in notes, result
             assert "core_single_thread" not in notes, result
+            assert wasm_files == ["llama_webgpu_core.wasm"], wasm_files
             if forced_fetch:
                 assert "model_fetch_backend_attempt" in notes, result
                 assert result["model_source"] == "network-fetch", result
@@ -122,6 +157,8 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
             assert "model_fetch_backend_attempt" not in notes, result
         if gpu:
             assert "WebGPU" in result["backends"], result
+            assert len(offload_logs) == len(results), offload_logs
+            assert all(re.search(r"offloaded [1-9]\d*/\d+ layers", line) for line in offload_logs), offload_logs
     finally:
         page.close()
 
@@ -179,7 +216,6 @@ def run_bootstrap_case(browser, fixture, model_url, *, worker, case):
         page.context.on("response", lambda response: responses.append(
             (Path(urlsplit(response.url).path).name, response.status)
         ) if response.url.startswith(f"{base}webgpu_bridge/") or response.url == model_url else None)
-        page.add_init_script("window.__llamadartBridgeAllowSingleThreadCore = true")
         page.goto(f"{base}probe.html")
         page.wait_for_function(
             "window.__llamadartBridgeReady === true && typeof runSingleThreadCore === 'function'"
@@ -218,7 +254,9 @@ def run_bootstrap_case(browser, fixture, model_url, *, worker, case):
                 assert responses == [("llama_webgpu_bridge.js", 200)], responses
             assert all(name != "model.gguf" for name, _ in responses), responses
             detail = result.get("unsupported", "")
-            assert all(text in detail for text in ("Single-thread", "COOP/COEP", "v0.1.93+")), result
+            assert all(text in detail for text in (
+                "Single-thread", "COOP/COEP", "v0.1.93+", "llamadart:web_setup",
+            )), result
         else:
             if mem64:
                 assert ("llama_webgpu_core_mem64_st.wasm", 200) in responses, responses
@@ -268,6 +306,7 @@ def main():
                 run_case(browser, origin, fixture_url, worker=worker, forced_fetch=True)
                 run_case(browser, origin, fixture_url, worker=worker, isolated=True,
                          forced_fetch=worker)
+                run_case(browser, origin, fixture_url, worker=worker, opt_in=True)
                 for mem64 in [False, True]:
                     run_case(browser, origin, fixture_url, worker=worker, mem64=mem64, gpu=args.gpu)
             check_bootstrap_errors(browser, f"{origin}/build/web_single_thread_core/", fixture_url)
@@ -275,6 +314,17 @@ def main():
                 for mem64 in [False, True]:
                     run_case(browser, origin, args.model_url, worker=True, mem64=mem64,
                              allow_wasm64_retry=True)
+        finally:
+            browser.close()
+
+        browser = playwright.chromium.launch(
+            channel="chromium", args=[*launch_args, "--enable-features=SharedArrayBuffer"]
+        )
+        try:
+            for worker in [False, True]:
+                for opt_in in [None, False]:
+                    run_case(browser, origin, fixture_url, worker=worker,
+                             shared_memory_override=True, opt_in=opt_in)
         finally:
             browser.close()
 

@@ -378,31 +378,35 @@ web backend load options).
 
 ## Hosting headers
 
-The default threaded GGUF core requires cross-origin isolation
+Cross-origin isolation enables shared memory for the threaded GGUF core
 (`Cross-Origin-Opener-Policy: same-origin`,
 `Cross-Origin-Embedder-Policy: require-corp`; `credentialless` isolates only
 in Chromium-based browsers, see
-[#1025](https://github.com/leehack/llamadart/issues/1025)). On a non-isolated
-page, assets v0.1.85+ default to `CrossOriginIsolationError`
-(`CROSS_ORIGIN_ISOLATION_REQUIRED`), which Dart translates into
-`LlamaUnsupportedException` on the direct and worker paths. Older threaded
-assets can time out during core initialization.
+[#1025](https://github.com/leehack/llamadart/issues/1025)). Dart also uses the
+threaded core on non-isolated pages that can post shared Wasm memory.
 
-Setting `__llamadartBridgeAllowSingleThreadCore` to literal `true` affects
-only a non-isolated page. Dart passes `allowSingleThreadCore: true` and selects
-the single-thread URLs for both wasm widths. The opt-in requires assets
-v0.1.93+. Dart checks the constructor's `supportsCorePreflight` flag and calls
-`preflightCore()` before model loading. The bridge initializes the core in
-the chosen execution mode and handles memory64 fallback and adjacent Wasm
-resolution. The model load reuses that core. Missing core assets and older
-bridges or workers produce `LlamaUnsupportedException` naming the asset
-requirement and COOP/COEP. Model download and GGUF failures retain their
-ordinary error types.
+When a non-isolated page cannot post shared Wasm memory, Dart passes
+`allowSingleThreadCore: true` and selects the single-thread URLs for both Wasm
+widths. With the flag unset, the first successful core preflight logs a
+console warning about lower performance and how to enable isolation or opt
+out. Set `true` to skip that warning or `false` to require the threaded core
+and throw `LlamaUnsupportedException` before dispatch when threads are
+unavailable. The flag also accepts the other bridge globals' boolean aliases.
+
+Dart requires assets v0.1.93+ and checks the constructor's
+`supportsCorePreflight` flag before calling `preflightCore()`. The bridge
+initializes the core before model transfer and handles memory64 fallback
+and adjacent Wasm resolution. The model load reuses that core and retains
+the same `modelBytesHint` selection and allocation retry policy. Missing
+core assets and older bridges or workers produce `LlamaUnsupportedException`
+with instructions to run `dart run llamadart:web_setup` or enable COOP/COEP.
+Bridge module load failures retain their redacted bootstrap or import error.
+Model download and GGUF failures retain their ordinary error types.
 
 The preflight must report `threading: 'single-thread'`. After model load,
 `llamadart.webgpu.runtime_notes` includes the preflight variant, threading
 and fallback result. The bridge also reports the actual loaded
-`core_variant` and the `core_single_thread` runtime note.
+`core_variant`, the `execution` mode and the `core_single_thread` runtime note.
 Fetch-backed loading requires pthreads. Dart excludes it from automatic
 staging recovery on the single-thread path and rejects a forced request.
 
@@ -639,8 +643,9 @@ in both runtimes.
 
 ## Runtime globals read by `llamadart`
 
-- `window.__llamadartBridgeAllowSingleThreadCore`: literal `true` opts into
-  GGUF loading on non-isolated pages using matching v0.1.93+ bridge assets.
+- `window.__llamadartBridgeAllowSingleThreadCore`: unset uses the single-thread
+  core when threads are unavailable and warns once. `true` accepts it without
+  a warning. `false` requires the threaded core.
 - `window.__llamadartBridgeCoreModuleUrlSt` and
   `window.__llamadartBridgeWasmUrlSt` supply the single-thread wasm32 core.
   `window.__llamadartBridgeCoreModuleUrlMem64St` and
