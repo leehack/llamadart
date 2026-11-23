@@ -6,7 +6,7 @@ in genkit_llamadart 3.10.0.
 
 | Option | Model | Requirements |
 | --- | --- | --- |
-| GGUF | SmolLM2 135M (~105 MB, default), Qwen3.5 0.8B (~533 MB), or Gemma 4 E2B (~3 GB) | llamadart 0.20.7 or newer. Runs in the browser. Gemma 4 E2B requires desktop Chrome with WebAssembly memory64 and 8+ GB RAM and is not supported on Safari or mobile browsers. |
+| GGUF | SmolLM2 135M (~105 MB, default), Qwen3.5 0.8B (~533 MB), or Gemma 4 E2B (~3 GB) | llamadart 0.20.7 or newer. Runs in the browser. Gemma 4 E2B download (~3 GB) can take several minutes, measured ~11 GB peak browser memory (desktop Chrome with WebAssembly memory64 and 16+ GB RAM recommended; not supported on Safari or mobile browsers). |
 | LiteRT-LM | Qwen3-0.6B dynamic INT4 (about 343 MB) | Chrome with WebGPU. Runs in the browser. |
 | Gemini | Gemini 3.1 Flash-Lite | A Gemini API key and access to Google's API. Prompts are sent to Google. |
 
@@ -16,7 +16,9 @@ Enter a prompt or tap a preset, then select **Send**. **Stop** cancels the
 request and keeps the text already streamed. **Clear** resets the chat and
 per-turn stats.
 
-GGUF and Gemini send the conversation history with each turn. LiteRT-LM Web
+GGUF and Gemini send the conversation history with each turn. To fit GGUF's
+2,048-token context window, long local chats automatically trim the oldest turns
+forwarded while keeping the full transcript visible on screen. LiteRT-LM Web
 currently runs single-turn: the transcript remains visible, and each request
 uses only the current prompt. **Settings** lets you change temperature and max
 tokens and edit the system prompt when the loaded runtime supports it.
@@ -31,11 +33,15 @@ for the active connection and clears the input after **Connect**.
 The first local model load needs access to jsDelivr and Hugging Face. Run in a
 secure context such as DartPad Preview or localhost. In preview iframes
 without cross-origin isolation, the GGUF bridge selects the single-thread
-core automatically.
+core automatically, and the one-time browser console warning about using the
+single-thread core is expected. Standalone deployments can serve COOP/COEP
+headers for the threaded core; see
+[Single-threaded GGUF without isolation](https://llamadart.leehack.com/docs/platforms/webgpu-bridge#single-threaded-gguf-without-isolation).
 
 ## Run locally in Chrome
 
-From the repository root, generate the Flutter Web files in the example:
+Requires **Flutter 3.47+ / Dart 3.13+** (for `material_ui`). From the repository
+root, generate the Flutter Web files in the example:
 
 ```sh
 cd packages/genkit_llamadart/example/dartpad

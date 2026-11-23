@@ -17,16 +17,49 @@ class PlaygroundView extends StatefulWidget {
 class _PlaygroundViewState extends State<PlaygroundView> {
   final _promptFocus = FocusNode();
   final _scroll = ScrollController();
+  bool _scrollScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.streamingText.addListener(_onStreamingUpdate);
+  }
+
+  @override
+  void didUpdateWidget(covariant PlaygroundView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.streamingText.removeListener(_onStreamingUpdate);
+      widget.controller.streamingText.addListener(_onStreamingUpdate);
+    }
+  }
+
+  void _onStreamingUpdate() {
+    if (widget.controller.streamingText.value != null) _scheduleScroll();
+  }
+
+  void _scheduleScroll({bool force = false}) {
+    // Check near-bottom before layout grows so a big chunk still follows.
+    if (!force && (!_scroll.hasClients || _scroll.position.extentAfter > 48)) {
+      return;
+    }
+    if (_scrollScheduled) return;
+    _scrollScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollScheduled = false;
+      if (!mounted || !_scroll.hasClients) return;
+      _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    });
+  }
 
   void _send() {
     unawaited(widget.controller.send());
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
-    });
+    _scheduleScroll(force: true);
   }
 
   @override
   void dispose() {
+    widget.controller.streamingText.removeListener(_onStreamingUpdate);
     _promptFocus.dispose();
     _scroll.dispose();
     super.dispose();
@@ -50,50 +83,75 @@ class _PlaygroundViewState extends State<PlaygroundView> {
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640),
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _ProviderSelector(controller),
-                    const SizedBox(height: 8),
-                    if (controller.isGguf) ...[
-                      _GgufModelPicker(controller),
-                      const SizedBox(height: 8),
-                    ],
-                    if (!controller.ready) _ConnectionSection(controller),
-                    if (controller.stats case final stats?) _StatsBar(stats),
-                    if (controller.ready && !controller.supportsMultiTurn)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 8),
-                        child: Text(singleTurnNotice),
-                      ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView(
-                  controller: _scroll,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  children: [
-                    _SettingsPanel(controller),
-                    _PresetChips(
-                      onSelected: controller.generating
-                          ? null
-                          : (prompt) {
-                              controller.prompt.text = prompt;
-                              _promptFocus.requestFocus();
-                            },
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final header = <Widget>[
+                _ProviderSelector(controller),
+                const SizedBox(height: 8),
+                if (controller.isGguf) ...[
+                  _GgufModelPicker(controller),
+                  const SizedBox(height: 8),
+                ],
+                if (!controller.ready) _ConnectionSection(controller),
+                _StatsBar(controller),
+                if (controller.omittedHistoryTurns > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Older turns remain visible here, while only recent '
+                      'turns are sent to fit the local context window.',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
-                    const Divider(height: 24),
-                    _TranscriptList(controller.messages),
-                  ],
-                ),
-              ),
-              _ComposerBar(controller, _promptFocus, _send),
-            ],
+                  ),
+                if (controller.ready && !controller.supportsMultiTurn)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(singleTurnNotice),
+                  ),
+              ];
+              // Short DartPad preview panes (~480-520px) scroll the header
+              // with the transcript so pre-load warnings do not starve or
+              // overflow the pane.
+              final scrollHeader = constraints.maxHeight < 480;
+              return Column(
+                children: [
+                  if (!scrollHeader)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: header,
+                      ),
+                    ),
+                  Expanded(
+                    child: ListView(
+                      controller: _scroll,
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        scrollHeader ? 12 : 0,
+                        16,
+                        12,
+                      ),
+                      children: [
+                        if (scrollHeader) ...header,
+                        _SettingsPanel(controller),
+                        _PresetChips(
+                          onSelected: controller.generating
+                              ? null
+                              : (prompt) {
+                                  controller.prompt.text = prompt;
+                                  _promptFocus.requestFocus();
+                                },
+                        ),
+                        const Divider(height: 24),
+                        _TranscriptList(controller),
+                      ],
+                    ),
+                  ),
+                  _ComposerBar(controller, _promptFocus, _send),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -111,7 +169,15 @@ class _ProviderSelector extends StatelessWidget {
     showSelectedIcon: false,
     segments: [
       for (final provider in PlaygroundProvider.values)
-        ButtonSegment(value: provider, label: Text(provider.label)),
+        ButtonSegment(
+          value: provider,
+          label: Text(
+            provider.label,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
     ],
     selected: {controller.provider},
     onSelectionChanged: controller.busy
@@ -155,7 +221,11 @@ class _GgufModelPicker extends StatelessWidget {
                 for (final option in ggufModels)
                   DropdownMenuItem(
                     value: option,
-                    child: Text('${option.label} (${option.sizeLabel})'),
+                    child: Text(
+                      '${option.label} (${option.sizeLabel})',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
               ],
             ),
@@ -208,7 +278,7 @@ class _ConnectionSection extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      if (controller.isGemini && !controller.ready)
+      if (controller.isGemini) ...[
         TextField(
           controller: controller.apiKey,
           decoration: const InputDecoration(labelText: 'Gemini API key'),
@@ -218,6 +288,8 @@ class _ConnectionSection extends StatelessWidget {
           enableSuggestions: false,
           enableIMEPersonalizedLearning: false,
         ),
+        const SizedBox(height: 8),
+      ],
       ValueListenableBuilder(
         valueListenable: controller.apiKey,
         builder: (_, key, _) => OutlinedButton(
@@ -229,19 +301,25 @@ class _ConnectionSection extends StatelessWidget {
           child: Text(controller.isGemini ? 'Connect' : 'Load'),
         ),
       ),
-      if (controller.loading) const LinearProgressIndicator(),
+      if (controller.loading)
+        const LinearProgressIndicator(semanticsLabel: 'Loading model'),
     ],
   );
 }
 
 class _StatsBar extends StatelessWidget {
-  const _StatsBar(this.stats);
+  const _StatsBar(this.controller);
 
-  final String stats;
+  final PlaygroundController controller;
 
   @override
-  Widget build(BuildContext context) =>
-      Text(stats, style: Theme.of(context).textTheme.labelLarge);
+  Widget build(BuildContext context) => ValueListenableBuilder<String?>(
+    valueListenable: controller.liveStats,
+    builder: (context, stats, _) {
+      if (stats == null) return const SizedBox.shrink();
+      return Text(stats, style: Theme.of(context).textTheme.labelLarge);
+    },
+  );
 }
 
 class _SettingsPanel extends StatelessWidget {
@@ -258,22 +336,40 @@ class _SettingsPanel extends StatelessWidget {
       expandedCrossAxisAlignment: CrossAxisAlignment.start,
       title: const Text('Settings'),
       children: [
-        Text('Temperature ${controller.temperature.toStringAsFixed(1)}'),
-        Slider(
-          value: controller.temperature,
-          max: 1.5,
-          divisions: 15,
-          label: controller.temperature.toStringAsFixed(1),
-          onChanged: controller.busy ? null : controller.setTemperature,
+        MergeSemantics(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Temperature ${controller.temperature.toStringAsFixed(1)}'),
+              Slider(
+                value: controller.temperature,
+                max: 1.5,
+                divisions: 15,
+                label: controller.temperature.toStringAsFixed(1),
+                semanticFormatterCallback: (value) =>
+                    'Temperature ${value.toStringAsFixed(1)}',
+                onChanged: controller.busy ? null : controller.setTemperature,
+              ),
+            ],
+          ),
         ),
-        Text('Max tokens ${controller.maxTokens}'),
-        Slider(
-          value: controller.maxTokens.toDouble(),
-          min: 64,
-          max: 512,
-          divisions: 7,
-          label: controller.maxTokens.toString(),
-          onChanged: controller.busy ? null : controller.setMaxTokens,
+        MergeSemantics(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Max tokens ${controller.maxTokens}'),
+              Slider(
+                value: controller.maxTokens.toDouble(),
+                min: 64,
+                max: 512,
+                divisions: 7,
+                label: controller.maxTokens.toString(),
+                semanticFormatterCallback: (value) =>
+                    'Max tokens ${value.round()}',
+                onChanged: controller.busy ? null : controller.setMaxTokens,
+              ),
+            ],
+          ),
         ),
         Padding(
           padding: const EdgeInsets.only(bottom: 12),
@@ -329,41 +425,59 @@ class _PresetChips extends StatelessWidget {
 }
 
 class _TranscriptList extends StatelessWidget {
-  const _TranscriptList(this.messages);
+  const _TranscriptList(this.controller);
 
-  final List<ChatTurn> messages;
+  final PlaygroundController controller;
+
+  @override
+  Widget build(BuildContext context) => SelectionArea(
+    child: Column(
+      children: [
+        for (final message in controller.messages)
+          _MessageBubble(role: message.role, text: message.text),
+        ValueListenableBuilder<String?>(
+          valueListenable: controller.streamingText,
+          builder: (_, text, _) => text == null
+              ? const SizedBox.shrink()
+              : _MessageBubble(role: Role.model, text: text),
+        ),
+      ],
+    ),
+  );
+}
+
+class _MessageBubble extends StatelessWidget {
+  const _MessageBubble({required this.role, required this.text});
+
+  final Role role;
+  final String text;
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return SelectionArea(
-      child: Column(
-        children: [
-          for (final message in messages)
-            Align(
-              alignment: message.role == Role.user
-                  ? Alignment.centerRight
-                  : Alignment.centerLeft,
-              child: Card(
-                color: message.role == Role.user
-                    ? colors.primaryContainer
-                    : colors.surfaceContainer,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        message.role == Role.user ? 'You' : 'Assistant',
-                        style: Theme.of(context).textTheme.labelMedium,
-                      ),
-                      Text(message.text),
-                    ],
-                  ),
-                ),
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isUser = role == Role.user;
+    final foreground = isUser ? colors.onPrimaryContainer : colors.onSurface;
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Card(
+        color: isUser ? colors.primaryContainer : colors.surfaceContainer,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isUser ? 'You' : 'Assistant',
+                style: theme.textTheme.labelMedium?.copyWith(color: foreground),
               ),
-            ),
-        ],
+              Text(
+                text,
+                style: theme.textTheme.bodyMedium?.copyWith(color: foreground),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -412,11 +526,14 @@ class _ComposerBar extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          Semantics(
-            liveRegion: true,
-            label: controller.status,
-            excludeSemantics: true,
-            child: Text(controller.status),
+          ValueListenableBuilder<String>(
+            valueListenable: controller.liveStatus,
+            builder: (_, status, _) => Semantics(
+              liveRegion: true,
+              label: status,
+              excludeSemantics: true,
+              child: Text(status),
+            ),
           ),
         ],
       ),

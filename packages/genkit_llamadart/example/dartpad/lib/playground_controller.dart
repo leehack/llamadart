@@ -66,8 +66,10 @@ const ggufModels = <GgufModelOption>[
     contextSize: 2048,
     note: 'Higher quality responses; thinking disabled for quick replies.',
     warning:
-        'Large download (~3 GB). Requires desktop Chrome with WebAssembly '
-        'memory64 and 8+ GB RAM. Not supported on Safari or mobile browsers.',
+        'Large download (~3 GB; can take several minutes). Measured ~11 GB '
+        'peak browser memory — requires desktop Chrome with WebAssembly '
+        'memory64 and 16+ GB RAM recommended; not supported on Safari or '
+        'mobile browsers.',
   ),
 ];
 
@@ -115,6 +117,41 @@ class ChatTurn {
   final String text;
 }
 
+// Rough budget for prior turns sent to the 2,048-token local GGUF context,
+// leaving room for the system prompt, current prompt, and reply tokens.
+const localHistoryCharBudget = 4500;
+
+({List<ChatTurn> turns, int omittedPairs}) trimLocalHistory(
+  List<ChatTurn> messages, {
+  int maxChars = localHistoryCharBudget,
+}) {
+  final pairs = <(ChatTurn, ChatTurn)>[];
+  for (var i = 0; i + 1 < messages.length; i += 2) {
+    pairs.add((messages[i], messages[i + 1]));
+  }
+  final kept = <(ChatTurn, ChatTurn)>[];
+  var chars = 0;
+  for (var i = pairs.length - 1; i >= 0; i--) {
+    final pair = pairs[i];
+    final pairChars = pair.$1.text.length + pair.$2.text.length;
+    if (chars + pairChars > maxChars) break;
+    kept.add(pair);
+    chars += pairChars;
+  }
+  final turns = <ChatTurn>[
+    for (final pair in kept.reversed) ...[pair.$1, pair.$2],
+  ];
+  return (turns: turns, omittedPairs: pairs.length - kept.length);
+}
+
+String formatLoadElapsed(Duration elapsed) {
+  final totalSeconds = elapsed.inSeconds;
+  if (totalSeconds < 60) return '${totalSeconds}s';
+  final minutes = totalSeconds ~/ 60;
+  final seconds = totalSeconds % 60;
+  return '${minutes}m ${seconds.toString().padLeft(2, '0')}s';
+}
+
 String formatStats(int? outputTokens, double? latencyMs) {
   if (outputTokens == null) return '';
   final count = '$outputTokens tok';
@@ -140,9 +177,15 @@ class PlaygroundController extends ChangeNotifier {
 
   final prompt = TextEditingController(text: 'Tell me a story about a fox.');
   final apiKey = TextEditingController();
+  final liveStats = ValueNotifier<String?>(null);
+  final liveStatus = ValueNotifier<String>(
+    'Load ${ggufModels.first.label} to begin.',
+  );
+  final streamingText = ValueNotifier<String?>(null);
   final _messages = <ChatTurn>[];
   final _elapsed = Stopwatch();
   Timer? _ticker;
+  Timer? _loadTicker;
   Genkit? _ai;
   LlamaDartPlugin? _local;
   CancellationController? _cancellation;
@@ -151,10 +194,10 @@ class PlaygroundController extends ChangeNotifier {
   bool _supportsMultiTurn = false;
   PlaygroundProvider _provider = PlaygroundProvider.gguf;
   GgufModelOption _ggufModel = ggufModels.first;
-  String _status = 'Load ${ggufModels.first.label} to begin.';
   String? _backendName;
   double? _latencyMs;
   int? _outputTokens;
+  int _omittedHistoryTurns = 0;
 
   double _temperature = 0.7;
   int _maxTokens = 256;
@@ -169,13 +212,24 @@ class PlaygroundController extends ChangeNotifier {
   bool get generating => _cancellation != null;
   bool get busy => loading || generating;
   bool get supportsMultiTurn => _supportsMultiTurn;
-  String get status => _status;
+  String get status => liveStatus.value;
   double get temperature => _temperature;
   int get maxTokens => _maxTokens;
   String get systemPrompt => _systemPrompt;
+  int get omittedHistoryTurns => _omittedHistoryTurns;
   List<ChatTurn> get messages => List.unmodifiable(_messages);
+  String? get stats => liveStats.value;
 
-  String? get stats {
+  void _setStatus(String value) => liveStatus.value = value;
+
+  String _idleStatus() => switch (_provider) {
+    PlaygroundProvider.gguf => 'Load ${_ggufModel.label} to begin.',
+    PlaygroundProvider.liteRtLm =>
+      'Load the ${_provider.label} model to begin.',
+    PlaygroundProvider.gemini => 'Enter a Gemini API key to connect.',
+  };
+
+  String? _formatCurrentStats() {
     final backend = _backendName;
     if (backend == null) return null;
     final usage = formatStats(_outputTokens, _latencyMs);
@@ -186,6 +240,8 @@ class PlaygroundController extends ChangeNotifier {
     if (elapsedMs == null) return backend;
     return '$backend · ${(elapsedMs / 1000).toStringAsFixed(1)}s';
   }
+
+  void _syncStats() => liveStats.value = _formatCurrentStats();
 
   void setTemperature(double value) {
     _temperature = value;
@@ -210,10 +266,12 @@ class PlaygroundController extends ChangeNotifier {
     _backendName = null;
     _resetChat();
     apiKey.clear();
+    _setStatus(_idleStatus());
+    if (ai == null && local == null) {
+      notifyListeners();
+      return;
+    }
     _loading = true;
-    _status = isGemini
-        ? 'Enter a Gemini API key to connect.'
-        : 'Load the ${provider.label} model to begin.';
     notifyListeners();
     try {
       await _close(ai, local);
@@ -237,7 +295,7 @@ class PlaygroundController extends ChangeNotifier {
     _supportsMultiTurn = false;
     _backendName = null;
     _resetChat();
-    _status = 'Load ${model.label} to begin.';
+    _setStatus('Load ${model.label} to begin.');
     if (ai == null && local == null) {
       notifyListeners();
       return;
@@ -259,12 +317,31 @@ class PlaygroundController extends ChangeNotifier {
     final provider = _provider;
     final ggufModel = _ggufModel;
     final useGguf = provider == PlaygroundProvider.gguf;
+    final loadingLabel = useGguf ? ggufModel.label : provider.label;
     _loading = true;
     apiKey.clear();
-    _status = isGemini
-        ? 'Setting up Gemini…'
-        : 'Loading ${useGguf ? ggufModel.label : provider.label}…';
+    _setStatus(isGemini ? 'Setting up Gemini…' : 'Loading $loadingLabel…');
     notifyListeners();
+
+    Timer? loadTicker;
+    if (!isGemini) {
+      var ticks = 0;
+      final loadWatch = Stopwatch()..start();
+      loadTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (_disposed) return;
+        ticks++;
+        // Combine timer ticks and wall time so both real loads and FakeAsync
+        // widget tests advance the elapsed counter consistently.
+        final seconds = ticks > loadWatch.elapsed.inSeconds
+            ? ticks
+            : loadWatch.elapsed.inSeconds;
+        _setStatus(
+          'Loading $loadingLabel… '
+          '${formatLoadElapsed(Duration(seconds: seconds))}',
+        );
+      });
+      _loadTicker = loadTicker;
+    }
 
     LlamaDartPlugin? local;
     Genkit? ai;
@@ -277,7 +354,8 @@ class PlaygroundController extends ChangeNotifier {
         );
         _backendName = 'Gemini (Cloud)';
         _supportsMultiTurn = true;
-        _status = 'Gemini ready. Send to verify your key.';
+        _syncStats();
+        _setStatus('Gemini ready. Send to verify your key.');
       } else {
         await (useGguf ? bootstrapGguf() : bootstrapLiteRt());
         if (_disposed) return;
@@ -305,17 +383,20 @@ class PlaygroundController extends ChangeNotifier {
         final capabilities = inspection.capabilities;
         _backendName = capabilities?.backendName ?? provider.label;
         _supportsMultiTurn = capabilities?.supportsMultiTurnChat ?? false;
-        _status = 'Model ready ($_backendName).';
+        _syncStats();
+        _setStatus('Model ready ($_backendName).');
       }
       _ai = ai;
       _local = local;
     } catch (error) {
-      _status = switch (error) {
+      _setStatus(switch (error) {
         _ when isGemini => 'Gemini setup failed. Re-enter your API key.',
         LlamaException(:final message) => message,
-        _ => 'Could not load ${useGguf ? ggufModel.label : provider.label}.',
-      };
+        _ => 'Could not load $loadingLabel.',
+      });
     } finally {
+      loadTicker?.cancel();
+      if (_loadTicker == loadTicker) _loadTicker = null;
       try {
         if (!ready) await _close(ai, local);
       } finally {
@@ -330,32 +411,38 @@ class PlaygroundController extends ChangeNotifier {
     final text = prompt.text.trim();
     if (busy || ai == null || text.isEmpty) return;
 
+    prompt.clear();
+    final gemini = isGemini;
+    final trimmed = _supportsMultiTurn && !gemini
+        ? trimLocalHistory(_messages)
+        : (
+            turns: _supportsMultiTurn ? _messages : const <ChatTurn>[],
+            omittedPairs: 0,
+          );
+    _omittedHistoryTurns = trimmed.omittedPairs;
     final history = <Message>[
-      if (_supportsMultiTurn)
-        for (final turn in _messages)
-          Message(
-            role: turn.role,
-            content: [TextPart(text: turn.text)],
-          ),
+      for (final turn in trimmed.turns)
+        Message(
+          role: turn.role,
+          content: [TextPart(text: turn.text)],
+        ),
     ];
     final system = _systemPrompt.trim();
-    final gemini = isGemini;
     final isLiteRtLm = _provider == PlaygroundProvider.liteRtLm;
     final cancellation = CancellationController();
     final reply = StringBuffer();
     _cancellation = cancellation;
-    _messages.addAll([
-      ChatTurn(Role.user, text),
-      const ChatTurn(Role.model, ''),
-    ]);
-    _status = 'Generating…';
+    _messages.add(ChatTurn(Role.user, text));
+    streamingText.value = '';
+    _setStatus('Generating…');
     _outputTokens = null;
     _latencyMs = null;
     _elapsed
       ..reset()
       ..start();
-    _ticker = Timer.periodic(const Duration(milliseconds: 100), (_) {
-      notifyListeners();
+    _syncStats();
+    _ticker = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      if (!_disposed) _syncStats();
     });
     notifyListeners();
 
@@ -380,14 +467,19 @@ class PlaygroundController extends ChangeNotifier {
       onChunk: (chunk) {
         if (!isCurrent()) return;
         reply.write(chunk.text);
-        _messages.last = ChatTurn(Role.model, reply.toString());
-        notifyListeners();
+        streamingText.value = reply.toString();
       },
     );
 
     final errorMessage = gemini
         ? 'Gemini request failed. Check your API key and connection.'
         : 'Generation failed.';
+    String withLocalHistoryHint(String base) {
+      if (gemini || history.isEmpty) return base;
+      final punctuated = base.endsWith('.') ? base : '$base.';
+      return '$punctuated Try Clear or a shorter prompt.';
+    }
+
     String status;
     try {
       final result = await (gemini
@@ -404,13 +496,15 @@ class PlaygroundController extends ChangeNotifier {
       status = switch (reason) {
         FinishReason.aborted => 'Stopped.',
         FinishReason.failed =>
-          gemini ? errorMessage : result.finishMessage ?? errorMessage,
+          gemini
+              ? errorMessage
+              : withLocalHistoryHint(result.finishMessage ?? errorMessage),
         FinishReason.blocked => 'The model blocked this response.',
         _ when reply.isEmpty => 'The model returned no response text.',
         _ => 'Done.',
       };
     } catch (_) {
-      status = errorMessage;
+      status = withLocalHistoryHint(errorMessage);
     }
     if (isCurrent()) _finishTurn(status);
   }
@@ -425,13 +519,19 @@ class PlaygroundController extends ChangeNotifier {
   void _finishTurn(String status) {
     _cancellation = null;
     _ticker?.cancel();
+    _ticker = null;
     _elapsed.stop();
     _latencyMs ??= _elapsed.elapsedMicroseconds / 1000;
-    // An unanswered prompt should not become part of the next request.
-    if (_messages.last.text.isEmpty) {
-      _messages.removeRange(_messages.length - 2, _messages.length);
+    final replyText = streamingText.value ?? '';
+    streamingText.value = null;
+    if (replyText.isNotEmpty) {
+      _messages.add(ChatTurn(Role.model, replyText));
+    } else if (_messages.isNotEmpty && _messages.last.role == Role.user) {
+      // An unanswered prompt should not become part of the next request.
+      _messages.removeLast();
     }
-    _status = status;
+    _syncStats();
+    _setStatus(status);
     notifyListeners();
   }
 
@@ -443,8 +543,10 @@ class PlaygroundController extends ChangeNotifier {
 
   void _resetChat() {
     _messages.clear();
+    _omittedHistoryTurns = 0;
     _outputTokens = null;
     _latencyMs = null;
+    _syncStats();
   }
 
   Future<void> _close(Genkit? ai, LlamaDartPlugin? local) async {
@@ -459,9 +561,13 @@ class PlaygroundController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _ticker?.cancel();
+    _loadTicker?.cancel();
     _cancellation?.cancel();
     prompt.dispose();
     apiKey.dispose();
+    liveStats.dispose();
+    liveStatus.dispose();
+    streamingText.dispose();
     unawaited(_close(_ai, _local));
     super.dispose();
   }
