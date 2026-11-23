@@ -520,12 +520,20 @@ and GitHub's default squash message. GitHub rewraps description lines over
 after its key, and a review entry can continue on adjacent unindented lines.
 The verifier reads both forms. Opening, reopening, pushing to, editing or
 retargeting a prep, marking it ready, and adding or removing any label rerun
-the check. An invalid description fails the check. Removing the `release-prep`
-label from a prep without a versioned prep branch rechecks the protected
-changelogs under the ordinary PR rules.
-Before merging, require a completed success from the latest run for the
-current head, base and description. If the run was cancelled or superseded,
-wait for a completed current run.
+the check. An invalid description fails the check. All subscribed events on a
+same-repository PR recheck the protected changelogs. After removing
+`release-prep` from an ordinary branch, later title or label changes continue
+to apply the ordinary PR rules.
+
+A push to `main` or completion of **Docs Version Cut** runs the verifier for
+open core release preps. Find **Verify release prep (#PR)** in the **PR
+changelog** run on `main`. Its log records the PR head and the tested base.
+GitHub Actions cache access is disabled for the verifier job, which runs
+code from the tested merge tree.
+When `main` advances, regenerate the ledger, review and receipt and update the
+PR description to trigger a fresh PR run. GitHub's **Re-run jobs** button
+reuses the original event. Before merging, require a completed success from
+the latest run for the current head, base and description.
 End the receipt block with no trailing attribution or whitespace.
 
 Land a release prep using **Squash and merge** only. Use GitHub's default
