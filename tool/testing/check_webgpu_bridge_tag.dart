@@ -74,6 +74,13 @@ final List<BridgeTagPin> bridgeTagPins = <BridgeTagPin>[
     ),
   ),
   BridgeTagPin(
+    'example/dartpad_gguf/lib/bridge_bootstrap_web.dart',
+    RegExp(
+      r"^const String defaultBridgeAssetsTag = '(v\d+\.\d+\.\d+)';$",
+      multiLine: true,
+    ),
+  ),
+  BridgeTagPin(
     'packages/llamadart_studio/web/index.html',
     RegExp(
       r"^\s*const defaultBridgeAssetsTag = '(v\d+\.\d+\.\d+)';$",

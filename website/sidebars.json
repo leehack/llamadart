@@ -95,6 +95,7 @@
         "examples/overview",
         "examples/basic-app",
         "examples/chat-app",
+        "examples/dartpad-gguf",
         "examples/llamadart-cli",
         "examples/llamadart-server",
         "examples/tui-coding-agent",

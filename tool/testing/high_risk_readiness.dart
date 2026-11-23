@@ -383,6 +383,7 @@ bool isCommentOnlyDartChange(String path, String base, String head) {
 /// template hashes). A comment there can change what a CI gate or sync
 /// script sees, so these never use the comment-only route.
 const rawTextConsumedSources = <String>{
+  'example/dartpad_gguf/lib/bridge_bootstrap_web.dart',
   'hook/build.dart',
   'lib/src/backends/litert_lm/litert_lm_runtime.dart',
   'lib/src/hook/native_release_pins.dart',
