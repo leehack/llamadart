@@ -1517,6 +1517,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
         contains('flutter analyze --fatal-infos'),
         contains(r'TMPDIR="$(mktemp -d)" flutter test'),
         contains('python3 ../../../../tool/ci/supervise_chrome_test.py'),
+        contains('--timeout-seconds 600 --'),
         contains('flutter test --platform chrome --no-pub'),
         contains(
           r'--reporter-file "$RUNNER_TEMP/genkit-dartpad-chrome/reporter.jsonl"',
@@ -1891,7 +1892,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
           r'--reporter-file "$RUNNER_TEMP/dartpad-gguf-chrome/reporter.jsonl"',
         ),
         contains(
-          '--timeout-seconds 180 -- flutter test --platform chrome --no-pub',
+          '--timeout-seconds 600 -- flutter test --platform chrome --no-pub',
         ),
         contains(
           r'--file-reporter "json:$RUNNER_TEMP/dartpad-gguf-chrome/reporter.jsonl"',

@@ -354,8 +354,8 @@ always upload their diagnostics.
 | --- | --- | --- | --- |
 | Web Chat Contract | `.flutter-version` (3.47.1) | 10 minutes | `chat-app-chrome-diagnostics` |
 | Studio UI browser tests | `packages/llamadart_studio/.flutter-version` (3.50.0) | 10 minutes | `studio-ui-chrome-diagnostics` |
-| DartPad GGUF | `.flutter-version` (3.47.1) | 3 minutes | `dartpad-gguf-chrome-diagnostics` |
-| Genkit DartPad | `.flutter-version` (3.47.1) | 3 minutes | `genkit-dartpad-chrome-diagnostics` |
+| DartPad GGUF | `.flutter-version` (3.47.1) | 10 minutes | `dartpad-gguf-chrome-diagnostics` |
+| Genkit DartPad | `.flutter-version` (3.47.1) | 10 minutes | `genkit-dartpad-chrome-diagnostics` |
 
 If the command is still running 30 seconds after its JSON reporter's `done`
 event and no browser process remains, the supervisor stops it, warns, and

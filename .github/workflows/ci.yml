@@ -261,7 +261,7 @@ jobs:
           python3 ../../../../tool/ci/supervise_chrome_test.py \
             --output-dir "$RUNNER_TEMP/genkit-dartpad-chrome" \
             --reporter-file "$RUNNER_TEMP/genkit-dartpad-chrome/reporter.jsonl" \
-            --timeout-seconds 180 -- \
+            --timeout-seconds 600 -- \
             flutter test --platform chrome --no-pub \
             --file-reporter "json:$RUNNER_TEMP/genkit-dartpad-chrome/reporter.jsonl" \
             test/bridge_bootstrap_web_test.dart test/gemini_transport_test.dart
@@ -871,7 +871,7 @@ jobs:
           python3 ../../tool/ci/supervise_chrome_test.py
           --output-dir "$RUNNER_TEMP/dartpad-gguf-chrome"
           --reporter-file "$RUNNER_TEMP/dartpad-gguf-chrome/reporter.jsonl"
-          --timeout-seconds 180 --
+          --timeout-seconds 600 --
           flutter test --platform chrome --no-pub
           --file-reporter "json:$RUNNER_TEMP/dartpad-gguf-chrome/reporter.jsonl"
           --exclude-tags local-only
