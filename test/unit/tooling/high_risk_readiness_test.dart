@@ -2583,6 +2583,12 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
       );
     });
 
+    test('the Genkit DartPad bootstrap never qualifies as comment-only', () {
+      const path =
+          'packages/genkit_llamadart/example/dartpad/lib/bridge_bootstrap_web.dart';
+      expect(isCommentOnlyDartChange(path, commentBase, commentHead), isFalse);
+    });
+
     test('an unreadable blob keeps the causal-test route', () async {
       const changes = [
         RepositoryChange(
