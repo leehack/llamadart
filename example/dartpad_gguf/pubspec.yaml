@@ -1,5 +1,5 @@
 name: dartpad_gguf_example
-description: Stream text from a GGUF model in DartPad Preview.
+description: Chat with a GGUF model in DartPad Preview.
 publish_to: none
 
 environment:

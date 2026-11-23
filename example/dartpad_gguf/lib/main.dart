@@ -1,13 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:llamadart/llamadart.dart';
 
 import 'bridge_bootstrap.dart';
-
-const _modelUrl =
-    'https://huggingface.co/ggml-org/stories15M_MOE/'
-    'resolve/b6dd737497465570b5f5e962dbc9d9454ed1e0eb/stories15M_MOE-Q8_0.gguf';
+import 'chat_controller.dart';
+import 'chat_widgets.dart';
 
 void main() => runApp(const GgufApp());
 
@@ -45,111 +41,105 @@ class _GgufScreen extends StatefulWidget {
 }
 
 class _GgufScreenState extends State<_GgufScreen> {
-  final _prompt = TextEditingController(text: 'Once upon a time, a little fox');
-  final _output = StringBuffer();
-  LlamaEngine? _engine;
-  double? _progress;
-  bool _ready = false;
-  bool _loading = false;
-  bool _generating = false;
-  String _status = 'Load Stories15M to begin.';
-
-  Future<void> _load() async {
-    if (_loading || _ready) return;
-    _loading = true;
-    await _run('Loading Stories15M…', () async {
-      _progress = null;
-      final engine = _engine ?? await widget.createEngine();
-      if (!mounted) {
-        await engine.dispose();
-        return;
-      }
-      _engine = engine;
-      await engine.setModel(
-        LlamaModel(ModelSource.url(Uri.parse(_modelUrl))),
-        params: const ModelParams(contextSize: 1024),
-        onProgress: (progress) {
-          if (mounted) setState(() => _progress = progress.fraction);
-        },
-      );
-      _ready = true;
-      _status = 'Model ready.';
-    });
-  }
-
-  Future<void> _generate() => _run('Generating…', () async {
-    _generating = true;
-    _output.clear();
-    final chunks = _engine!.generate(
-      _prompt.text.trim(),
-      params: const GenerationParams(maxTokens: 128),
-    );
-    await for (final chunk in chunks) {
-      if (!mounted) break;
-      setState(() => _output.write(chunk));
-    }
-    _status = 'Model ready.';
-  });
-
-  Future<void> _run(String status, Future<void> Function() action) async {
-    setState(() => _status = status);
-    try {
-      await action();
-    } on LlamaException catch (error) {
-      _status = error.message;
-    } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _generating = false;
-        });
-      }
-    }
-  }
+  late final _chat = ChatController(widget.createEngine);
+  final _prompt = TextEditingController();
+  final _promptFocus = FocusNode();
+  final _scroll = ScrollController();
 
   @override
   void dispose() {
+    _chat.dispose();
     _prompt.dispose();
-    unawaited(_engine?.dispose());
+    _promptFocus.dispose();
+    _scroll.dispose();
     super.dispose();
+  }
+
+  void _followTranscript({bool force = false}) {
+    if (!force && (!_scroll.hasClients || _scroll.position.extentAfter > 48)) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('GGUF in DartPad')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          FilledButton(
-            onPressed: _loading || _ready ? null : _load,
-            child: const Text('Load'),
+    return ListenableBuilder(
+      listenable: _chat,
+      builder: (context, _) {
+        if (_chat.generating) _followTranscript();
+        final messages = _chat.messages;
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('GGUF in DartPad'),
+            actions: [
+              TextButton(
+                onPressed: messages.isEmpty || _chat.generating
+                    ? null
+                    : _chat.clearChat,
+                child: const Text('Clear'),
+              ),
+            ],
           ),
-          if (_loading)
-            LinearProgressIndicator(
-              value: _progress,
-              semanticsLabel: 'Loading model',
+          body: SafeArea(
+            child: Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: _scroll,
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        FilledButton(
+                          onPressed: _chat.loading || _chat.ready
+                              ? null
+                              : _chat.load,
+                          child: const Text('Load'),
+                        ),
+                        if (_chat.loading)
+                          LinearProgressIndicator(
+                            value: _chat.progress,
+                            semanticsLabel: 'Loading model',
+                          ),
+                        StatsBar(
+                          stats: _chat.stats,
+                          generating: _chat.generating,
+                        ),
+                        SettingsPanel(chat: _chat),
+                        PresetChips(
+                          onSelect: (text) {
+                            _prompt.value = TextEditingValue(
+                              text: text,
+                              selection: TextSelection.collapsed(
+                                offset: text.length,
+                              ),
+                            );
+                            _promptFocus.requestFocus();
+                          },
+                        ),
+                        TranscriptList(messages: messages),
+                      ],
+                    ),
+                  ),
+                ),
+                ComposerBar(
+                  chat: _chat,
+                  prompt: _prompt,
+                  promptFocus: _promptFocus,
+                  onSend: () {
+                    _chat.send(_prompt.text);
+                    _prompt.clear();
+                    _followTranscript(force: true);
+                  },
+                ),
+              ],
             ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _prompt,
-            decoration: const InputDecoration(labelText: 'Prompt'),
-            onChanged: (_) => setState(() {}),
           ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: _generating
-                ? _engine!.cancelGeneration
-                : _ready && _prompt.text.trim().isNotEmpty
-                ? _generate
-                : null,
-            child: Text(_generating ? 'Stop' : 'Generate'),
-          ),
-          Semantics(liveRegion: true, child: Text(_status)),
-          const SizedBox(height: 12),
-          SelectableText(_output.toString()),
-        ],
-      ),
+        );
+      },
     );
   }
 }

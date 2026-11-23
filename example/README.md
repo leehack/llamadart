@@ -11,7 +11,7 @@ for typed legacy `ToolParam` declarations and the separate required/none paths.
 
 ### DartPad GGUF (`dartpad_gguf/`)
 
-A Flutter Web example that downloads and runs a small GGUF in the browser.
+A Flutter Web example for multi-turn chat with SmolLM2-135M-Instruct GGUF in the browser.
 [Open on preview.dartpad.dev](https://preview.dartpad.dev/?package=llamadart&root=example/dartpad_gguf&file=example/dartpad_gguf/lib/main.dart) or follow the
 [local Chrome instructions](dartpad_gguf/README.md).
 

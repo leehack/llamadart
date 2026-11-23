@@ -24,7 +24,6 @@ Future<void> bootstrapBridge({
   for (final MapEntry(:key, :value) in assets.entries) {
     globalContext['__llamadartBridge$key'] = '$_assetBase$value'.toJS;
   }
-  globalContext['__llamadartBridgeAllowSingleThreadCore'] = true.toJS;
 
   final module = await importBridge('${_assetBase}llama_webgpu_bridge.js')
       .onError((Object _, StackTrace _) {
