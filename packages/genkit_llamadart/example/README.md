@@ -9,10 +9,11 @@ is listed; later runs reuse llamadart's cache.
 
 The [DartPad Preview example](https://preview.dartpad.dev/?package=genkit_llamadart&root=example/dartpad&file=example/dartpad/lib/main.dart)
 offers multi-turn chat with selectable GGUF models (**SmolLM2 135M** default,
-**Qwen3.5 0.8B**, and desktop-Chrome **Gemma 4 E2B**) and **Gemini**,
-single-turn **LiteRT-LM** chat, generation settings, live stats, and prompt
-presets. Running that DartPad example locally requires Flutter 3.47+ / Dart
-3.13+ (`material_ui`). See the
+**Qwen3.5 0.8B**, and desktop-Chrome **Gemma 4 E2B**) and **Gemini**. For
+single-turn **LiteRT-LM** chat, choose **Qwen3 0.6B** (default) or
+**Gemma 4 E2B** with desktop WebGPU. The playground includes generation
+settings, live stats, and prompt presets. Running it locally requires
+Flutter 3.47+ / Dart 3.13+ (`material_ui`). See the
 [model requirements and local setup](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/dartpad/README.md).
 
 ## Start here

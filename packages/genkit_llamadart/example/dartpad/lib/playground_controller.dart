@@ -7,8 +7,8 @@ import 'package:genkit_google_genai/genkit_google_genai.dart';
 import 'package:genkit_llamadart/genkit_llamadart.dart';
 import 'package:http/http.dart' as http;
 
-class GgufModelOption {
-  const GgufModelOption({
+class LocalModelOption {
+  const LocalModelOption({
     required this.id,
     required this.label,
     required this.url,
@@ -17,6 +17,8 @@ class GgufModelOption {
     required this.contextSize,
     required this.note,
     this.warning,
+    this.promptSuffix = '',
+    this.enableThinking = false,
   });
 
   final String id;
@@ -27,10 +29,12 @@ class GgufModelOption {
   final int contextSize;
   final String note;
   final String? warning;
+  final String promptSuffix;
+  final bool enableThinking;
 }
 
-const ggufModels = <GgufModelOption>[
-  GgufModelOption(
+const ggufModels = <LocalModelOption>[
+  LocalModelOption(
     id: 'smollm2-135m',
     label: 'SmolLM2 135M',
     url:
@@ -42,7 +46,7 @@ const ggufModels = <GgufModelOption>[
     contextSize: 2048,
     note: 'Fastest download; good for quick tests.',
   ),
-  GgufModelOption(
+  LocalModelOption(
     id: 'qwen3.5-0.8b',
     label: 'Qwen3.5 0.8B',
     url:
@@ -54,7 +58,7 @@ const ggufModels = <GgufModelOption>[
     contextSize: 2048,
     note: 'Stronger responses; thinking disabled for quick replies.',
   ),
-  GgufModelOption(
+  LocalModelOption(
     id: 'gemma-4-e2b',
     label: 'Gemma 4 E2B',
     url:
@@ -73,8 +77,45 @@ const ggufModels = <GgufModelOption>[
   ),
 ];
 
+const liteRtLmModels = <LocalModelOption>[
+  LocalModelOption(
+    id: 'qwen3-0.6b',
+    label: 'Qwen3 0.6B',
+    url:
+        'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/'
+        '8d42ab5f1db14cad987fac57aeb17d070f9e180d/'
+        'Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm',
+    sizeLabel: '~343 MB',
+    sizeBytes: 343490560,
+    contextSize: 1024,
+    note: 'Fastest download. Requires Chrome with WebGPU.',
+    // Qwen3's built-in template uses this suffix to suppress thinking.
+    promptSuffix: '\n/no_think',
+    enableThinking: true,
+  ),
+  LocalModelOption(
+    id: 'gemma-4-e2b-litert',
+    label: 'Gemma 4 E2B',
+    url:
+        'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/'
+        '2e12bfd869b2962984f97a1f2a26807316d534cc/'
+        'gemma-4-E2B-it-web.litertlm',
+    sizeLabel: 'desktop Chrome, ~2 GB',
+    sizeBytes: 2008432640,
+    contextSize: 1024,
+    note: 'Requires WebGPU.',
+    warning:
+        'Large download (~2 GB) can take several minutes. Measured ~3 GB '
+        'peak Chrome memory on desktop and ~7 GB on Safari. Keep the Safari '
+        'tab visible while loading. '
+        'Requires WebGPU on desktop. Reloading the page or switching back '
+        'to this model re-downloads the file.',
+    enableThinking: true,
+  ),
+];
+
 ModelParams buildGgufModelParams(
-  GgufModelOption model, {
+  LocalModelOption model, {
   bool isWeb = kIsWeb,
 }) => ModelParams(
   contextSize: model.contextSize,
@@ -82,17 +123,10 @@ ModelParams buildGgufModelParams(
   modelBytesHint: isWeb ? model.sizeBytes : null,
 );
 
-const _qwen = LlamaModelDefinition(
-  name: 'qwen3',
-  modelPath:
-      'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/'
-      '8d42ab5f1db14cad987fac57aeb17d070f9e180d/'
-      'Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm',
-  modelParams: ModelParams(contextSize: 1024),
-  supportsEmbeddings: false,
-  supportsTools: false,
-  supportsConstrainedOutput: false,
-);
+// LiteRT-LM rejects llama.cpp Web hints such as modelBytesHint.
+ModelParams buildLiteRtLmModelParams(LocalModelOption model) =>
+    ModelParams(contextSize: model.contextSize);
+
 // The pinned plugin routes this model through streamGenerateContent, whose
 // CORS preflight allows the request headers used in DartPad.
 const _geminiModelName = 'gemini-3.1-flash-lite';
@@ -193,7 +227,8 @@ class PlaygroundController extends ChangeNotifier {
   bool _loading = false;
   bool _supportsMultiTurn = false;
   PlaygroundProvider _provider = PlaygroundProvider.gguf;
-  GgufModelOption _ggufModel = ggufModels.first;
+  LocalModelOption _ggufModel = ggufModels.first;
+  LocalModelOption _liteRtLmModel = liteRtLmModels.first;
   String? _backendName;
   double? _latencyMs;
   int? _outputTokens;
@@ -204,8 +239,10 @@ class PlaygroundController extends ChangeNotifier {
   String _systemPrompt = 'You are a concise, helpful assistant.';
 
   PlaygroundProvider get provider => _provider;
-  GgufModelOption get ggufModel => _ggufModel;
+  LocalModelOption get ggufModel => _ggufModel;
+  LocalModelOption get liteRtLmModel => _liteRtLmModel;
   bool get isGguf => _provider == PlaygroundProvider.gguf;
+  bool get isLiteRtLm => _provider == PlaygroundProvider.liteRtLm;
   bool get isGemini => _provider == PlaygroundProvider.gemini;
   bool get ready => _ai != null;
   bool get loading => _loading;
@@ -224,8 +261,7 @@ class PlaygroundController extends ChangeNotifier {
 
   String _idleStatus() => switch (_provider) {
     PlaygroundProvider.gguf => 'Load ${_ggufModel.label} to begin.',
-    PlaygroundProvider.liteRtLm =>
-      'Load the ${_provider.label} model to begin.',
+    PlaygroundProvider.liteRtLm => 'Load ${_liteRtLmModel.label} to begin.',
     PlaygroundProvider.gemini => 'Enter a Gemini API key to connect.',
   };
 
@@ -281,21 +317,31 @@ class PlaygroundController extends ChangeNotifier {
     }
   }
 
-  Future<void> selectGgufModel(GgufModelOption model) async {
+  Future<void> selectGgufModel(LocalModelOption model) async {
     if (busy || model.id == _ggufModel.id) return;
-    final ai = _ai;
-    final local = _local;
     _ggufModel = model;
-    if (!isGguf) {
+    await _resetAfterModelChange(active: isGguf);
+  }
+
+  Future<void> selectLiteRtLmModel(LocalModelOption model) async {
+    if (busy || model.id == _liteRtLmModel.id) return;
+    _liteRtLmModel = model;
+    await _resetAfterModelChange(active: isLiteRtLm);
+  }
+
+  Future<void> _resetAfterModelChange({required bool active}) async {
+    if (!active) {
       notifyListeners();
       return;
     }
+    final ai = _ai;
+    final local = _local;
     _ai = null;
     _local = null;
     _supportsMultiTurn = false;
     _backendName = null;
     _resetChat();
-    _setStatus('Load ${model.label} to begin.');
+    _setStatus(_idleStatus());
     if (ai == null && local == null) {
       notifyListeners();
       return;
@@ -315,9 +361,9 @@ class PlaygroundController extends ChangeNotifier {
     final key = apiKey.text.trim();
     if (isGemini && key.isEmpty) return;
     final provider = _provider;
-    final ggufModel = _ggufModel;
     final useGguf = provider == PlaygroundProvider.gguf;
-    final loadingLabel = useGguf ? ggufModel.label : provider.label;
+    final activeModel = useGguf ? _ggufModel : _liteRtLmModel;
+    final loadingLabel = isGemini ? provider.label : activeModel.label;
     _loading = true;
     apiKey.clear();
     _setStatus(isGemini ? 'Setting up Gemini…' : 'Loading $loadingLabel…');
@@ -359,16 +405,16 @@ class PlaygroundController extends ChangeNotifier {
       } else {
         await (useGguf ? bootstrapGguf() : bootstrapLiteRt());
         if (_disposed) return;
-        final model = useGguf
-            ? LlamaModelDefinition(
-                name: ggufModel.id,
-                modelPath: ggufModel.url,
-                modelParams: buildGgufModelParams(ggufModel, isWeb: isWeb),
-                supportsEmbeddings: false,
-                supportsTools: false,
-                supportsConstrainedOutput: false,
-              )
-            : _qwen;
+        final model = LlamaModelDefinition(
+          name: activeModel.id,
+          modelPath: activeModel.url,
+          modelParams: useGguf
+              ? buildGgufModelParams(activeModel, isWeb: isWeb)
+              : buildLiteRtLmModelParams(activeModel),
+          supportsEmbeddings: false,
+          supportsTools: false,
+          supportsConstrainedOutput: false,
+        );
         local = LlamaDartPlugin(
           models: [model],
           runtimeFactory: runtimeFactory,
@@ -428,7 +474,7 @@ class PlaygroundController extends ChangeNotifier {
         ),
     ];
     final system = _systemPrompt.trim();
-    final isLiteRtLm = _provider == PlaygroundProvider.liteRtLm;
+    final activeModel = isGguf ? _ggufModel : _liteRtLmModel;
     final cancellation = CancellationController();
     final reply = StringBuffer();
     _cancellation = cancellation;
@@ -451,8 +497,7 @@ class PlaygroundController extends ChangeNotifier {
     Future<GenerateResult<Object?>> generate() => ai.generate<Object?, Object>(
       system: _supportsMultiTurn && system.isNotEmpty ? system : null,
       messages: history.isEmpty ? null : history,
-      // Qwen3 uses the prompt's soft switch with its built-in template.
-      prompt: isLiteRtLm ? '$text\n/no_think' : text,
+      prompt: gemini ? text : '$text${activeModel.promptSuffix}',
       config: gemini
           ? GeminiOptions(
               temperature: _temperature,
@@ -461,7 +506,7 @@ class PlaygroundController extends ChangeNotifier {
           : LlamaDartGenerationConfig(
               temperature: _temperature,
               maxTokens: _maxTokens,
-              enableThinking: isLiteRtLm,
+              enableThinking: activeModel.enableThinking,
             ),
       cancel: cancellation.token,
       onChunk: (chunk) {

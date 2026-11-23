@@ -403,6 +403,20 @@ void main() {
     },
   );
 
+  test('LiteRT-LM models keep Qwen3 first and omit GGUF-only hints', () {
+    expect(liteRtLmModels.map((model) => model.id), [
+      'qwen3-0.6b',
+      'gemma-4-e2b-litert',
+    ]);
+    for (final model in liteRtLmModels) {
+      final params = buildLiteRtLmModelParams(model);
+      expect(params.contextSize, 1024);
+      expect(params.modelBytesHint, isNull);
+      expect(params.preferMemory64, isNull);
+      expect(params.jsBackedModelStaging, isNull);
+    }
+  });
+
   testWidgets(
     'default GGUF model is SmolLM2 135M with pinned URL and thinking off',
     (tester) async {
@@ -438,7 +452,7 @@ void main() {
       final runtime = _LocalRuntime();
       await tester.pumpWidget(_localApp(runtime));
 
-      await _selectGgufModel(tester, 'Qwen3.5 0.8B (~533 MB)');
+      await _selectLocalModel(tester, 'Qwen3.5 0.8B (~533 MB)');
       expect(runtime.definition, isNull);
       expect(find.text('Load Qwen3.5 0.8B to begin.'), findsOneWidget);
       expect(
@@ -469,7 +483,7 @@ void main() {
       final runtime = _LocalRuntime();
       await tester.pumpWidget(_localApp(runtime));
 
-      await _selectGgufModel(tester, 'Gemma 4 E2B (desktop Chrome, ~3 GB)');
+      await _selectLocalModel(tester, 'Gemma 4 E2B (desktop Chrome, ~3 GB)');
       expect(runtime.definition, isNull);
       expect(find.text('Load Gemma 4 E2B to begin.'), findsOneWidget);
       expect(
@@ -520,13 +534,13 @@ void main() {
 
       await _tap(tester, 'Load');
       expect(runtimes, hasLength(1));
-      expect(find.byType(DropdownButton<GgufModelOption>), findsOneWidget);
+      expect(find.byType(DropdownButton<LocalModelOption>), findsOneWidget);
 
       await _send(tester, 'Hello');
       await _reply(tester, runtimes[0], 'Hi there');
       expect(find.text('Hi there'), findsOneWidget);
 
-      await _selectGgufModel(tester, 'Qwen3.5 0.8B (~533 MB)');
+      await _selectLocalModel(tester, 'Qwen3.5 0.8B (~533 MB)');
       expect(runtimes[0].disposed, isTrue);
       expect(find.text('Hi there'), findsNothing);
       expect(runtimes, hasLength(1));
@@ -552,48 +566,221 @@ void main() {
     },
   );
 
-  testWidgets('GGUF picker is visible only for GGUF provider', (tester) async {
+  testWidgets('each local provider shows its model picker', (tester) async {
     await tester.pumpWidget(_localApp(_LocalRuntime()));
-    expect(find.byType(DropdownButton<GgufModelOption>), findsOneWidget);
+    expect(find.byType(DropdownButton<LocalModelOption>), findsOneWidget);
+    expect(find.text('GGUF model'), findsOneWidget);
 
     await _tap(tester, 'LiteRT-LM');
-    expect(find.byType(DropdownButton<GgufModelOption>), findsNothing);
+    expect(find.byType(DropdownButton<LocalModelOption>), findsOneWidget);
+    expect(find.text('LiteRT-LM model'), findsOneWidget);
+    expect(find.text('GGUF model'), findsNothing);
 
     await _tap(tester, 'Gemini');
-    expect(find.byType(DropdownButton<GgufModelOption>), findsNothing);
+    expect(find.byType(DropdownButton<LocalModelOption>), findsNothing);
 
     await _tap(tester, 'GGUF');
-    expect(find.byType(DropdownButton<GgufModelOption>), findsOneWidget);
+    expect(find.byType(DropdownButton<LocalModelOption>), findsOneWidget);
   });
 
-  testWidgets('GGUF picker is disabled during load and generation', (
+  for (final provider in ['GGUF', 'LiteRT-LM']) {
+    testWidgets('$provider picker is disabled during load and generation', (
+      tester,
+    ) async {
+      final loading = Completer<void>();
+      final runtime = _LocalRuntime()..loading = loading.future;
+      await tester.pumpWidget(_localApp(runtime));
+      if (provider == 'LiteRT-LM') await _tap(tester, provider);
+
+      DropdownButton<LocalModelOption> picker() =>
+          tester.widget<DropdownButton<LocalModelOption>>(
+            find.byType(DropdownButton<LocalModelOption>),
+          );
+
+      expect(picker().onChanged, isNotNull);
+
+      await tester.tap(find.text('Load'));
+      await tester.pump();
+      expect(picker().onChanged, isNull);
+
+      loading.complete();
+      await tester.pumpAndSettle();
+      expect(picker().onChanged, isNotNull);
+
+      await tester.tap(find.text('Send'));
+      await tester.pump();
+      expect(picker().onChanged, isNull);
+
+      await _reply(tester, runtime, 'A fox');
+      expect(picker().onChanged, isNotNull);
+    });
+  }
+
+  testWidgets('LiteRT-LM defaults to pinned Qwen3 0.6B with a prompt suffix', (
     tester,
   ) async {
-    final loading = Completer<void>();
-    final runtime = _LocalRuntime()..loading = loading.future;
+    final runtime = _LocalRuntime();
     await tester.pumpWidget(_localApp(runtime));
+    await _tap(tester, 'LiteRT-LM');
 
-    DropdownButton<GgufModelOption> picker() =>
-        tester.widget<DropdownButton<GgufModelOption>>(
-          find.byType(DropdownButton<GgufModelOption>),
-        );
+    expect(find.text('Qwen3 0.6B (~343 MB)'), findsOneWidget);
+    expect(find.text('Load Qwen3 0.6B to begin.'), findsOneWidget);
+    expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
+    await _tap(tester, 'Load');
+    expect(runtime.definition?.name, 'qwen3-0.6b');
+    expect(
+      runtime.definition?.modelPath,
+      'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/'
+      '8d42ab5f1db14cad987fac57aeb17d070f9e180d/'
+      'Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm',
+    );
+    expect(runtime.definition?.modelParams.contextSize, 1024);
+    expect(runtime.definition?.modelParams.modelBytesHint, isNull);
 
-    expect(picker().onChanged, isNotNull);
+    await _send(tester, 'Hello');
+    expect(runtime.prompt, 'Hello\n/no_think');
+    expect(runtime.enableThinking, isTrue);
+    await _reply(tester, runtime, 'Hi');
+  });
 
-    await tester.tap(find.text('Load'));
-    await tester.pump();
-    expect(picker().onChanged, isNull);
+  testWidgets(
+    'LiteRT-LM Gemma 4 E2B warns before loading and sends the plain prompt',
+    (tester) async {
+      final loading = Completer<void>();
+      final runtime = _LocalRuntime()..loading = loading.future;
+      await tester.pumpWidget(_localApp(runtime));
+      await _tap(tester, 'LiteRT-LM');
+      await _selectLocalModel(tester, 'Gemma 4 E2B (desktop Chrome, ~2 GB)');
 
-    loading.complete();
-    await tester.pumpAndSettle();
-    expect(picker().onChanged, isNotNull);
+      expect(runtime.definition, isNull);
+      expect(find.text('Load Gemma 4 E2B to begin.'), findsOneWidget);
+      expect(find.textContaining('Large download (~2 GB'), findsOneWidget);
+      expect(find.textContaining('~3 GB peak Chrome memory'), findsOneWidget);
+      expect(find.textContaining('re-downloads the file'), findsOneWidget);
+      expect(find.textContaining('Requires WebGPU on desktop'), findsOneWidget);
 
-    await tester.tap(find.text('Send'));
-    await tester.pump();
-    expect(picker().onChanged, isNull);
+      await tester.tap(find.text('Load'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.text('Loading Gemma 4 E2B… 2s'), findsOneWidget);
+      loading.complete();
+      await tester.pumpAndSettle();
+      expect(runtime.definition?.name, 'gemma-4-e2b-litert');
+      expect(
+        runtime.definition?.modelPath,
+        'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/'
+        '2e12bfd869b2962984f97a1f2a26807316d534cc/'
+        'gemma-4-E2B-it-web.litertlm',
+      );
+      expect(runtime.definition?.modelParams.contextSize, 1024);
+      expect(runtime.definition?.modelParams.modelBytesHint, isNull);
+      expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
 
-    await _reply(tester, runtime, 'A fox');
-    expect(picker().onChanged, isNotNull);
+      await _send(tester, 'Hello');
+      expect(runtime.prompt, 'Hello');
+      expect(runtime.enableThinking, isTrue);
+      await _reply(tester, runtime, 'Hi');
+    },
+  );
+
+  testWidgets(
+    'switching loaded LiteRT-LM to Gemma disposes and waits for Load',
+    (tester) async {
+      final runtimes = <_LocalRuntime>[];
+      await tester.pumpWidget(
+        GenkitDartPadApp(
+          bootstrapLiteRt: () async {},
+          runtimeFactory: () {
+            final runtime = _LocalRuntime(backendName: 'LiteRT-LM Web GPU');
+            runtimes.add(runtime);
+            return runtime;
+          },
+        ),
+      );
+      await _tap(tester, 'LiteRT-LM');
+      await _tap(tester, 'Load');
+      await _send(tester, 'First question');
+      await _reply(tester, runtimes.single, 'First answer');
+      expect(find.text('First answer'), findsOneWidget);
+      expect(find.text(singleTurnNotice), findsOneWidget);
+      expect(find.textContaining('LiteRT-LM Web GPU ·'), findsOneWidget);
+
+      await _selectLocalModel(tester, 'Gemma 4 E2B (desktop Chrome, ~2 GB)');
+      expect(runtimes.single.disposed, isTrue);
+      expect(find.text('First question'), findsNothing);
+      expect(find.text('First answer'), findsNothing);
+      expect(find.text(singleTurnNotice), findsNothing);
+      expect(find.textContaining('LiteRT-LM Web GPU'), findsNothing);
+      expect(find.text('Load Gemma 4 E2B to begin.'), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Send'))
+            .onPressed,
+        isNull,
+      );
+
+      await _tap(tester, 'Load');
+      expect(runtimes, hasLength(2));
+      expect(find.text(singleTurnNotice), findsOneWidget);
+      final gemma = runtimes.last;
+      expect(gemma.definition?.modelPath, liteRtLmModels.last.url);
+      await _send(tester, 'Next question');
+      expect(gemma.prompt, 'Next question');
+      expect(gemma.enableThinking, isTrue);
+      expect(gemma.history.single, hasLength(1));
+      await _reply(tester, gemma, 'Next answer');
+    },
+  );
+
+  testWidgets('unloaded LiteRT-LM selection survives provider switching', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_localApp(_LocalRuntime()));
+    await _tap(tester, 'LiteRT-LM');
+    await _selectLocalModel(tester, 'Gemma 4 E2B (desktop Chrome, ~2 GB)');
+
+    for (final provider in ['GGUF', 'LiteRT-LM']) {
+      await tester.tap(find.text(provider));
+      await tester.pump();
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+      await tester.pumpAndSettle();
+    }
+    expect(find.text('Load Gemma 4 E2B to begin.'), findsOneWidget);
+    expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+  });
+
+  testWidgets('LiteRT-LM Gemma warning leaves Load reachable at 320x480', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 480);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final runtime = _LocalRuntime();
+    await tester.pumpWidget(_localApp(runtime));
+    await _tap(tester, 'LiteRT-LM');
+    final dropdown = tester.widget<DropdownButton<LocalModelOption>>(
+      find.byType(DropdownButton<LocalModelOption>),
+    );
+    for (final item in dropdown.items!) {
+      final label = item.child as Text;
+      expect(label.maxLines, 1);
+      expect(label.overflow, TextOverflow.ellipsis);
+    }
+    await _selectLocalModel(tester, 'Gemma 4 E2B (desktop Chrome, ~2 GB)');
+    expect(tester.takeException(), isNull);
+    expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Load').hitTestable(),
+      80,
+      scrollable: find.descendant(
+        of: find.byType(ListView),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await _tap(tester, 'Load');
+    expect(runtime.definition?.name, 'gemma-4-e2b-litert');
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(
@@ -761,8 +948,8 @@ void main() {
         ..loading = loading.future;
       await tester.pumpWidget(_localApp(runtime));
 
-      final dropdown = tester.widget<DropdownButton<GgufModelOption>>(
-        find.byType(DropdownButton<GgufModelOption>),
+      final dropdown = tester.widget<DropdownButton<LocalModelOption>>(
+        find.byType(DropdownButton<LocalModelOption>),
       );
       for (final item in dropdown.items!) {
         final label = item.child as Text;
@@ -770,7 +957,7 @@ void main() {
         expect(label.overflow, TextOverflow.ellipsis);
       }
 
-      await _selectGgufModel(tester, 'Gemma 4 E2B (desktop Chrome, ~3 GB)');
+      await _selectLocalModel(tester, 'Gemma 4 E2B (desktop Chrome, ~3 GB)');
       expect(tester.takeException(), isNull);
       expect(
         find.textContaining('Measured ~11 GB peak browser memory'),
@@ -823,7 +1010,7 @@ void main() {
     'unloaded provider switch does not flash progress, restores selected GGUF label, and sliders expose semantics',
     (tester) async {
       await tester.pumpWidget(_localApp(_LocalRuntime()));
-      await _selectGgufModel(tester, 'Qwen3.5 0.8B (~533 MB)');
+      await _selectLocalModel(tester, 'Qwen3.5 0.8B (~533 MB)');
 
       await tester.tap(find.text('LiteRT-LM'));
       await tester.pump();
@@ -968,8 +1155,8 @@ Future<void> _tap(WidgetTester tester, String label) async {
   await tester.pumpAndSettle();
 }
 
-Future<void> _selectGgufModel(WidgetTester tester, String itemLabel) async {
-  await tester.tap(find.byType(DropdownButton<GgufModelOption>));
+Future<void> _selectLocalModel(WidgetTester tester, String itemLabel) async {
+  await tester.tap(find.byType(DropdownButton<LocalModelOption>));
   await tester.pumpAndSettle();
   await tester.tap(find.text(itemLabel).last);
   await tester.pumpAndSettle();
