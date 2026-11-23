@@ -607,6 +607,21 @@ void main() {
     expect(findBridgeTagDrift(root, 'v9.9.9'), contains(contains('$path:')));
   });
 
+  test('the DartPad bootstrap pin cannot drift', () {
+    const path = 'example/dartpad_gguf/lib/bridge_bootstrap_web.dart';
+    final root = _fakeRepo(
+      'v9.9.9',
+      files: {path: "const String defaultBridgeAssetsTag = 'v9.9.9';\n"},
+    );
+    Process.runSync('git', ['init', '--quiet'], workingDirectory: root.path);
+    Process.runSync('git', ['add', '-A'], workingDirectory: root.path);
+    expect(findUnregisteredTagSites(root, 'v9.9.9'), isEmpty);
+    File(
+      '${root.path}/$path',
+    ).writeAsStringSync("const String defaultBridgeAssetsTag = 'v9.9.8';\n");
+    expect(findBridgeTagDrift(root, 'v9.9.9'), contains(contains('$path:')));
+  });
+
   test('the checked-in pins all quote the source of truth', () {
     final repoRoot = Directory.current;
     expect(

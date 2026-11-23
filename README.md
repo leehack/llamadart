@@ -246,7 +246,8 @@ allocation-to-registration gaps remain; see the
 
 Run the Flutter chat app from a
 [repository checkout](https://github.com/leehack/llamadart/tree/main/example/chat_app),
-or try the [hosted chat app](https://leehack-llamadart.static.hf.space).
+try the [hosted chat app](https://leehack-llamadart.static.hf.space), or
+[run a GGUF model in DartPad](https://dartpad.dev/?package=llamadart&root=example/dartpad_gguf&file=example/dartpad_gguf/lib/main.dart).
 
 - [Basic Dart CLI](https://github.com/leehack/llamadart/tree/main/example/basic_app)
 - [Flutter chat app](https://github.com/leehack/llamadart/tree/main/example/chat_app)

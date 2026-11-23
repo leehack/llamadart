@@ -9,6 +9,12 @@ for typed legacy `ToolParam` declarations and the separate required/none paths.
 
 ## Available Examples
 
+### DartPad GGUF (`dartpad_gguf/`)
+
+A Flutter Web example that downloads and runs a small GGUF in the browser.
+[Open in DartPad](https://dartpad.dev/?package=llamadart&root=example/dartpad_gguf&file=example/dartpad_gguf/lib/main.dart) or follow the
+[local Chrome instructions](dartpad_gguf/README.md).
+
 ### 1. Basic App (`basic_app/`)
 A simple console application showing:
 - Model loading

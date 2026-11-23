@@ -136,6 +136,9 @@ forcing fetch-backed loading throws `LlamaUnsupportedException`. Model size
 limits depend on the address space, context, GPU memory and browser. Select
 memory64 when available for larger files. Safari uses wasm32.
 
+See the [DartPad GGUF example](../examples/dartpad-gguf) for a Dart bootstrap
+that imports the bridge and sets absolute asset URLs in a host-managed iframe.
+
 ### Manual setup
 
 Without the tool, download the assets into `web/webgpu_bridge/`, with `TAG`

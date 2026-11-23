@@ -13,6 +13,7 @@ style.
 | --- | --- | --- |
 | Learn the core Dart API, embeddings, SQLite vector retrieval, decision models, or image generation (Preview) | [Basic app](./basic-app) | Minimal Dart console CLIs for chat, embeddings, retrieval, `DecisionEngine`, and `ImageGenerationEngine`. |
 | Build or explore a full Flutter product UI | [Chat app](./chat-app) | Flutter app with model downloads, runtime controls, multimodal input, speech, and image generation (Preview). |
+| Run a small GGUF in a browser without cross-origin isolation | [DartPad GGUF](./dartpad-gguf) | Flutter preview with pinned CDN assets, model downloads, and streamed text. |
 | Run decision models in a real-time app | [Laya Tetris](./laya-tetris) | Flutter game played in real time by a Laya decision model through `DecisionEngine`. |
 | Drive interactive UI from a classifier or scorer | [Laya Command Bar](./laya-command-bar) | Flutter text field reshaped as you type using `DecisionEngine`, `embedBatch`, or `scoreNextToken`. |
 | Keep a `llama.cpp` terminal workflow | [llama.cpp-Style CLI](./llamadart-cli) | Terminal chat with `llama.cpp`-style arguments and parity harnesses. |
