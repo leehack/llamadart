@@ -68,7 +68,7 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   `llamadart.webgpu.runtime_notes`. A single-thread core runs streamed model
   staging and rejects forced fetch-backed loading. It can offload GPU layers
   when the adapter supports WebGPU.
-- When the host controls `index.html` (for example DartPad), set the
+- When the host controls `index.html` (for example preview.dartpad.dev), set the
   single-thread opt-in and absolute core, Wasm, and worker URLs in Dart
   before the first load. Import the pinned CDN bridge with
   `dart:js_interop` and assign its constructor to

@@ -5,7 +5,3 @@ Future<void> bootstrapBridge() async {
     'Open this example in DartPad or run it in Chrome.',
   );
 }
-
-bool hasWebGpu() => false;
-
-bool isCrossOriginIsolated() => false;

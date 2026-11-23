@@ -1,25 +1,21 @@
 ---
 title: DartPad GGUF example
 sidebar_label: DartPad GGUF
-description: Download a small GGUF and stream text in a Flutter DartPad preview without cross-origin isolation.
+description: Download a small GGUF and stream text on preview.dartpad.dev without cross-origin isolation.
 ---
 
-[Open in DartPad](https://dartpad.dev/?package=llamadart&root=example/dartpad_gguf&file=example/dartpad_gguf/lib/main.dart)
-with llamadart 0.20.7 or later. Run the preview, choose a model, then select
-**Load** and **Run**. **Stop** cancels the current generation.
+[Open on preview.dartpad.dev](https://preview.dartpad.dev/?package=llamadart&root=example/dartpad_gguf&file=example/dartpad_gguf/lib/main.dart)
+The link always opens the latest published llamadart.
+The example is available starting in 0.20.7.
 
-| Preset | Download | API |
-| --- | --- | --- |
-| Stories15M Q8_0 | 39.4 MB | Continue a prompt with `LlamaEngine.generate`. |
-| SmolLM2 135M Instruct Q4_K_M | 105.5 MB | Answer a single chat turn with `LlamaEngine.create`. |
+Run the Flutter preview and choose **Load** to download Stories15M MoE Q8_0
+(39.4 MB). Select **Generate** to stream a continuation of your prompt.
+**Stop** cancels generation and keeps the text already received.
 
-DartPad runs the app in a non-isolated iframe. The example opts into the
+DartPad Preview runs the app in a non-isolated iframe. The example opts into the
 [single-thread GGUF core](../platforms/webgpu-bridge#single-threaded-gguf-without-isolation)
-and imports the pinned bridge module from Dart. All bridge URLs are absolute
-so the browser can resolve them from the iframe. After loading, the app
-reports the backend, Wasm core variant, execution mode, and threading.
-Inference runs in the browser. The bridge can use a compatible WebGPU
-adapter for GPU offload.
+and imports the pinned bridge module using absolute asset URLs. Inference runs
+in the browser and can use a compatible WebGPU adapter.
 
 For the source and local Chrome instructions, see
 [`example/dartpad_gguf`](https://github.com/leehack/llamadart/tree/main/example/dartpad_gguf).

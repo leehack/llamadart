@@ -1,56 +1,42 @@
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
+import 'package:llamadart/llamadart.dart';
+
 const String defaultBridgeAssetsTag = 'v0.1.93';
 const _assetBase =
     'https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@'
     '$defaultBridgeAssetsTag/';
 
-const _constructor = 'LlamaWebGpuBridge';
-const _loadError = '__llamadartBridgeLoadError';
-
-Future<JSObject> _importBridge(String url) async =>
-    await importModule(url.toJS).toDart;
+Future<JSObject> _importBridge(String url) => importModule(url.toJS).toDart;
 
 Future<void> bootstrapBridge({
   Future<JSObject> Function(String url) importBridge = _importBridge,
 }) async {
-  // DartPad runs the app in an about:srcdoc frame with no app asset directory.
+  // The preview iframe has no app asset directory.
   const assets = {
-    '__llamadartBridgeCoreModuleUrlSt': 'llama_webgpu_core_st.js',
-    '__llamadartBridgeWasmUrlSt': 'llama_webgpu_core_st.wasm',
-    '__llamadartBridgeCoreModuleUrlMem64St': 'llama_webgpu_core_mem64_st.js',
-    '__llamadartBridgeWasmUrlMem64St': 'llama_webgpu_core_mem64_st.wasm',
-    '__llamadartBridgeWorkerUrl': 'llama_webgpu_bridge_worker.js',
+    'CoreModuleUrlSt': 'llama_webgpu_core_st.js',
+    'WasmUrlSt': 'llama_webgpu_core_st.wasm',
+    'CoreModuleUrlMem64St': 'llama_webgpu_core_mem64_st.js',
+    'WasmUrlMem64St': 'llama_webgpu_core_mem64_st.wasm',
+    'WorkerUrl': 'llama_webgpu_bridge_worker.js',
   };
   for (final MapEntry(:key, :value) in assets.entries) {
-    globalContext[key] = '$_assetBase$value'.toJS;
+    globalContext['__llamadartBridge$key'] = '$_assetBase$value'.toJS;
   }
   globalContext['__llamadartBridgeAllowSingleThreadCore'] = true.toJS;
 
-  try {
-    var constructor = globalContext[_constructor];
-    if (!constructor.isA<JSFunction>()) {
-      final module = await importBridge('${_assetBase}llama_webgpu_bridge.js');
-      constructor = module[_constructor];
-      if (!constructor.isA<JSFunction>()) {
-        throw StateError('The bridge module has no LlamaWebGpuBridge export.');
-      }
-      globalContext[_constructor] = constructor;
-    }
-    final adaptive = (constructor as JSObject)['supportsSafariAdaptiveGpu'];
-    globalContext['__llamadartBridgeAdaptiveSafariGpu'] =
-        (adaptive.isA<JSBoolean>() && (adaptive as JSBoolean).toDart).toJS;
-    globalContext[_loadError] = null;
-  } catch (error) {
-    globalContext[_loadError] = error.toString().toJS;
-    rethrow;
+  final module = await importBridge('${_assetBase}llama_webgpu_bridge.js')
+      .onError((Object _, StackTrace _) {
+        throw LlamaUnsupportedException(
+          'Could not load the Web bridge. Check access to cdn.jsdelivr.net.',
+        );
+      });
+  final constructor = module['LlamaWebGpuBridge'];
+  if (!constructor.isA<JSFunction>()) {
+    throw LlamaUnsupportedException('The Web bridge has no constructor.');
   }
+  globalContext['LlamaWebGpuBridge'] = constructor;
+  globalContext['__llamadartBridgeAdaptiveSafariGpu'] =
+      (constructor as JSObject)['supportsSafariAdaptiveGpu'];
 }
-
-bool isCrossOriginIsolated() {
-  final isolated = globalContext['crossOriginIsolated'];
-  return isolated.isA<JSBoolean>() && (isolated as JSBoolean).toDart;
-}
-
-bool hasWebGpu() => (globalContext['navigator'] as JSObject?)?['gpu'] != null;

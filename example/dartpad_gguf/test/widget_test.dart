@@ -1,6 +1,3 @@
-@TestOn('vm')
-library;
-
 import 'dart:async';
 
 import 'package:dartpad_gguf_example/main.dart';
@@ -11,29 +8,35 @@ import 'package:llamadart/llamadart.dart';
 void main() {
   late _FakeEngine engine;
 
-  Future<void> openApp(WidgetTester tester) {
+  Future<void> openApp(WidgetTester tester) async {
     engine = _FakeEngine();
-    return tester.pumpWidget(GgufApp(createEngine: () async => engine));
-  }
-
-  Future<void> load(WidgetTester tester) async {
+    await tester.pumpWidget(GgufApp(createEngine: () async => engine));
     await tester.tap(find.text('Load'));
     await tester.pump();
-    engine.loadResult.complete();
+  }
+
+  Future<void> generate(WidgetTester tester) async {
+    engine.loaded.complete();
+    await tester.pump();
+    await tester.tap(find.text('Generate'));
     await tester.pump();
   }
 
-  testWidgets('loads the default model and streams a story', (tester) async {
+  Future<void> finishStream(WidgetTester tester) async {
+    await tester.pump();
+    // Browser stream completion can run outside the widget test's fake clock.
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pump();
+  }
+
+  testWidgets('loads Stories15M, streams text and stops', (tester) async {
     await openApp(tester);
-    final run = find.widgetWithText(FilledButton, 'Run');
-    expect(tester.widget<FilledButton>(run).onPressed, isNull);
-    await tester.tap(find.text('Load'));
-    await tester.pump();
-    expect(engine.source?.kind, ModelSourceKind.http);
-    expect(engine.source?.url?.host, 'huggingface.co');
-    expect(engine.source?.url?.path, contains('/resolve/b6dd7374'));
-    expect(engine.params?.contextSize, 1024);
-
+    expect(
+      engine.source?.url?.path,
+      endsWith(
+        '/b6dd737497465570b5f5e962dbc9d9454ed1e0eb/stories15M_MOE-Q8_0.gguf',
+      ),
+    );
     engine.progress?.call(const ModelDownloadProgress.fraction(0.5));
     await tester.pump();
     expect(
@@ -42,115 +45,49 @@ void main() {
           .value,
       0.5,
     );
-    engine.loadResult.complete();
-    await tester.pump();
-    expect(find.byType(LinearProgressIndicator), findsNothing);
-    expect(
-      find.text('WASM · memory64 · worker · single-thread'),
-      findsOneWidget,
-    );
 
     await tester.enterText(find.byType(TextField), 'Once upon a time');
-    await tester.tap(run);
-    await tester.pump();
+    await generate(tester);
     expect(engine.prompt, 'Once upon a time');
     engine.output.add('There was');
     await tester.pump();
     expect(find.text('There was'), findsOneWidget);
     engine.output.add(' a fox.');
-    await engine.output.close();
     await tester.pump();
-    expect(find.text('There was a fox.'), findsOneWidget);
-    expect(run, findsOneWidget);
-  });
-
-  testWidgets('switches presets and cancels an instruct chat', (tester) async {
-    await openApp(tester);
-    await load(tester);
-    await tester.tap(find.textContaining('Stories15M'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('SmolLM2').last);
-    await tester.pumpAndSettle();
-
-    final run = find.widgetWithText(FilledButton, 'Run');
-    expect(tester.widget<FilledButton>(run).onPressed, isNull);
-    engine.loadResult = Completer<void>();
-    await load(tester);
-    expect(engine.source?.url?.path, contains('/resolve/9e6855bc'));
-    await tester.tap(run);
-    await tester.pump();
-    expect(engine.chatMessage?.role, LlamaChatRole.user);
-    expect(engine.chatMessage?.content, contains('day hike'));
-    engine.chat.add(
-      LlamaCompletionChunk(
-        id: 'chunk',
-        object: 'chat.completion.chunk',
-        created: 0,
-        model: 'test.gguf',
-        choices: [
-          LlamaCompletionChunkChoice(
-            index: 0,
-            delta: LlamaCompletionChunkDelta(content: 'Bring water.'),
-          ),
-        ],
-      ),
-    );
-    await tester.pump();
-    expect(find.text('Bring water.'), findsOneWidget);
 
     await tester.tap(find.text('Stop'));
-    await tester.pumpAndSettle();
-    expect(engine.chat.hasListener, isFalse);
-    expect(find.text('Bring water.'), findsOneWidget);
-    expect(tester.widget<FilledButton>(run).onPressed, isNotNull);
+    await finishStream(tester);
+    expect(engine.output.hasListener, isFalse);
+    expect(find.text('There was a fox.'), findsOneWidget);
+    expect(find.text('Generate'), findsOneWidget);
   });
 
-  testWidgets('shows typed load errors and lets the user retry', (
-    tester,
-  ) async {
+  testWidgets('shows typed load and generation errors', (tester) async {
     await openApp(tester);
-    for (final (error, message) in [
-      (
-        LlamaUnsupportedException('Bridge unavailable'),
-        'Unavailable: Bridge unavailable',
-      ),
-      (
-        LlamaModelException('Download failed'),
-        'Model load failed: Download failed',
-      ),
-    ]) {
-      await tester.tap(find.text('Load'));
-      await tester.pump();
-      engine.loadResult.completeError(error);
-      await tester.pump();
-      expect(find.text(message), findsOneWidget);
-      expect(find.byType(LinearProgressIndicator), findsNothing);
-      engine.loadResult = Completer<void>();
-    }
-
-    await load(tester);
-    expect(find.textContaining('Model load failed'), findsNothing);
-    await tester.tap(find.text('Run'));
+    engine.loaded.completeError(LlamaModelException('Download failed'));
     await tester.pump();
+    expect(find.text('Download failed'), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+
+    engine.loaded = Completer<void>();
+    await tester.tap(find.text('Load'));
+    await tester.pump();
+    await generate(tester);
     engine.output.addError(LlamaInferenceException('Generation failed'));
-    await tester.pump();
+    await finishStream(tester);
     expect(find.text('Generation failed'), findsOneWidget);
-    expect(find.text('Run'), findsOneWidget);
+    expect(find.text('Generate'), findsOneWidget);
   });
 
-  testWidgets('disposes the engine and cancels an active stream', (
-    tester,
-  ) async {
+  testWidgets('disposes the engine and its active generation', (tester) async {
     await openApp(tester);
-    await load(tester);
-    await tester.tap(find.text('Run'));
-    await tester.pump();
+    await generate(tester);
     expect(engine.output.hasListener, isTrue);
 
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
-    expect(engine.output.hasListener, isFalse);
     expect(engine.disposed, isTrue);
+    expect(engine.output.hasListener, isFalse);
     expect(tester.takeException(), isNull);
   });
 
@@ -172,21 +109,11 @@ void main() {
 }
 
 class _FakeEngine extends Fake implements LlamaEngine {
-  _FakeEngine() {
-    addTearDown(() {
-      if (!output.isClosed) unawaited(output.close());
-      if (!chat.isClosed) unawaited(chat.close());
-    });
-  }
-
-  final output = StreamController<String>(onCancel: () async {});
-  final chat = StreamController<LlamaCompletionChunk>(onCancel: () async {});
-  Completer<void> loadResult = Completer<void>();
+  final output = StreamController<String>.broadcast();
+  Completer<void> loaded = Completer<void>();
   ModelDownloadProgressCallback? progress;
   ModelSource? source;
-  ModelParams? params;
   String? prompt;
-  LlamaChatMessage? chatMessage;
   bool disposed = false;
 
   @override
@@ -197,20 +124,9 @@ class _FakeEngine extends Fake implements LlamaEngine {
     ModelDownloadProgressCallback? onProgress,
   }) {
     source = model.source;
-    this.params = params;
     progress = onProgress;
-    return loadResult.future;
+    return loaded.future;
   }
-
-  @override
-  Future<String> getBackendName() async => 'WASM';
-
-  @override
-  Future<Map<String, String>> getMetadata() async => {
-    'llamadart.webgpu.core_variant': 'memory64',
-    'llamadart.webgpu.execution': 'worker',
-    'llamadart.webgpu.runtime_notes': 'core_pthreads:0;core_single_thread',
-  };
 
   @override
   Stream<String> generate(
@@ -223,23 +139,11 @@ class _FakeEngine extends Fake implements LlamaEngine {
   }
 
   @override
-  Stream<LlamaCompletionChunk> create(
-    List<LlamaChatMessage> messages, {
-    GenerationParams? params,
-    List<ToolDefinition>? tools,
-    ToolChoice? toolChoice,
-    bool parallelToolCalls = false,
-    bool enableThinking = true,
-    Map<String, dynamic>? responseFormat,
-    String? sourceLangCode,
-    String? targetLangCode,
-    Map<String, dynamic>? chatTemplateKwargs,
-    DateTime? templateNow,
-  }) {
-    chatMessage = messages.single;
-    return chat.stream;
-  }
+  void cancelGeneration() => unawaited(output.close());
 
   @override
-  Future<void> dispose() async => disposed = true;
+  Future<void> dispose() async {
+    disposed = true;
+    await output.close();
+  }
 }
