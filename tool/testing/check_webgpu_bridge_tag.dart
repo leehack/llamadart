@@ -46,8 +46,11 @@ class BridgeTagPin {
   /// Matches the pin and nothing else in [path]; group 1 is the tag.
   final RegExp pattern;
 
+  /// Whether group 1 is an npm version without the GitHub tag's `v`.
+  final bool npmVersion;
+
   /// Creates a pin site.
-  const BridgeTagPin(this.path, this.pattern);
+  const BridgeTagPin(this.path, this.pattern, {this.npmVersion = false});
 }
 
 /// Every site that mirrors the pinned tag.
@@ -55,9 +58,10 @@ final List<BridgeTagPin> bridgeTagPins = <BridgeTagPin>[
   BridgeTagPin(
     bridgeTagSourcePath,
     RegExp(
-      r'^\s*https://cdn\.jsdelivr\.net/gh/leehack/llama-web-bridge-assets@(v\d+\.\d+\.\d+)$',
+      r'^\s*https://cdn\.jsdelivr\.net/npm/llama-web-bridge@(\d+\.\d+\.\d+)/dist/$',
       multiLine: true,
     ),
+    npmVersion: true,
   ),
   BridgeTagPin(
     bridgeTagSourcePath,
@@ -322,7 +326,7 @@ List<String> findBridgeTagDrift(Directory repoRoot, String expectedTag) {
       );
       continue;
     }
-    final found = matches.single.group(1)!;
+    final found = '${pin.npmVersion ? 'v' : ''}${matches.single.group(1)!}';
     if (found != expectedTag) {
       problems.add('${pin.path}: pins $found, expected $expectedTag');
     }
@@ -932,10 +936,11 @@ Future<List<String>> verifyManifest({
 }) async {
   final url =
       manifestUrl ??
-      Uri.parse(
-        'https://cdn.jsdelivr.net/gh/$bridgeAssetsRepository@$expectedTag'
-        '/manifest.json',
-      );
+      WebBridgePin(
+        repository: bridgeAssetsRepository,
+        tag: expectedTag,
+        manifestSha256: expectedManifestSha256,
+      ).baseUri.resolve('manifest.json');
   final client = fetcher == null ? HttpClient() : null;
   try {
     final response =
@@ -1186,6 +1191,7 @@ final RegExp _bearerToken = RegExp(r'^[A-Za-z0-9\-._~+/]+=*$');
 /// would never look at it.
 final List<RegExp> bridgeTagPinShapes = <RegExp>[
   RegExp(r'llama-web-bridge-assets@v\d+\.\d+\.\d+'),
+  RegExp(r'llama-web-bridge@\d+\.\d+\.\d+(?=/dist/)'),
   // Backticks only in the JS form; in shell they would be command substitution.
   RegExp('BridgeAssetsTag\\s*=\\s*[\'"`]?v\\d+\\.\\d+\\.\\d+[\'"`]?'),
   RegExp('WEBGPU_BRIDGE_ASSETS_TAG=[\'"]?v\\d+\\.\\d+\\.\\d+[\'"]?'),

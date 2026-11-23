@@ -2494,20 +2494,70 @@ void main() {
     });
   });
 
+  test('asset fetcher honors the CDN override and legacy tags', () async {
+    final scratch = Directory.systemTemp.createTempSync('bridge-fetch-');
+    addTearDown(() => scratch.deleteSync(recursive: true));
+    final curl = File('${scratch.path}/curl')
+      ..writeAsStringSync('#!/bin/sh\nprintf "%s\\n" "\$@"\nexit 42\n');
+    final chmod = await Process.run('chmod', ['+x', curl.path]);
+    expect(chmod.exitCode, 0, reason: '${chmod.stderr}');
+    final version = readPinnedBridgeTag(Directory.current).substring(1);
+    const legacy =
+        'https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets';
+    for (final (settings, base) in <(Map<String, String>, String)>[
+      ({}, 'https://cdn.jsdelivr.net/npm/llama-web-bridge@$version/dist'),
+      (
+        {'WEBGPU_BRIDGE_CDN_BASE': 'https://example.test/custom/'},
+        'https://example.test/custom',
+      ),
+      ({'WEBGPU_BRIDGE_ASSETS_TAG': 'v0.1.90'}, '$legacy@v0.1.90'),
+      (
+        {'WEBGPU_BRIDGE_ASSETS_TAG': 'v0.1.93-preview'},
+        '$legacy@v0.1.93-preview',
+      ),
+    ]) {
+      final result = await Process.run(
+        'bash',
+        [bridgeTagSourcePath],
+        environment: {
+          'PATH': '${scratch.path}:${Platform.environment['PATH']}',
+          'WEBGPU_BRIDGE_OUT_DIR': scratch.path,
+          'WEBGPU_BRIDGE_CDN_BASE': '',
+          'WEBGPU_BRIDGE_ASSETS_REPO': '',
+          'WEBGPU_BRIDGE_ASSETS_TAG': '',
+          ...settings,
+        },
+      );
+      expect(result.exitCode, 42, reason: '${result.stderr}');
+      expect(
+        LineSplitter.split(result.stdout as String),
+        contains('$base/llama_webgpu_bridge.js'),
+      );
+    }
+  }, skip: Platform.isWindows);
+
   group('Remote manifest machine verification', () {
     test('verifies success for the exact approved manifest', () async {
       // Deliberately the production constants, not literals: the fixture is
       // the only offline proof that they describe the approved bytes, and
       // repeating them here would let a half-finished bump still pass.
       final bytes = utf8.encode(_approvedManifestJson);
+      final tag = readPinnedBridgeTag(Directory.current);
       final errors = await verifyManifest(
-        expectedTag: readPinnedBridgeTag(Directory.current),
+        expectedTag: tag,
         expectedLlamaCppTag: bridgeLlamaCppTag,
         expectedLlamaCppCommit: bridgeLlamaCppCommit,
         expectedBridgeCommit: bridgeSourceCommit,
         expectedNativeReleaseTag: bridgeNativeReleaseTag,
         expectedManifestSha256: bridgeManifestSha256,
-        fetcher: (_) async => ManifestResponse(HttpStatus.ok, bytes),
+        fetcher: (url) async {
+          expect(
+            url.toString(),
+            'https://cdn.jsdelivr.net/npm/llama-web-bridge@'
+            '${tag.substring(1)}/dist/manifest.json',
+          );
+          return ManifestResponse(HttpStatus.ok, bytes);
+        },
       );
 
       expect(errors, isEmpty);

@@ -69,7 +69,8 @@ From the app root, run:
 dart run llamadart:web_setup
 ```
 
-It downloads the bridge assets your `llamadart` version pins
+It downloads the bridge assets your `llamadart` version pins from
+the `llama-web-bridge` npm package through jsDelivr
 ([Pinned bridge assets](#pinned-bridge-assets)) into `web/webgpu_bridge/`,
 checks every file against the release manifest whose SHA-256 the package pins,
 and adds a marked bootstrap block to `web/index.html` before
@@ -153,14 +154,14 @@ for f in llama_webgpu_bridge.js llama_webgpu_bridge_worker.js \
          llama_webgpu_core.js llama_webgpu_core.wasm \
          llama_webgpu_core_mem64.js llama_webgpu_core_mem64.wasm; do
   curl -fL -o "web/webgpu_bridge/$f" \
-    "https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@$TAG/$f"
+    "https://cdn.jsdelivr.net/npm/llama-web-bridge@${TAG#v}/dist/$f"
 done
 ```
 
 This loop does not verify checksums. In a llamadart checkout,
 `scripts/fetch_webgpu_bridge_assets.sh` with
 `WEBGPU_BRIDGE_OUT_DIR=<app>/web/webgpu_bridge` does the same and verifies
-them.
+them. Set `WEBGPU_BRIDGE_CDN_BASE` to use a custom download base URL.
 
 For pages without usable shared memory, also download
 `llama_webgpu_core_st.js/.wasm` and `llama_webgpu_core_mem64_st.js/.wasm` from

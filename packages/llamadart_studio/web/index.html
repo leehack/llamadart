@@ -188,7 +188,14 @@
     window.__llamadartBridgeLocalVersion = localBridgeVersion;
 
     const localBridgeUrl = `./webgpu_bridge/llama_webgpu_bridge.js?v=${localBridgeVersion}`;
-    const cdnBridgeUrl = `https://cdn.jsdelivr.net/gh/${bridgeAssetsRepo}@${bridgeAssetsTag}/llama_webgpu_bridge.js`;
+    const stableTag = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(bridgeAssetsTag);
+    const useNpm = isOfficialBridgeAssetsRepo && stableTag?.[0] === bridgeAssetsTag &&
+      (Number(stableTag[1]) > 0 || Number(stableTag[2]) > 1 ||
+        (Number(stableTag[2]) === 1 && Number(stableTag[3]) >= 91));
+    const cdnBridgeBase = useNpm
+      ? `https://cdn.jsdelivr.net/npm/llama-web-bridge@${bridgeAssetsTag.slice(1)}/dist`
+      : `https://cdn.jsdelivr.net/gh/${bridgeAssetsRepo}@${bridgeAssetsTag}`;
+    const cdnBridgeUrl = `${cdnBridgeBase}/llama_webgpu_bridge.js`;
     const preferLocalBridgeRuntime =
       window.__llamadartPreferLocalBridgeRuntime === true ||
       window.location.hostname === '127.0.0.1' ||

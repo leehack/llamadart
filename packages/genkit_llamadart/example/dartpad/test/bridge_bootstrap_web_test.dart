@@ -43,8 +43,8 @@ void main() {
     final constructor = (() {}).toJS;
     constructor['supportsSafariAdaptiveGpu'] = true.toJS;
     final base =
-        'https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@'
-        '$defaultBridgeAssetsTag/';
+        'https://cdn.jsdelivr.net/npm/llama-web-bridge@'
+        '${defaultBridgeAssetsTag.substring(1)}/dist/';
 
     await bootstrapBridge(
       importBridge: (url) async {

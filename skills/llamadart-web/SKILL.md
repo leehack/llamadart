@@ -211,7 +211,7 @@ dart run llamadart:web_setup
 dart run llamadart:web_setup --check  # in CI, before flutter build web
 ```
 
-Or fetch the pinned assets by hand, without checksum verification:
+Or fetch the pinned npm assets by hand, without checksum verification:
 
 ```bash
 TAG=vX.Y.Z # the tag pinned in the WebGPU bridge docs for your llamadart version
@@ -220,7 +220,7 @@ for f in llama_webgpu_bridge.js llama_webgpu_bridge_worker.js \
          llama_webgpu_core.js llama_webgpu_core.wasm \
          llama_webgpu_core_mem64.js llama_webgpu_core_mem64.wasm; do
   curl -fL -o "web/webgpu_bridge/$f" \
-    "https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@$TAG/$f"
+    "https://cdn.jsdelivr.net/npm/llama-web-bridge@${TAG#v}/dist/$f"
 done
 ```
 

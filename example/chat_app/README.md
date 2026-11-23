@@ -641,8 +641,9 @@ await prefs.setInt('preferred_backend', backendIndex);
 - LFM2 automatic Python tool calls additionally need bridge v0.1.82+ reporting `penaltyPromptTokensWithGrammar`. That route is text-only and rejects unsupported assets before inference.
 - Lazy tool-call grammars and custom grammar roots require the loaded core's `lazyGrammar` probe. Older cores keep best-effort auto tool parsing; explicit lazy requests reject.
 - Bridge runtime loading prefers local `web/webgpu_bridge` assets on `localhost`/`127.0.0.1` for dev validation, and otherwise prefers pinned jsDelivr assets with local fallback.
-- Override CDN source/version with `window.__llamadartBridgeAssetsRepo` and
-  `window.__llamadartBridgeAssetsTag` in `web/index.html`.
+- The pinned bridge comes from the `llama-web-bridge` npm package on jsDelivr.
+  Override the repository or tag with `window.__llamadartBridgeAssetsRepo`
+  and `window.__llamadartBridgeAssetsTag` in `web/index.html`.
 - To pin self-hosted assets before build:
   `WEBGPU_BRIDGE_ASSETS_TAG=<tag> ./scripts/fetch_webgpu_bridge_assets.sh`.
 - Bridge model loading uses browser Cache Storage by default, so repeated loads

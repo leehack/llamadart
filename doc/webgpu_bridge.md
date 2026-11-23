@@ -8,15 +8,16 @@ memory64, fallback, troubleshooting) is on the docs site:
 
 ## Ownership
 
-Bridge source and build CI live in `leehack/llama-web-bridge`; published CDN
-assets in `leehack/llama-web-bridge-assets`. `llamadart` only consumes them;
-see `website/docs/maintainers/runtime-ownership.md`.
+Bridge source and build CI live in `leehack/llama-web-bridge`. The build
+publishes matching assets to the `llama-web-bridge` npm package and the
+`leehack/llama-web-bridge-assets` GitHub repository. See
+`website/docs/maintainers/runtime-ownership.md`.
 
 ## Chat app bootstrap
 
 `example/chat_app/web/index.html` builds two bridge URLs:
 
-- CDN: `https://cdn.jsdelivr.net/gh/<repo>@<tag>/llama_webgpu_bridge.js`
+- CDN: `https://cdn.jsdelivr.net/npm/llama-web-bridge@<version>/dist/llama_webgpu_bridge.js`
 - Local: `./webgpu_bridge/llama_webgpu_bridge.js?v=<tag>-local-<llama.cpp tag>`
 
 It prefers the local runtime, then falls back to the CDN, when the page is
@@ -57,7 +58,7 @@ an earlier `<script>`:
 
 | Global | Effect |
 | --- | --- |
-| `__llamadartBridgeAssetsRepo`, `__llamadartBridgeAssetsTag` | CDN source; defaults to `leehack/llama-web-bridge-assets` at the pinned tag |
+| `__llamadartBridgeAssetsRepo`, `__llamadartBridgeAssetsTag` | CDN source and tag. Official stable tags from v0.1.91 use npm. Earlier tags, suffixed tags, other refs and custom repositories use jsDelivr's GitHub route. |
 | `__llamadartPreferLocalBridgeRuntime` | `true` loads local assets first off `localhost` |
 | `__llamadartBridgeEnableMem64` | `true` sets `__llamadartBridgePreferMemory64`; default off |
 | `__llamadartBridgeThreadPoolSize` | Thread hint; chat app default 1 when the page is not cross-origin isolated, else `hardwareConcurrency` clamped to 2..4 |
@@ -74,10 +75,14 @@ Vendor the pinned assets into the chat app with:
 WEBGPU_BRIDGE_ASSETS_TAG=v0.1.93 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
-`WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
-`sha256sums.txt` when the release provides it.
+`WEBGPU_BRIDGE_OUT_DIR` changes the destination.
+`WEBGPU_BRIDGE_CDN_BASE` overrides the download URL. Without an override, the
+script uses the same tag mapping as the chat app. For official stable releases
+from v0.1.91 onward, `vX.Y.Z` becomes `X.Y.Z` under the npm package's `dist/`
+directory. The script verifies `sha256sums.txt` when the release provides it.
 
-Apps use `dart run llamadart:web_setup` (`bin/web_setup.dart`) instead. It
+Apps use `dart run llamadart:web_setup` (`bin/web_setup.dart`). It downloads
+from the pinned npm version through jsDelivr and
 pins the tag and the manifest SHA-256 in
 `lib/src/web_setup/web_bridge_setup.dart`, verifies every runtime file against
 that manifest's `files` digests and sizes before replacing anything, and keeps
