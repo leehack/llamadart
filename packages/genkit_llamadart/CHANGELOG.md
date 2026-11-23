@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add a LiteRT-LM model selector (Qwen3 0.6B by default and Gemma 4 E2B with desktop WebGPU) to the DartPad playground.
 - Polish the DartPad playground: auto-scroll while streaming and clear the prompt on Send, bound local GGUF history to fit the 2,048-token context, isolate streaming/timer rebuilds, add an elapsed local load timer, improve narrow-pane layout and accessibility labels, and update Gemma 4 E2B memory guidance.
 - Add a GGUF model selector (SmolLM2 135M default, Qwen3.5 0.8B, and desktop-flagged Gemma 4 E2B) to the DartPad playground.
 - Add multi-turn chat, generation settings, live stats, and prompt presets to the DartPad playground, and use the automatic single-thread GGUF bridge default.

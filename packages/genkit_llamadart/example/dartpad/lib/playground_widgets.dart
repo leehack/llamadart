@@ -89,7 +89,24 @@ class _PlaygroundViewState extends State<PlaygroundView> {
                 _ProviderSelector(controller),
                 const SizedBox(height: 8),
                 if (controller.isGguf) ...[
-                  _GgufModelPicker(controller),
+                  _LocalModelPicker(
+                    label: 'GGUF model',
+                    model: controller.ggufModel,
+                    options: ggufModels,
+                    busy: controller.busy,
+                    ready: controller.ready,
+                    onSelected: controller.selectGgufModel,
+                  ),
+                  const SizedBox(height: 8),
+                ] else if (controller.isLiteRtLm) ...[
+                  _LocalModelPicker(
+                    label: 'LiteRT-LM model',
+                    model: controller.liteRtLmModel,
+                    options: liteRtLmModels,
+                    busy: controller.busy,
+                    ready: controller.ready,
+                    onSelected: controller.selectLiteRtLmModel,
+                  ),
                   const SizedBox(height: 8),
                 ],
                 if (!controller.ready) _ConnectionSection(controller),
@@ -186,14 +203,26 @@ class _ProviderSelector extends StatelessWidget {
   );
 }
 
-class _GgufModelPicker extends StatelessWidget {
-  const _GgufModelPicker(this.controller);
+class _LocalModelPicker extends StatelessWidget {
+  const _LocalModelPicker({
+    required this.label,
+    required this.model,
+    required this.options,
+    required this.busy,
+    required this.ready,
+    required this.onSelected,
+  });
 
-  final PlaygroundController controller;
+  final String label;
+  final LocalModelOption model;
+  final List<LocalModelOption> options;
+  final bool busy;
+  final bool ready;
+  final Future<void> Function(LocalModelOption) onSelected;
 
   @override
   Widget build(BuildContext context) {
-    final model = controller.ggufModel;
+    final warning = model.warning;
     final colors = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     return Column(
@@ -201,24 +230,24 @@ class _GgufModelPicker extends StatelessWidget {
       children: [
         InputDecorator(
           decoration: InputDecoration(
-            labelText: 'GGUF model',
-            enabled: !controller.busy,
+            labelText: label,
+            enabled: !busy,
             isDense: true,
           ),
           child: DropdownButtonHideUnderline(
-            child: DropdownButton<GgufModelOption>(
+            child: DropdownButton<LocalModelOption>(
               value: model,
               isExpanded: true,
               isDense: true,
-              onChanged: controller.busy
+              onChanged: busy
                   ? null
                   : (selected) {
                       if (selected != null) {
-                        unawaited(controller.selectGgufModel(selected));
+                        unawaited(onSelected(selected));
                       }
                     },
               items: [
-                for (final option in ggufModels)
+                for (final option in options)
                   DropdownMenuItem(
                     value: option,
                     child: Text(
@@ -233,7 +262,7 @@ class _GgufModelPicker extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(model.note, style: textTheme.bodySmall),
-        if (!controller.ready && model.warning != null) ...[
+        if (!ready && warning != null) ...[
           const SizedBox(height: 8),
           DecoratedBox(
             decoration: BoxDecoration(
@@ -253,7 +282,7 @@ class _GgufModelPicker extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      model.warning!,
+                      warning,
                       style: textTheme.bodySmall?.copyWith(
                         color: colors.onTertiaryContainer,
                       ),
