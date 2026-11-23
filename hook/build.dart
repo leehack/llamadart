@@ -446,7 +446,7 @@ void main(List<String> args) async {
     }
     await reportDir.create(recursive: true);
 
-    final emittedFilePaths = <String, String>{};
+    final emittedFiles = <String, _EmittedFile>{};
     final usedAssetNames = <String>{};
 
     final emittedLibraries = <NativeLibraryDescriptor>[];
@@ -497,7 +497,7 @@ void main(List<String> args) async {
 
         for (final emittedFileName in emittedFileNames) {
           final loweredFileName = emittedFileName.toLowerCase();
-          if (emittedFilePaths.containsKey(loweredFileName)) {
+          if (emittedFiles.containsKey(loweredFileName)) {
             if (emittedFileName == library.fileName) {
               log.warning(
                 'Duplicate library filename detected, skipping: '
@@ -508,7 +508,10 @@ void main(List<String> args) async {
           }
 
           final destinationPath = path.join(reportDirPath, emittedFileName);
-          emittedFilePaths[loweredFileName] = destinationPath;
+          emittedFiles[loweredFileName] = (
+            path: destinationPath,
+            owner: 'llama.cpp',
+          );
           await File(library.filePath).copy(destinationPath);
           emittedLibraries.add(describeNativeLibrary(destinationPath));
         }
@@ -544,7 +547,7 @@ void main(List<String> args) async {
         packageRoot: pkgRoot,
         reportDirPath: reportDirPath,
         usedAssetNames: usedAssetNames,
-        llamaCppFilePaths: emittedFilePaths,
+        emittedFiles: emittedFiles,
         log: log,
       );
     }
@@ -556,6 +559,7 @@ void main(List<String> args) async {
         packageRoot: pkgRoot,
         reportDirPath: reportDirPath,
         usedAssetNames: usedAssetNames,
+        emittedFiles: emittedFiles,
         log: log,
       );
     }
@@ -1008,7 +1012,8 @@ Set<String> _reachedThrough(
 /// its SwiftPM framework: the companion pins [nativeRepository]@[nativeTag]
 /// through `let [tagVariable]` in the maintained manifest template.
 /// [compatibleTags] maps earlier tags accepted with a warning to what their
-/// frameworks lack; [artifactChecksums] binds each of them, and [nativeTag]
+/// frameworks lack or why they are identical. [artifactChecksums] binds each
+/// of them, and [nativeTag]
 /// when listed, to its exact XCFramework checksum. [companionVersion] is the
 /// first companion release pinning
 /// [nativeTag], when the core records it; [appleCompanionConstraint] decides
@@ -1161,8 +1166,8 @@ void _validateAppleCompanion(
         'compatibility; remove them and use the pinned framework.',
       );
     }
-    final missing = contract.compatibleTags[pinnedTag];
-    if (missing != null) {
+    final compatibility = contract.compatibleTags[pinnedTag];
+    if (compatibility != null) {
       final constraint = appleCompanionConstraint(
         coreVersion,
         firstPinningRelease: contract.companionVersion,
@@ -1170,11 +1175,15 @@ void _validateAppleCompanion(
       final next = constraint == null
           ? 'Upgrade ${contract.packageName} to a release pinning'
           : 'Depend on `${contract.packageName}: $constraint` to link';
+      final reason =
+          expectedChecksum == contract.artifactChecksums[contract.nativeTag]
+          ? 'Compatibility: $compatibility.'
+          : 'Its frameworks lack $compatibility.';
       final upgrade =
           'Resolved ${contract.packageName} ${metadata['version']} pins '
           '${contract.nativeRepository}@$pinnedTag, an earlier ${contract.label} '
           'runtime than ${contract.nativeTag} that this core still supports, '
-          'so this build links it. Its frameworks lack $missing. $next '
+          'so this build links it. $reason $next '
           '${contract.nativeTag}.';
       log.warning(upgrade);
       stderr.writeln('warning: llamadart: $upgrade');
@@ -1486,7 +1495,7 @@ Future<void> _emitLiteRtLmAssets({
   required String packageRoot,
   required String reportDirPath,
   required Set<String> usedAssetNames,
-  required Map<String, String> llamaCppFilePaths,
+  required Map<String, _EmittedFile> emittedFiles,
   required Logger log,
 }) async {
   final bundleSpec = _liteRtLmBundleSpecForCode(code);
@@ -1533,11 +1542,12 @@ Future<void> _emitLiteRtLmAssets({
       log.info('Skipping duplicate LiteRT-LM library `$fileName`.');
       continue;
     }
-    final llamaCppPath = llamaCppFilePaths[loweredFileName];
-    if (llamaCppPath != null) {
-      await _shareLibraryWithLlamaCpp(
-        liteRtLmPath: sourcePath,
-        llamaCppPath: llamaCppPath,
+    final existing = emittedFiles[loweredFileName];
+    if (existing != null) {
+      emittedFiles[loweredFileName] = await _shareBundledLibrary(
+        sourcePath: sourcePath,
+        sourceOwner: 'LiteRT-LM',
+        existing: existing,
         log: log,
       );
       continue;
@@ -1547,6 +1557,7 @@ Future<void> _emitLiteRtLmAssets({
     if (code.targetOS == OS.iOS) {
       await _makeOwnerWritableForAppleStrip(File(destinationPath), log: log);
     }
+    emittedFiles[loweredFileName] = (path: destinationPath, owner: 'LiteRT-LM');
     final assetName = _dedupeAssetName(
       _liteRtLmAssetName(fileName),
       usedAssetNames,
@@ -1566,50 +1577,49 @@ Future<void> _emitLiteRtLmAssets({
   }
 }
 
-/// Emits one copy of a library that both the llama.cpp and the LiteRT-LM
-/// bundle ship, since an app may bundle each file name only once.
-///
-/// On Windows both bundles ship the Visual C++ runtime app-locally. When both
-/// copies carry a Windows version resource, the newer file version serves
-/// both, as Microsoft keeps the runtime backward compatible, and a tie keeps
-/// the llama.cpp copy. When either copy lacks a version resource, identical
-/// files share one copy and different files fail the build instead of
-/// guessing.
-Future<void> _shareLibraryWithLlamaCpp({
-  required String liteRtLmPath,
-  required String llamaCppPath,
+typedef _EmittedFile = ({String path, String owner});
+
+/// Keeps one app-local DLL. Microsoft supports using the newer Visual C++
+/// runtime across bundles. Other overlapping files must be byte-identical.
+Future<_EmittedFile> _shareBundledLibrary({
+  required String sourcePath,
+  required String sourceOwner,
+  required _EmittedFile existing,
   required Logger log,
 }) async {
-  final fileName = path.basename(llamaCppPath);
-  final liteRtLmBytes = await File(liteRtLmPath).readAsBytes();
-  final llamaCppBytes = await File(llamaCppPath).readAsBytes();
-  final liteRtLmVersion = windowsFileVersion(liteRtLmBytes);
-  final llamaCppVersion = windowsFileVersion(llamaCppBytes);
-  if (liteRtLmVersion == null || llamaCppVersion == null) {
-    if (_sameBytes(liteRtLmBytes, llamaCppBytes)) {
-      log.info('LiteRT-LM shares the llama.cpp copy of `$fileName`.');
-      return;
+  final fileName = path.basename(existing.path);
+  final sourceBytes = await File(sourcePath).readAsBytes();
+  final existingBytes = await File(existing.path).readAsBytes();
+  final sourceVersion = windowsFileVersion(sourceBytes);
+  final existingVersion = windowsFileVersion(existingBytes);
+  if (sourceVersion == null || existingVersion == null) {
+    if (_sameBytes(sourceBytes, existingBytes)) {
+      log.info(
+        '$sourceOwner shares the ${existing.owner} copy of `$fileName`.',
+      );
+      return existing;
     }
     throw Exception(
-      'The llama.cpp and LiteRT-LM bundles both ship a different '
+      'The ${existing.owner} and $sourceOwner bundles both ship a different '
       '`$fileName` without a Windows file version, and an app can bundle '
       'only one. Exclude one runtime with $nativeRuntimesUserDefineKey.',
     );
   }
-  if (isNewerWindowsFileVersion(liteRtLmVersion, llamaCppVersion)) {
-    await File(liteRtLmPath).copy(llamaCppPath);
+  if (isNewerWindowsFileVersion(sourceVersion, existingVersion)) {
+    await File(sourcePath).copy(existing.path);
     log.info(
-      'Bundling the LiteRT-LM copy of `$fileName` '
-      '(${formatWindowsFileVersion(liteRtLmVersion)}) for both runtimes; '
-      'the llama.cpp copy is ${formatWindowsFileVersion(llamaCppVersion)}.',
+      'Replacing the ${existing.owner} copy of `$fileName` '
+      '(${formatWindowsFileVersion(existingVersion)}) with the $sourceOwner '
+      'copy (${formatWindowsFileVersion(sourceVersion)}).',
     );
-    return;
+    return (path: existing.path, owner: sourceOwner);
   }
   log.info(
-    'Bundling the llama.cpp copy of `$fileName` '
-    '(${formatWindowsFileVersion(llamaCppVersion)}) for both runtimes; '
-    'the LiteRT-LM copy is ${formatWindowsFileVersion(liteRtLmVersion)}.',
+    'Keeping the ${existing.owner} copy of `$fileName` '
+    '(${formatWindowsFileVersion(existingVersion)}) over the $sourceOwner '
+    'copy (${formatWindowsFileVersion(sourceVersion)}).',
   );
+  return existing;
 }
 
 bool _sameBytes(List<int> a, List<int> b) {
@@ -1630,6 +1640,7 @@ Future<void> _emitStableDiffusionAssets({
   required String packageRoot,
   required String reportDirPath,
   required Set<String> usedAssetNames,
+  required Map<String, _EmittedFile> emittedFiles,
   required Logger log,
 }) async {
   final bundleDir = await _acquireStableDiffusionBundle(
@@ -1637,29 +1648,62 @@ Future<void> _emitStableDiffusionAssets({
     bundleSpec: bundleSpec,
     log: log,
   );
-  // One library per bundle; the Dart bindings resolve it by this asset id.
-  final fileName = bundleSpec.requiredLibraries.single;
-  final destinationPath = path.join(reportDirPath, fileName);
-  await File(path.join(bundleDir.path, fileName)).copy(destinationPath);
-  if (!usedAssetNames.add(_stableDiffusionAssetName)) {
-    throw Exception(
-      'Code asset package:$_packageName/$_stableDiffusionAssetName is '
-      'already taken.',
+  const owner = 'stable_diffusion';
+  final primaryLibrary = bundleSpec.primaryLibrary;
+  final companions =
+      bundleSpec.requiredLibraries
+          .where((name) => name != primaryLibrary)
+          .toList()
+        ..sort();
+  for (final fileName in [primaryLibrary, ...companions]) {
+    final key = fileName.toLowerCase();
+    final sourcePath = path.join(bundleDir.path, fileName);
+    final existing = emittedFiles[key];
+    final isPrimary = fileName == primaryLibrary;
+    if (existing != null) {
+      if (isPrimary) {
+        throw Exception(
+          '$owner primary library `$fileName` collides with a library from '
+          '${existing.owner}.',
+        );
+      }
+      emittedFiles[key] = await _shareBundledLibrary(
+        sourcePath: sourcePath,
+        sourceOwner: owner,
+        existing: existing,
+        log: log,
+      );
+      continue;
+    }
+    if (isPrimary && !usedAssetNames.add(_stableDiffusionAssetName)) {
+      throw Exception(
+        'Code asset package:$_packageName/$_stableDiffusionAssetName is '
+        'already taken.',
+      );
+    }
+    final assetName = isPrimary
+        ? _stableDiffusionAssetName
+        : _dedupeAssetName(
+            '${_stableDiffusionAssetName}_${path.basenameWithoutExtension(fileName)}',
+            usedAssetNames,
+          );
+    final destinationPath = path.join(reportDirPath, fileName);
+    await File(sourcePath).copy(destinationPath);
+    emittedFiles[key] = (path: destinationPath, owner: owner);
+    output.assets.code.add(
+      CodeAsset(
+        package: _packageName,
+        name: assetName,
+        linkMode: DynamicLoadingBundled(),
+        file: Uri.file(path.absolute(destinationPath)),
+      ),
+    );
+    log.info(
+      'Reporting stable_diffusion library `$fileName` from '
+      '${bundleSpec.archiveName} as code asset '
+      '`package:$_packageName/$assetName`.',
     );
   }
-  output.assets.code.add(
-    CodeAsset(
-      package: _packageName,
-      name: _stableDiffusionAssetName,
-      linkMode: DynamicLoadingBundled(),
-      file: Uri.file(path.absolute(destinationPath)),
-    ),
-  );
-  log.info(
-    'Reporting stable_diffusion library `$fileName` from '
-    '${bundleSpec.archiveName} as code asset '
-    '`package:$_packageName/$_stableDiffusionAssetName`.',
-  );
 }
 
 Future<Directory> _acquireStableDiffusionBundle({
@@ -1725,6 +1769,17 @@ Future<bool> _stableDiffusionArchiveMatchesPin(
   final digest = sha256.convert(await archiveFile.readAsBytes()).toString();
   return digest == bundleSpec.sha256;
 }
+
+/// Exercises Stable Diffusion extraction without downloading a release archive.
+Future<void> extractStableDiffusionLibrariesForTesting({
+  required File archiveFile,
+  required Directory extractedDir,
+  required StableDiffusionBundleSpec bundleSpec,
+}) => _extractStableDiffusionLibraries(
+  archiveFile: archiveFile,
+  extractedDir: extractedDir,
+  bundleSpec: bundleSpec,
+);
 
 /// Writes only the pinned `lib/<library>` entries, by basename, so no archive
 /// path can escape [extractedDir].

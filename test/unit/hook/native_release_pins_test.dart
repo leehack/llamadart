@@ -411,15 +411,15 @@ void main() {
     },
   );
 
-  test('stable_diffusion pins the published v0.4.0 release artifacts', () {
+  test('stable_diffusion pins the published v0.4.0-1 release artifacts', () {
     // Exact published owner manifest, independently checked against GitHub
     // asset digests before adoption. This also binds the Apple binary target.
     final manifestBytes = File(
-      'test/fixtures/native/stable_diffusion_v0_4_0_manifest.json',
+      'test/fixtures/native/stable_diffusion_v0_4_0_1_manifest.json',
     ).readAsBytesSync();
     expect(
       sha256.convert(manifestBytes).toString(),
-      'bed5598df5a62914b48a3c0652701df9819cb2405f6346c692e2494dccfeb927',
+      '2468c584c4bf948475d37d78f3288363c7a3f08d8a2b23d8d5b952ab5b2d4bc5',
     );
     final manifest =
         jsonDecode(utf8.decode(manifestBytes)) as Map<String, dynamic>;
@@ -440,14 +440,20 @@ void main() {
         runtimes[spec.bundle]!['sha256'],
         reason: spec.bundle,
       );
-      expect(spec.requiredLibraries, {
-        runtimes[spec.bundle]!['library'],
-      }, reason: spec.bundle);
+      final artifact = runtimes[spec.bundle]!;
+      expect(spec.primaryLibrary, artifact['library'], reason: spec.bundle);
+      expect(
+        spec.requiredLibraries,
+        unorderedEquals(
+          artifact['libraries'] as List? ?? [artifact['library']],
+        ),
+        reason: spec.bundle,
+      );
     }
     final apple = artifacts.singleWhere(
       (artifact) =>
           artifact['file'] ==
-          'stable-diffusion-native-apple-xcframework-v0.4.0.zip',
+          'stable-diffusion-native-apple-xcframework-v0.4.0-1.zip',
     );
     final swift = File(
       'packages/llamadart_stable_diffusion_flutter/darwin/'
@@ -455,9 +461,13 @@ void main() {
     ).readAsStringSync();
     expect(swift, contains('let stableDiffusionTag = "${manifest['tag']}"'));
     expect(swift, contains('checksum: "${apple['sha256']}"'));
-    expect(stableDiffusionCompatibleAppleCompanionTags, isEmpty);
+    expect(stableDiffusionCompatibleAppleCompanionTags, {
+      'v0.4.0':
+          'no Apple changes (v0.4.0-1 only bundles Windows Visual C++ runtime DLLs)',
+    });
     expect(stableDiffusionAppleCompanionChecksums, {
       stableDiffusionReleaseTag: apple['sha256'],
+      'v0.4.0': apple['sha256'],
     });
   });
 
@@ -482,9 +492,8 @@ void main() {
         firstPinning = section.group(1);
       }
     }
-    // v0.4.0 breaks the image generation parameter ABI of the 0.19.x pair.
-    expect(firstPinning, anyOf('Unreleased', '0.20.0'));
-    expect(stableDiffusionAppleCompanionVersion, '0.20.0');
+    expect(firstPinning, anyOf('Unreleased', '0.20.7'));
+    expect(stableDiffusionAppleCompanionVersion, '0.20.7');
   });
 
   test('stable_diffusion cache version is the release tag without its v', () {
@@ -493,23 +502,6 @@ void main() {
       matches(RegExp(r'^v\d+\.\d+\.\d+(?:-[1-9]\d*)?$')),
     );
     expect(stableDiffusionVersion, stableDiffusionReleaseTag.substring(1));
-  });
-
-  test('stable_diffusion bundle specs pin one library and a sha256 each', () {
-    final bundles = stableDiffusionBundleSpecs
-        .map((spec) => spec.bundle)
-        .toList();
-    expect(bundles.toSet(), hasLength(bundles.length));
-    for (final spec in stableDiffusionBundleSpecs) {
-      expect(spec.sha256, matches(sha256Pattern), reason: spec.bundle);
-      expect(spec.requiredLibraries, hasLength(1), reason: spec.bundle);
-      final library = spec.requiredLibraries.single;
-      expect(library, switch (spec.bundle.split('-').first) {
-        'windows' => 'stable-diffusion.dll',
-        'android' || 'linux' => 'libstable-diffusion.so',
-        _ => 'libstable-diffusion.dylib',
-      }, reason: spec.bundle);
-    }
   });
 
   test('stable_diffusion specs cover every bundle the hook can select', () {

@@ -36,14 +36,12 @@ unchecked. See [scope and limits](./diagnose-setup#isolated-native-check).
 | iOS (arm64, arm64 simulator, x86_64 simulator) | CPU, Metal; on a simulator Metal returns incorrect output and `auto` uses the CPU ([#950](https://github.com/leehack/llamadart/issues/950)) | CPU, GPU; none on the x86_64 simulator | iOS 16.4 deployment target; LiteRT-LM run on a device only on iOS 18.3.2 | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS; LFM3-Audio, Soprano, Chatterbox, Pocket TTS | Untested | Metal, iOS 16.4; validated on iPhone 16 Pro and SE 3; `vaeDirectConvolution: true` throws on Metal ([#1044](https://github.com/leehack/llamadart/issues/1044)) | Supported |
 | macOS (arm64, x86_64) | CPU, Metal; on x86_64, Rosetta included, `auto` uses the CPU because Metal returns garbled output on Intel Macs with AMD GPUs ([#1597](https://github.com/leehack/llamadart/issues/1597)) | arm64: CPU, GPU; x86_64: none ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)) | macOS 14.0 (Flutter) | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS; LFM3-Audio, Soprano, Chatterbox, Pocket TTS | Validated on Metal and CPU | Metal, macOS 13.3; validated on arm64 | Supported |
 | Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA, HIP opt-in | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS; LFM3-Audio, Soprano, Chatterbox, Pocket TTS | Untested | CPU or Vulkan; x64 needs AVX2; validated on x64 (CPU, NVIDIA L4) | Supported |
-| Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU (Qwen3-0.6B and Gemma 4 E2B run on an NVIDIA L4 over Direct3D 12, GRID 596.86, runtime `v0.19.1-5`; [details](./known-platform-issues#linux-and-windows)); arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS; LFM3-Audio, Soprano, Chatterbox, Pocket TTS | Untested | x64 CPU or Vulkan, needs AVX2 and the Visual C++ runtime; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
+| Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU (Qwen3-0.6B and Gemma 4 E2B run on an NVIDIA L4 over Direct3D 12, GRID 596.86, runtime `v0.19.1-5`; [details](./known-platform-issues#linux-and-windows)); arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS; LFM3-Audio, Soprano, Chatterbox, Pocket TTS | Untested | x64 CPU or Vulkan, needs AVX2; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
 | Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 (llama.cpp measured on Safari 27, Firefox 160 and Linux NVIDIA Chrome 157: [known issues](./known-platform-issues#vulkan-and-the-web); threaded GGUF uses `require-corp` isolation; LiteRT-LM GPU text, history and chat app checked in Safari 27 on Apple silicon with `@litert-lm/core@0.19.0`; CPU [differs](./known-platform-issues#vulkan-and-the-web), [#1802](https://github.com/leehack/llamadart/issues/1802)) | Qwen3-ASR, WAV, MP3 or FLAC bytes | Qwen3-TTS, memory64 | Checked in headless Chromium on macOS | Not yet ([#969](https://github.com/leehack/llamadart/issues/969)) | Experimental |
 
-On Windows, the llama.cpp and LiteRT-LM bundles ship the Visual C++ runtime
-DLLs they need, so they need no Visual C++ Redistributable. The opt-in
-`stable_diffusion` runtime does not ship them: machines that run it need the
-latest Microsoft Visual C++ v14 Redistributable (x64), which stock Windows
-Server lacks, and its load error names the DLLs that failed to load.
+On Windows, the llama.cpp, LiteRT-LM and opt-in `stable_diffusion` bundles
+include the Visual C++ runtime DLLs they need. The build hook packages one
+copy of each shared DLL, using the newest file version.
 
 Streamed text-to-speech PCM (`TextToSpeechRequest.streamAudio`) is native only
 and needs llamadart-native `v1.0.0-1`: Qwen3-TTS, LFM3-Audio and Pocket TTS
@@ -266,7 +264,7 @@ across both automatic-selection lifetimes.
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v1.0.0-4` |
 | LiteRT-LM native | `leehack/litert-lm-native@v0.19.1-7` |
-| stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.4.0`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
+| stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.4.0-1`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 Web bridge assets `v0.1.90+` support repeated fetch-backed GGUF loads on a

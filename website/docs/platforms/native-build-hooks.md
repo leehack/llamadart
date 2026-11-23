@@ -188,9 +188,8 @@ hooks:
   (`asimddp`, `fphp`, `asimdhp`), and Linux and Windows x64 need AVX2, FMA,
   F16C and BMI2. Otherwise `ImageGenerationEngine.load` throws
   `LlamaUnsupportedException` instead of crashing on an illegal
-  instruction. On Windows the runtime also needs the latest Microsoft Visual
-  C++ v14 Redistributable (x64); stock Windows Server lacks it, and the
-  error names the DLL that failed to load.
+  instruction. The Windows x64 bundle includes the Visual C++ runtime DLLs
+  that image generation needs.
 - Apple builds use the Metal build and Android the CPU build. Linux and Windows
   publish a CPU build (about 38 MB) and a Vulkan build (about 72 MB) that needs
   the system Vulkan loader (`libvulkan.so.1` or `vulkan-1.dll`) at run time.
@@ -290,8 +289,10 @@ On Windows the bundles ship the Visual C++ runtime app-locally
 OpenMP runtime `vcomp140.dll` on x64), so no Visual C++ Redistributable is
 needed. The LiteRT-LM Windows x64 runtime ships `msvcp140.dll`,
 `vcruntime140.dll`, `vcruntime140_1.dll` and `vcruntime140_threads.dll`, but no
-`vcomp140.dll`; when an app bundles both runtimes, the hook
-bundles the newer file version of each DLL they share. `vulkan` also needs a GPU driver that
+`vcomp140.dll`. Stable Diffusion adds `msvcp140_codecvt_ids.dll` and shares
+`msvcp140.dll`, `vcruntime140.dll` and `vcruntime140_1.dll` with the other
+runtimes. The hook packages each shared DLL once at the newest bundled file
+version. `vulkan` also needs a GPU driver that
 provides the Vulkan loader, `vulkan-1.dll`, and `cuda` an NVIDIA driver,
 which provides `nvcuda.dll`. When one of those is missing, the module's
 startup diagnostic, which a failed model load reports, names it.

@@ -335,8 +335,9 @@ layouts) opens a separate screen for the experimental `ImageGenerationEngine`
   Windows x64 (Vulkan build). The screen shows the runtime's reason instead of
   the controls on the web, on targets without a `stable_diffusion` build, on
   CPUs without the required instructions, and when a library the runtime
-  needs is missing: the Vulkan loader on Linux or Windows, or the Visual C++
-  runtime on Windows. It is the device QA path for
+  needs is missing, such as the Vulkan loader on Linux or Windows. The
+  Windows bundle includes the required Visual C++ runtime DLLs.
+  It is the device QA path for
   [#779](https://github.com/leehack/llamadart/issues/779): run
   `flutter test --run-skipped -t local-only integration_test/image_generation_e2e_test.dart -d <device>`
   to download SDXS, generate a seeded image, and save both PNGs plus a receipt.

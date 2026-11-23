@@ -1242,9 +1242,9 @@ def main() -> int:
             "native pins stable_diffusion version",
         )
         for bundle in pinned_bundles:
-            checksum, library = runtime_artifacts[bundle]
+            checksum, libraries = runtime_artifacts[bundle]
             pins_text = replace_stable_diffusion_bundle(
-                pins_text, bundle, checksum, library
+                pins_text, bundle, checksum, libraries
             )
         if stable_diffusion_package_swift_path.exists():
             if xcframework_checksum is None:
@@ -3238,8 +3238,8 @@ def validate_stable_diffusion_release_manifest(
     repo: str,
     tag: str,
     release_json_dir: str,
-) -> tuple[dict[str, tuple[str, str]], str | None]:
-    """Map each runtime target to its (sha256, library) from manifest.json,
+) -> tuple[dict[str, tuple[str, tuple[str, ...]]], str | None]:
+    """Map each runtime target to its (sha256, libraries) from manifest.json,
     and return the Apple XCFramework zip's SHA-256 (its SwiftPM checksum), or
     None when the release has none.
 
@@ -3271,7 +3271,7 @@ def validate_stable_diffusion_release_manifest(
     if not isinstance(artifacts, list):
         raise ReleaseError(f"Release {repo}@{tag} manifest artifacts must be a list")
 
-    runtime: dict[str, tuple[str, str]] = {}
+    runtime: dict[str, tuple[str, tuple[str, ...]]] = {}
     xcframework_checksum: str | None = None
     for artifact in artifacts:
         if not isinstance(artifact, dict):
@@ -3307,6 +3307,23 @@ def validate_stable_diffusion_release_manifest(
             SAFE_LITERT_LIBRARY_FILENAME_RE.fullmatch(library) is None
         ):
             raise ReleaseError(f"stable_diffusion {target} library name is invalid")
+        libraries = artifact.get("libraries", [library])
+        if not isinstance(libraries, list) or not libraries:
+            raise ReleaseError(
+                f"stable_diffusion {target} libraries must be a non-empty list"
+            )
+        if any(
+            not isinstance(name, str)
+            or SAFE_LITERT_LIBRARY_FILENAME_RE.fullmatch(name) is None
+            for name in libraries
+        ):
+            raise ReleaseError(f"stable_diffusion {target} libraries contain an invalid name")
+        if len(libraries) != len({name.casefold() for name in libraries}):
+            raise ReleaseError(f"stable_diffusion {target} library names are duplicated")
+        if library not in libraries:
+            raise ReleaseError(
+                f"stable_diffusion {target} libraries must include the primary library"
+            )
         asset = find_release_asset(release, file_name)
         if asset is None:
             raise ReleaseError(f"Release {repo}@{tag} does not contain {file_name}")
@@ -3315,7 +3332,7 @@ def validate_stable_diffusion_release_manifest(
                 f"stable_diffusion {file_name} manifest sha256 does not match "
                 "its GitHub digest"
             )
-        runtime[target] = (checksum, library)
+        runtime[target] = (checksum, tuple(sorted(libraries)))
     if not runtime:
         raise ReleaseError(f"Release {repo}@{tag} manifest lists no runtime archives")
     return runtime, xcframework_checksum
@@ -3369,18 +3386,18 @@ def replace_stable_diffusion_bundle(
     pins_text: str,
     bundle: str,
     checksum: str,
-    library: str,
+    libraries: tuple[str, ...],
 ) -> str:
     pattern = re.compile(
         rf"(\bStableDiffusionBundleSpec\(\s*'{re.escape(bundle)}',\s*sha256: ')"
-        r"[0-9a-f]+(',\s*requiredLibraries: \{')[^']+('\},)"
+        r"[0-9a-f]+(',\s*requiredLibraries:\s*)\{[^}]*\}(,\s*\),)"
     )
-    updated, count = pattern.subn(
-        lambda match: f"{match.group(1)}{checksum}{match.group(2)}{library}"
-        f"{match.group(3)}",
-        pins_text,
-        count=1,
-    )
+
+    def replacement(match: re.Match[str]) -> str:
+        prefix = f"{match.group(1)}{checksum}{match.group(2)}"
+        return prefix + dart_library_set(prefix, libraries) + match.group(3)
+
+    updated, count = pattern.subn(replacement, pins_text, count=1)
     if count != 1:
         raise ReleaseError(f"Could not replace stable_diffusion pins for {bundle}")
     return updated
@@ -3835,6 +3852,14 @@ def litert_schema2_bundle_required_libraries(
     return result
 
 
+def dart_library_set(prefix: str, libraries: tuple[str, ...]) -> str:
+    inline = "{" + ", ".join(f"'{library}'" for library in libraries) + "}"
+    field_prefix_width = len(prefix.rsplit("\n", maxsplit=1)[-1])
+    if field_prefix_width + len(inline) + 1 <= DART_FORMAT_PAGE_WIDTH:
+        return inline
+    return "{\n" + "".join(f"      '{library}',\n" for library in libraries) + "    }"
+
+
 def replace_litert_lm_bundle_required_libraries(
     pins_text: str,
     bundle: str,
@@ -3842,24 +3867,14 @@ def replace_litert_lm_bundle_required_libraries(
 ) -> str:
     if not libraries:
         raise ReleaseError(f"LiteRT-LM bundle {bundle} has no required libraries")
-    inline_libraries = "{" + ", ".join(f"'{library}'" for library in libraries) + "}"
-    multiline_libraries = "{\n" + "".join(
-        f"      '{library}',\n" for library in libraries
-    ) + "    }"
     pattern = re.compile(
         rf"(\bLiteRtLmBundleSpec\(\s*'{re.escape(bundle)}',\s*"
         r"sha256: '[0-9a-f]+',\s*requiredLibraries:\s*)\{.*?\},?(\s*\),)",
         re.DOTALL,
     )
     def replacement(match: re.Match[str]) -> str:
-        field_prefix_width = len(match.group(1).rsplit("\n", maxsplit=1)[-1])
-        required_libraries = (
-            inline_libraries
-            if field_prefix_width + len(inline_libraries) + 1
-            <= DART_FORMAT_PAGE_WIDTH
-            else multiline_libraries
-        )
-        return f"{match.group(1)}{required_libraries},{match.group(2)}"
+        prefix = match.group(1)
+        return prefix + dart_library_set(prefix, libraries) + "," + match.group(2)
 
     updated, count = pattern.subn(replacement, pins_text, count=1)
     if count != 1:

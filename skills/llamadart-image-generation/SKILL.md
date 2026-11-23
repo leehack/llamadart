@@ -53,13 +53,13 @@ description: >-
   `xcodebuild` show both. Use the companion with the core's `MAJOR.MINOR`. Adding it
   opts the app into the runtime (about 37 MB per Apple target).
 - Both prompts treat `<image:...>` as text. The engine escapes native image markers.
-- Upgrade core and the Apple companion together. The companion must bundle `v0.4.0` for its larger image-generation parameter structure.
+- Upgrade core and the Apple companion together. The core accepts the
+  `v0.4.0-1` framework and its byte-identical `v0.4.0` predecessor.
 - SD `v0.3.0-6` passed four full-VAE load/dispose cycles and eight decodes per device on iPhone 16 Pro (iOS 18.3.2) and iPhone 17 Pro (iOS 26.5.1), tested at `6b191b28`. Small nonzero residual memory remains; this single session is not proof of zero leaks (#2004).
 - Platforms: Android arm64 (CPU only; Armv8.2 dot-product and fp16), iOS 16.4+
   and macOS 13.3+ (Metal), Linux arm64/x64 and Windows x64 (CPU or Vulkan; x64
   CPUs need AVX2, FMA, F16C and BMI2). Web, Android x64 and Windows arm64
-  are unsupported. Windows needs the latest
-  Microsoft Visual C++ v14 Redistributable (x64).
+  are unsupported. Windows x64 bundles its Visual C++ runtime DLLs.
 - For repeating textures use `SeamlessImageGenerationRequest`, with independent
   `circularX` and `circularY` flags (both default off). Its initial supported
   recipe is native-detected SDXS (512-DS) with header-detected embedded tiny

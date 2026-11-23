@@ -260,6 +260,20 @@ NativeDiagnosticTarget? parseNativeDiagnosticManifest(
       if (candidate != null) companions.add(candidate);
     }
   }
+  if (runtime == 'stable_diffusion' && abi.startsWith('windows_')) {
+    for (final name in const [
+      'vcruntime140',
+      'vcruntime140_1',
+      'msvcp140',
+      'msvcp140_codecvt_ids',
+    ]) {
+      final candidate =
+          file('package:llamadart/stable_diffusion_$name') ??
+          file('package:llamadart/$name') ??
+          file('package:llamadart/litert_lm_$name');
+      if (candidate != null) companions.add(candidate);
+    }
+  }
   return NativeDiagnosticTarget(primary, wrapper, companions);
 }
 
