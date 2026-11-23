@@ -39,6 +39,13 @@ import 'webgpu_speculative.dart';
 @JS('Object.keys')
 external JSArray _objectKeys(JSObject obj);
 
+@JS('WeakMap')
+extension type _BridgeIdentities._(JSObject _) implements JSObject {
+  external factory _BridgeIdentities();
+  external JSNumber? get(JSObject constructor);
+  external void set(JSObject constructor, JSNumber identity);
+}
+
 /// Optional `createCompletion` options the loaded bridge core applies, as its
 /// `getCompletionCapabilities()` reports them.
 typedef _WebGpuCompletionCapabilities = ({
@@ -114,6 +121,9 @@ class WebGpuLlamaBackend
   // A rejected dynamic import stays in the browser's module map after disposal.
   static final Set<Digest> _failedCoreLoaders = {};
   static final Set<_CoreLoaderKeys> _failedUnidentifiedCoreLoaders = {};
+  static final _constructorIdentities = _BridgeIdentities();
+  static final _factoryIdentities = Expando<int>();
+  static int _nextBridgeIdentity = 0;
   static const int _maxInt32 = 0x7fffffff;
   static const _WebGpuCompletionCapabilities _noCompletionCapabilities = (
     presencePenalty: false,
@@ -351,6 +361,7 @@ class WebGpuLlamaBackend
   }
 
   WebGpuBridgeConfig _createBridgeConfig({
+    required int Function() bridgeIdentity,
     required bool allowSingleThreadCore,
     required bool? jsBackedModelStaging,
   }) {
@@ -404,24 +415,22 @@ class WebGpuLlamaBackend
     final moduleUrl =
         _getGlobalString('__llamadartBridgeModuleUrl') ?? _bridgeScriptUrl;
     Digest loaderKey(String? reference, String variant) {
-      final String identity;
       if (reference != null) {
-        // The reported error URL omits query parameters. Keep only a hash of
-        // the full configured URL so URL changes can recover without retaining
-        // credentials. A relative import also depends on the importing bundle.
         try {
           return sha256.convert(utf8.encode(URL(reference).href));
         } catch (_) {
-          identity = jsonEncode([moduleUrl, workerModuleUrl, reference]);
+          // Relative imports resolve inside the bridge bundle or worker.
         }
-      } else {
-        identity = jsonEncode([
-          moduleUrl,
-          workerModuleUrl,
-          allowSingleThreadCore,
-          variant,
-        ]);
       }
+      // The bridge resolves its own defaults, which may be rewritten by a
+      // bundler. Include the constructor when the exact URL is unavailable.
+      final identity = jsonEncode([
+        bridgeIdentity(),
+        moduleUrl,
+        workerModuleUrl,
+        reference,
+        if (reference == null) ...[allowSingleThreadCore, variant],
+      ]);
       return sha256.convert(utf8.encode(identity));
     }
 
@@ -526,9 +535,12 @@ class WebGpuLlamaBackend
       return true;
     }
 
-    if (_bridgeFactory != null) {
-      _bridge = _bridgeFactory(
+    final factory = _bridgeFactory;
+    if (factory != null) {
+      _bridge = factory(
         _createBridgeConfig(
+          bridgeIdentity: () =>
+              _factoryIdentities[factory] ??= ++_nextBridgeIdentity,
           allowSingleThreadCore: allowSingleThreadCore,
           jsBackedModelStaging: jsBackedModelStaging,
         ),
@@ -573,11 +585,20 @@ class WebGpuLlamaBackend
     }
     _bridge = LlamaWebGpuBridge(
       _createBridgeConfig(
+        bridgeIdentity: () => _constructorIdentity(constructor as JSObject),
         allowSingleThreadCore: allowSingleThreadCore,
         jsBackedModelStaging: jsBackedModelStaging,
       ),
     );
     return true;
+  }
+
+  static int _constructorIdentity(JSObject constructor) {
+    final existing = _constructorIdentities.get(constructor);
+    if (existing != null) return existing.toDartInt;
+    final identity = ++_nextBridgeIdentity;
+    _constructorIdentities.set(constructor, identity.toJS);
+    return identity;
   }
 
   Future<void> _safeDisposeBridge() async {
@@ -739,6 +760,23 @@ class WebGpuLlamaBackend
     }
 
     return asText;
+  }
+
+  Iterable<String> _bridgeAssetUrls({required bool singleThread}) sync* {
+    final suffix = singleThread ? 'St' : '';
+    for (final url in [
+      _bridgeScriptUrl,
+      _bridgeWorkerUrl,
+      if (!singleThread) _bridgeWasmUrl,
+      _getGlobalString('__llamadartBridgeModuleUrl'),
+      _getGlobalString('__llamadartBridgeWorkerUrl'),
+      _getGlobalString('__llamadartBridgeCoreModuleUrl$suffix'),
+      _getGlobalString('__llamadartBridgeCoreModuleUrlMem64$suffix'),
+      _getGlobalString('__llamadartBridgeWasmUrl$suffix'),
+      _getGlobalString('__llamadartBridgeWasmUrlMem64$suffix'),
+    ]) {
+      if (url != null) yield url;
+    }
   }
 
   String? _getBridgeLoadError() {
@@ -1509,6 +1547,10 @@ class WebGpuLlamaBackend
     final cacheUrl = webGpuPersistentCacheUrl(url);
     final setup = _prepareUrlLoad(url, params, onProgress);
     final allowSingleThreadCore = _allowSingleThreadCore;
+    final sourceUrls = <String>{
+      url,
+      ..._bridgeAssetUrls(singleThread: allowSingleThreadCore),
+    };
     final forceRemoteFetch = _getGlobalBool(
       '__llamadartBridgeForceRemoteFetchBackend',
     );
@@ -1701,7 +1743,7 @@ class WebGpuLlamaBackend
           await _safeDisposeBridge();
           throw isolationError;
         }
-        final stagingError = webGpuModelStagingError(e, sourceUrls: [url]);
+        final stagingError = webGpuModelStagingError(e, sourceUrls: sourceUrls);
         if (stagingError != null) {
           await _safeDisposeBridge();
           throw stagingError;
@@ -1721,12 +1763,15 @@ class WebGpuLlamaBackend
         _emitConsoleText(
           LlamaLogLevel.error,
           'WebGpuLlamaBackend: Bridge model load failed: '
-          '${webGpuBridgeErrorText(e, sourceUrls: <String>[url])}',
+          '${webGpuBridgeErrorText(e, sourceUrls: sourceUrls)}',
         );
         if (runtimeHints.isNotEmpty) {
           _emitConsoleText(
             LlamaLogLevel.warn,
-            'WebGpuLlamaBackend: bridge runtime hints $runtimeHints',
+            webGpuBridgeErrorText(
+              'WebGpuLlamaBackend: bridge runtime hints $runtimeHints',
+              sourceUrls: sourceUrls,
+            ),
           );
         }
 
@@ -1786,10 +1831,7 @@ class WebGpuLlamaBackend
           remoteFetchBackendOptedIn: remoteFetchBackendOptedIn,
           allowSingleThreadCore: allowSingleThreadCore,
         );
-        if (normalized != null) {
-          throw normalized;
-        }
-        throw _unmappedModelLoadError(e, url);
+        throw _redactedModelLoadError(normalized ?? e, sourceUrls);
       }
     }
 
@@ -1800,25 +1842,22 @@ class WebGpuLlamaBackend
         remoteFetchBackendOptedIn: remoteFetchBackendOptedIn,
         allowSingleThreadCore: allowSingleThreadCore,
       );
-      if (normalized != null) {
-        throw normalized;
-      }
-      throw _unmappedModelLoadError(lastError, url);
+      throw _redactedModelLoadError(normalized ?? lastError, sourceUrls);
     }
 
     throw StateError('WebGpuLlamaBackend: model load failed unexpectedly');
   }
 
-  /// Returns [error] unchanged when it is a [LlamaException] or an
-  /// [UnsupportedError], and otherwise a [LlamaModelException] whose details
-  /// are the error message with URL secrets redacted.
-  Object _unmappedModelLoadError(Object error, String url) {
-    if (error is LlamaException || error is UnsupportedError) {
-      return error;
+  Object _redactedModelLoadError(Object error, Iterable<String> sourceUrls) {
+    if (error is LlamaException) return error;
+    if (error is UnsupportedError) {
+      return UnsupportedError(
+        webGpuBridgeErrorText(error.message ?? '', sourceUrls: sourceUrls),
+      );
     }
     return LlamaModelException(
       'The Web runtime could not load the model.',
-      webGpuBridgeErrorText(error, sourceUrls: <String>[url]),
+      webGpuBridgeErrorText(error, sourceUrls: sourceUrls),
     );
   }
 
