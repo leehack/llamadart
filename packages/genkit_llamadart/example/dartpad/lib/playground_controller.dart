@@ -1,22 +1,85 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:genkit/genkit.dart';
 import 'package:genkit_google_genai/genkit_google_genai.dart';
 import 'package:genkit_llamadart/genkit_llamadart.dart';
 import 'package:http/http.dart' as http;
 
-const _smolLm = LlamaModelDefinition(
-  name: 'smollm2',
-  modelPath:
-      'https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/'
-      '9e6855bc4be717fca1ef21360a1db4b29d5c559a/'
-      'SmolLM2-135M-Instruct-Q4_K_M.gguf',
-  modelParams: ModelParams(contextSize: 2048),
-  supportsEmbeddings: false,
-  supportsTools: false,
-  supportsConstrainedOutput: false,
+class GgufModelOption {
+  const GgufModelOption({
+    required this.id,
+    required this.label,
+    required this.url,
+    required this.sizeLabel,
+    required this.sizeBytes,
+    required this.contextSize,
+    required this.note,
+    this.warning,
+  });
+
+  final String id;
+  final String label;
+  final String url;
+  final String sizeLabel;
+  final int sizeBytes;
+  final int contextSize;
+  final String note;
+  final String? warning;
+}
+
+const ggufModels = <GgufModelOption>[
+  GgufModelOption(
+    id: 'smollm2-135m',
+    label: 'SmolLM2 135M',
+    url:
+        'https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/'
+        '9e6855bc4be717fca1ef21360a1db4b29d5c559a/'
+        'SmolLM2-135M-Instruct-Q4_K_M.gguf',
+    sizeLabel: '~105 MB',
+    sizeBytes: 105454144,
+    contextSize: 2048,
+    note: 'Fastest download; good for quick tests.',
+  ),
+  GgufModelOption(
+    id: 'qwen3.5-0.8b',
+    label: 'Qwen3.5 0.8B',
+    url:
+        'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/'
+        '6ab461498e2023f6e3c1baea90a8f0fe38ab64d0/'
+        'Qwen3.5-0.8B-Q4_K_M.gguf',
+    sizeLabel: '~533 MB',
+    sizeBytes: 532517120,
+    contextSize: 2048,
+    note: 'Stronger responses; thinking disabled for quick replies.',
+  ),
+  GgufModelOption(
+    id: 'gemma-4-e2b',
+    label: 'Gemma 4 E2B',
+    url:
+        'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/'
+        '0314792d7f1f7e229411f620751375812bb9faf2/'
+        'gemma-4-E2B-it-Q4_K_S.gguf',
+    sizeLabel: 'desktop Chrome, ~3 GB',
+    sizeBytes: 3043934304,
+    contextSize: 2048,
+    note: 'Higher quality responses; thinking disabled for quick replies.',
+    warning:
+        'Large download (~3 GB). Requires desktop Chrome with WebAssembly '
+        'memory64 and 8+ GB RAM. Not supported on Safari or mobile browsers.',
+  ),
+];
+
+ModelParams buildGgufModelParams(
+  GgufModelOption model, {
+  bool isWeb = kIsWeb,
+}) => ModelParams(
+  contextSize: model.contextSize,
+  // Native llama.cpp rejects Web-only hints such as modelBytesHint.
+  modelBytesHint: isWeb ? model.sizeBytes : null,
 );
+
 const _qwen = LlamaModelDefinition(
   name: 'qwen3',
   modelPath:
@@ -66,12 +129,14 @@ class PlaygroundController extends ChangeNotifier {
     required this.bootstrapLiteRt,
     required this.runtimeFactory,
     required this.googlePlugin,
+    this.isWeb = kIsWeb,
   });
 
   final Future<void> Function() bootstrapGguf;
   final Future<void> Function() bootstrapLiteRt;
   final LlamaDartRuntimeFactory? runtimeFactory;
   final GenkitPlugin Function(String key) googlePlugin;
+  final bool isWeb;
 
   final prompt = TextEditingController(text: 'Tell me a story about a fox.');
   final apiKey = TextEditingController();
@@ -85,7 +150,8 @@ class PlaygroundController extends ChangeNotifier {
   bool _loading = false;
   bool _supportsMultiTurn = false;
   PlaygroundProvider _provider = PlaygroundProvider.gguf;
-  String _status = 'Load a GGUF model to begin.';
+  GgufModelOption _ggufModel = ggufModels.first;
+  String _status = 'Load ${ggufModels.first.label} to begin.';
   String? _backendName;
   double? _latencyMs;
   int? _outputTokens;
@@ -95,6 +161,8 @@ class PlaygroundController extends ChangeNotifier {
   String _systemPrompt = 'You are a concise, helpful assistant.';
 
   PlaygroundProvider get provider => _provider;
+  GgufModelOption get ggufModel => _ggufModel;
+  bool get isGguf => _provider == PlaygroundProvider.gguf;
   bool get isGemini => _provider == PlaygroundProvider.gemini;
   bool get ready => _ai != null;
   bool get loading => _loading;
@@ -155,14 +223,47 @@ class PlaygroundController extends ChangeNotifier {
     }
   }
 
+  Future<void> selectGgufModel(GgufModelOption model) async {
+    if (busy || model.id == _ggufModel.id) return;
+    final ai = _ai;
+    final local = _local;
+    _ggufModel = model;
+    if (!isGguf) {
+      notifyListeners();
+      return;
+    }
+    _ai = null;
+    _local = null;
+    _supportsMultiTurn = false;
+    _backendName = null;
+    _resetChat();
+    _status = 'Load ${model.label} to begin.';
+    if (ai == null && local == null) {
+      notifyListeners();
+      return;
+    }
+    _loading = true;
+    notifyListeners();
+    try {
+      await _close(ai, local);
+    } finally {
+      _loading = false;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
   Future<void> load() async {
     if (busy || ready) return;
     final key = apiKey.text.trim();
     if (isGemini && key.isEmpty) return;
     final provider = _provider;
+    final ggufModel = _ggufModel;
+    final useGguf = provider == PlaygroundProvider.gguf;
     _loading = true;
     apiKey.clear();
-    _status = isGemini ? 'Setting up Gemini…' : 'Loading ${provider.label}…';
+    _status = isGemini
+        ? 'Setting up Gemini…'
+        : 'Loading ${useGguf ? ggufModel.label : provider.label}…';
     notifyListeners();
 
     LlamaDartPlugin? local;
@@ -178,10 +279,18 @@ class PlaygroundController extends ChangeNotifier {
         _supportsMultiTurn = true;
         _status = 'Gemini ready. Send to verify your key.';
       } else {
-        final isGguf = provider == PlaygroundProvider.gguf;
-        await (isGguf ? bootstrapGguf() : bootstrapLiteRt());
+        await (useGguf ? bootstrapGguf() : bootstrapLiteRt());
         if (_disposed) return;
-        final model = isGguf ? _smolLm : _qwen;
+        final model = useGguf
+            ? LlamaModelDefinition(
+                name: ggufModel.id,
+                modelPath: ggufModel.url,
+                modelParams: buildGgufModelParams(ggufModel, isWeb: isWeb),
+                supportsEmbeddings: false,
+                supportsTools: false,
+                supportsConstrainedOutput: false,
+              )
+            : _qwen;
         local = LlamaDartPlugin(
           models: [model],
           runtimeFactory: runtimeFactory,
@@ -204,7 +313,7 @@ class PlaygroundController extends ChangeNotifier {
       _status = switch (error) {
         _ when isGemini => 'Gemini setup failed. Re-enter your API key.',
         LlamaException(:final message) => message,
-        _ => 'Could not load ${provider.label}.',
+        _ => 'Could not load ${useGguf ? ggufModel.label : provider.label}.',
       };
     } finally {
       try {

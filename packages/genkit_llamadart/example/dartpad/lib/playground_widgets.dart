@@ -59,6 +59,10 @@ class _PlaygroundViewState extends State<PlaygroundView> {
                   children: [
                     _ProviderSelector(controller),
                     const SizedBox(height: 8),
+                    if (controller.isGguf) ...[
+                      _GgufModelPicker(controller),
+                      const SizedBox(height: 8),
+                    ],
                     if (!controller.ready) _ConnectionSection(controller),
                     if (controller.stats case final stats?) _StatsBar(stats),
                     if (controller.ready && !controller.supportsMultiTurn)
@@ -114,6 +118,85 @@ class _ProviderSelector extends StatelessWidget {
         ? null
         : (value) => controller.select(value.single),
   );
+}
+
+class _GgufModelPicker extends StatelessWidget {
+  const _GgufModelPicker(this.controller);
+
+  final PlaygroundController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final model = controller.ggufModel;
+    final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InputDecorator(
+          decoration: InputDecoration(
+            labelText: 'GGUF model',
+            enabled: !controller.busy,
+            isDense: true,
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<GgufModelOption>(
+              value: model,
+              isExpanded: true,
+              isDense: true,
+              onChanged: controller.busy
+                  ? null
+                  : (selected) {
+                      if (selected != null) {
+                        unawaited(controller.selectGgufModel(selected));
+                      }
+                    },
+              items: [
+                for (final option in ggufModels)
+                  DropdownMenuItem(
+                    value: option,
+                    child: Text('${option.label} (${option.sizeLabel})'),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(model.note, style: textTheme.bodySmall),
+        if (!controller.ready && model.warning != null) ...[
+          const SizedBox(height: 8),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.tertiaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 18,
+                    color: colors.onTertiaryContainer,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      model.warning!,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colors.onTertiaryContainer,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 class _ConnectionSection extends StatelessWidget {
