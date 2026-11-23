@@ -93,6 +93,13 @@ class _GgufScreenState extends State<_GgufScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        const SizedBox(height: 8),
+                        ModelPicker(
+                          selected: _chat.selectedModel,
+                          enabled: !_chat.loading && !_chat.generating,
+                          onSelected: _chat.selectModel,
+                        ),
+                        const SizedBox(height: 8),
                         FilledButton(
                           onPressed: _chat.loading || _chat.ready
                               ? null

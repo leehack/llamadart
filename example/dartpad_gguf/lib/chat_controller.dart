@@ -3,11 +3,78 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:llamadart/llamadart.dart';
 
+class GgufModelOption {
+  const GgufModelOption({
+    required this.id,
+    required this.label,
+    required this.url,
+    required this.sizeLabel,
+    required this.sizeBytes,
+    required this.contextSize,
+    required this.note,
+    this.warning,
+  });
+
+  final String id;
+  final String label;
+  final String url;
+  final String sizeLabel;
+  final int sizeBytes;
+  final int contextSize;
+  final String note;
+  final String? warning;
+}
+
 const smolLmModelUrl =
     'https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/'
     '9e6855bc4be717fca1ef21360a1db4b29d5c559a/'
     'SmolLM2-135M-Instruct-Q4_K_M.gguf';
-const _contextSize = 2048;
+
+const ggufModels = <GgufModelOption>[
+  GgufModelOption(
+    id: 'smollm2-135m',
+    label: 'SmolLM2 135M',
+    url: smolLmModelUrl,
+    sizeLabel: '~105 MB',
+    sizeBytes: 105454144,
+    contextSize: 2048,
+    note: 'Fastest download; good for quick tests.',
+  ),
+  GgufModelOption(
+    id: 'qwen3.5-0.8b',
+    label: 'Qwen3.5 0.8B',
+    url:
+        'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/'
+        '6ab461498e2023f6e3c1baea90a8f0fe38ab64d0/'
+        'Qwen3.5-0.8B-Q4_K_M.gguf',
+    sizeLabel: '~533 MB',
+    sizeBytes: 532517120,
+    contextSize: 2048,
+    note: 'Stronger responses; thinking disabled for quick replies.',
+  ),
+  GgufModelOption(
+    id: 'gemma-4-e2b',
+    label: 'Gemma 4 E2B',
+    url:
+        'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/'
+        '0314792d7f1f7e229411f620751375812bb9faf2/'
+        'gemma-4-E2B-it-Q4_K_S.gguf',
+    sizeLabel: 'desktop Chrome, ~3 GB',
+    sizeBytes: 3043934304,
+    contextSize: 2048,
+    note: 'Higher quality; thinking disabled for quick replies.',
+    warning:
+        'Large download (~3 GB). Requires desktop Chrome with WebAssembly '
+        'memory64 and 8+ GB RAM; not supported on Safari or mobile browsers.',
+  ),
+];
+
+ModelParams buildGgufModelParams(GgufModelOption model, {bool isWeb = kIsWeb}) {
+  return ModelParams(
+    contextSize: model.contextSize,
+    modelBytesHint: isWeb ? model.sizeBytes : null,
+  );
+}
 
 class ChatMessage {
   const ChatMessage(this.role, this.text);
@@ -77,6 +144,7 @@ class ChatController extends ChangeNotifier {
   final _clock = Stopwatch();
   LlamaEngine? _engine;
   ChatSession? _session;
+  GgufModelOption _selectedModel = ggufModels.first;
   ChatSettings _settings = const ChatSettings();
   ChatStats _stats = const ChatStats();
   Timer? _ticker;
@@ -85,9 +153,10 @@ class ChatController extends ChangeNotifier {
   bool _generating = false;
   bool _stopRequested = false;
   bool _disposed = false;
-  String _status = 'Load SmolLM2 to begin.';
+  String _status = 'Load ${ggufModels.first.label} to begin.';
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
+  GgufModelOption get selectedModel => _selectedModel;
   ChatSettings get settings => _settings;
   ChatStats get stats => _generating
       ? ChatStats(backendName: _stats.backendName, elapsed: _clock.elapsed)
@@ -98,11 +167,35 @@ class ChatController extends ChangeNotifier {
   bool get generating => _generating;
   String get status => _status;
 
+  Future<void> selectModel(GgufModelOption model) async {
+    if (_loading || _generating || model.id == _selectedModel.id) return;
+    final engine = _engine;
+    _engine = null;
+    _session = null;
+    _selectedModel = model;
+    _messages.clear();
+    _stats = const ChatStats();
+    _progress = null;
+    _status = 'Load ${model.label} to begin.';
+    notifyListeners();
+    if (engine != null) {
+      _loading = true;
+      notifyListeners();
+      try {
+        await engine.dispose();
+      } finally {
+        _loading = false;
+        if (!_disposed) notifyListeners();
+      }
+    }
+  }
+
   Future<void> load() async {
     if (_loading || ready) return;
+    final model = _selectedModel;
     _loading = true;
     _progress = null;
-    _status = 'Loading SmolLM2…';
+    _status = 'Loading ${model.label}…';
     notifyListeners();
     try {
       final engine = _engine ?? await createEngine();
@@ -112,8 +205,8 @@ class ChatController extends ChangeNotifier {
       }
       _engine = engine;
       await engine.setModel(
-        LlamaModel(ModelSource.url(Uri.parse(smolLmModelUrl))),
-        params: const ModelParams(contextSize: _contextSize),
+        LlamaModel(ModelSource.url(Uri.parse(model.url))),
+        params: buildGgufModelParams(model),
         onProgress: (progress) {
           if (_disposed) return;
           _progress = progress.fraction;
@@ -124,7 +217,7 @@ class ChatController extends ChangeNotifier {
       final backendName = await engine.getBackendName();
       if (_disposed) return;
       _stats = ChatStats(backendName: backendName);
-      _session = ChatSession(engine, maxContextTokens: _contextSize);
+      _session = ChatSession(engine, maxContextTokens: model.contextSize);
       _status = 'Model ready.';
     } on LlamaException catch (error) {
       _status = error.message;
@@ -181,6 +274,7 @@ class ChatController extends ChangeNotifier {
           temp: _settings.temperature,
           maxTokens: _settings.maxTokens,
         ),
+        enableThinking: false,
         onMessageAdded: (message) {
           if (message.role == LlamaChatRole.assistant) {
             committedReply = message.content;
