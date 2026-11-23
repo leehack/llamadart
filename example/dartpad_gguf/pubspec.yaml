@@ -3,14 +3,15 @@ description: Chat with a GGUF model in DartPad Preview.
 publish_to: none
 
 environment:
-  sdk: ^3.10.7
-  flutter: ^3.38.6
+  sdk: ^3.13.0
+  flutter: ^3.47.0
 
 dependencies:
   flutter:
     sdk: flutter
   llamadart:
     path: ../..
+  material_ui: ^1.4.0
 
 dev_dependencies:
   flutter_test:

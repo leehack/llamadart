@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:genkit/genkit.dart';
 import 'package:genkit_google_genai/genkit_google_genai.dart';
 import 'package:genkit_llamadart/genkit_llamadart.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'bridge_bootstrap.dart';
 import 'playground_controller.dart';

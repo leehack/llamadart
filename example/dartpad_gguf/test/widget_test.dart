@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:dartpad_gguf_example/main.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:material_ui/material_ui.dart';
 
 const _defaultSystem = 'You are a concise, helpful assistant.';
 final _prompt = find.widgetWithText(TextField, 'Prompt');
