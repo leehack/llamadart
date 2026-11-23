@@ -1212,7 +1212,6 @@ const List<String> tagHistoryFiles = <String>[
   'doc/multimodal_embeddings_web.md',
   'website/docs/changelog/recent-releases.md',
   'test/e2e/webgpu/fixtures/single_thread_legacy_assets_url.txt',
-  'tool/testing/playwright_web_js_backed_model_staging.py',
   'test/fixtures/lfm2_quoted_tool_delimiter.md',
   'test/fixtures/release_prep/pr_2114_description.md',
   'test/fixtures/release_prep/pr_2114_github_squash_body.txt',

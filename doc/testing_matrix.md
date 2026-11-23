@@ -1653,7 +1653,8 @@ Stage a checksum-verified Stories15M GGUF at
 `build/web_js_backed_model_staging/model.gguf` and install Playwright Chromium.
 Run
 `dart run tool/testing/run_local_e2e.dart --scenario web-js-backed-model-staging --dry-run`
-first, then omit `--dry-run` after adopting the matching v0.1.92+ assets.
+first, then omit `--dry-run`; the scenario fetches the pinned bridge assets
+automatically.
 The scenario compares omitted, enabled and disabled settings in direct and
 worker runtimes, with both Wasm widths and a WebKit user-agent control. It
 checks unload and reload, and records generation output and runtime notes.

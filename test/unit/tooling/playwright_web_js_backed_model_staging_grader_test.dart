@@ -163,6 +163,16 @@ class GraderTest(TestCase):
                 with self.assertRaises(AssertionError):
                     replay(receipt, **options)
 
+    def test_refusal_requires_unsupported_field(self):
+        for name, options in refusals.items():
+            for field in ("model_error", "error"):
+                with self.subTest(name, field=field):
+                    receipt = deepcopy(cases[name])
+                    reason = receipt["result"].pop("unsupported")
+                    receipt["result"][field] = reason
+                    with self.assertRaises(AssertionError):
+                        replay(receipt, **options)
+
     def test_refusal_model_requests(self):
         receipt = cases["old-bridge-v0.1.86"]
         options = refusals["old-bridge-v0.1.86"]
