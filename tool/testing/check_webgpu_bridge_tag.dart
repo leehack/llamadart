@@ -20,6 +20,7 @@ import 'package:markdown/markdown.dart' as md;
 /// The file whose default decides what a fresh vendoring run downloads.
 import '../release/pr_changelog.dart';
 import 'check_released_changelog_sections.dart';
+import 'release_note_case_folding.dart';
 
 const String bridgeTagSourcePath = 'scripts/fetch_webgpu_bridge_assets.sh';
 
@@ -1345,6 +1346,48 @@ final _unchangedFrom = RegExp(
 );
 final _preparedBridgeWording = RegExp('WebGPU bridge assets|default WebGPU');
 final _releaseWhitespace = RegExp(r'\s+');
+final _blockIndent = RegExp(
+  r'^[ \t]*(?:>[ \t]*|(?:[-+*]|[0-9]{1,9}[.)])[ \t]+)*',
+);
+final _footnoteWhitespace = RegExp(r'[ \t\r\n]+');
+final _footnoteEdgeWhitespace = RegExp(r'^[ \t\r\n]+|[ \t\r\n]+$');
+final _anchorProtocol = RegExp(r'^([^/:]*):');
+const _anchorProtocols = {
+  'http',
+  'https',
+  'mailto',
+  'xmpp',
+  'github-windows',
+  'github-mac',
+};
+
+String _expandBlockTabs(String line) {
+  final firstTab = line.indexOf('\t');
+  if (firstTab < 0) return line;
+  final end = _blockIndent.matchAsPrefix(line)!.end;
+  if (firstTab >= end) return line;
+  // Count container markers in the source column before the parser removes them.
+  final indent = StringBuffer(line.substring(0, firstTab));
+  var column = firstTab;
+  for (var i = firstTab; i < end; i++) {
+    if (line[i] == '\t') {
+      final spaces = 4 - column % 4;
+      indent.write(' ' * spaces);
+      column += spaces;
+    } else {
+      indent.write(line[i]);
+      column++;
+    }
+  }
+  return '$indent${line.substring(end)}';
+}
+
+String _normalizeFootnoteLabel(String label) {
+  final folded = foldReleaseNoteLabel(label);
+  return folded
+      .replaceAll(_footnoteEdgeWhitespace, '')
+      .replaceAll(_footnoteWhitespace, ' ');
+}
 
 const _markdownProseTags = {
   'p',
@@ -1440,18 +1483,270 @@ class _ReleaseFootnote extends md.Element {
   final String label;
 }
 
+class _QuotedLine extends md.Line {
+  _QuotedLine(super.content);
+}
+
+class _ReleaseBlockquoteSyntax extends md.BlockquoteSyntax {
+  const _ReleaseBlockquoteSyntax();
+
+  static final _codeFence = md.FencedCodeBlockSyntax().pattern;
+  static final _indent = md.CodeBlockSyntax().pattern;
+
+  @override
+  md.Node parse(md.BlockParser parser) {
+    final (:lines, :lazy) = _parseQuotedLines(parser);
+    final children = md.BlockParser(
+      lines,
+      parser.document,
+    ).parseLines(disabledSetextHeading: lazy, parentSyntax: this);
+    return md.Element('blockquote', children);
+  }
+
+  ({List<md.Line> lines, bool lazy}) _parseQuotedLines(md.BlockParser parser) {
+    final lines = <md.Line>[];
+    var lazy = false;
+    while (!parser.isDone) {
+      final current = parser.current;
+      final content = current.content;
+      if (pattern.hasMatch(content)) {
+        var markerEnd = content.indexOf('>') + 1;
+        if (content.startsWith(' ', markerEnd) ||
+            content.startsWith('\t', markerEnd)) {
+          markerEnd++;
+        }
+        lines.add(_QuotedLine(content.substring(markerEnd)));
+        lazy = false;
+      } else {
+        final lastLine = lines.last;
+        final otherMatched = parser.blockSyntaxes.firstWhere(
+          (syntax) => syntax.canParse(parser),
+        );
+        if (lastLine.isBlankLine ||
+            _codeFence.hasMatch(lastLine.content) ||
+            (otherMatched is! md.ParagraphSyntax &&
+                !(otherMatched is md.CodeBlockSyntax &&
+                    !_indent.hasMatch(lastLine.content)))) {
+          break;
+        }
+        lines.add(current);
+        lazy = true;
+      }
+      parser.advance();
+    }
+    return (lines: lines, lazy: lazy);
+  }
+}
+
 class _ReleaseFootnoteSyntax extends md.FootnoteDefSyntax {
   const _ReleaseFootnoteSyntax();
 
   @override
-  md.Node? parse(md.BlockParser parser) {
-    final definition = super.parse(parser) as md.Element;
+  md.Node parse(md.BlockParser parser) {
+    final current = parser.current.content;
+    final match = pattern.firstMatch(current)!;
+    final label = _normalizeFootnoteLabel(match[2]!);
+    (parser.document as _ReleaseMarkdown).definedFootnotes.add(label);
+    final firstContent = current.substring(match.end);
+    parser.advance();
+    final lines = [
+      md.Line(firstContent),
+      ..._parseFootnoteLines(
+        parser,
+        startAfterBlank: firstContent.trim().isEmpty,
+      ),
+    ];
+    final children = md.BlockParser(lines, parser.document).parseLines();
     // Retain the definition's position so it can be attributed to its release.
-    return _ReleaseFootnote(
-      definition.footnoteLabel!.toLowerCase(),
-      definition.children!,
-    );
+    return _ReleaseFootnote(label, children);
   }
+
+  List<md.Line> _parseFootnoteLines(
+    md.BlockParser parser, {
+    required bool startAfterBlank,
+  }) {
+    final lines = <md.Line>[];
+    var shouldBeBlock = startAfterBlank;
+    final interruptingSyntaxes = parser.blockSyntaxes.where(
+      (syntax) =>
+          syntax is! md.EmptyBlockSyntax && syntax.pattern.pattern.isNotEmpty,
+    );
+    while (!parser.isDone) {
+      final current = parser.current;
+      final line = current.content;
+      if (line.startsWith('    ')) {
+        final rest = line.substring(4);
+        lines.add(md.Line(rest));
+        shouldBeBlock = rest.trim().isEmpty;
+      } else if (line.isEmpty && current is! _QuotedLine) {
+        // GFM keeps an unindented blank only if the raw line was empty.
+        lines.add(current);
+        shouldBeBlock = true;
+      } else if (current.isBlankLine ||
+          shouldBeBlock ||
+          interruptingSyntaxes.any((syntax) => syntax.pattern.hasMatch(line))) {
+        break;
+      } else {
+        lines.add(current);
+      }
+      parser.advance();
+    }
+    return lines;
+  }
+}
+
+final _footnoteEntity = RegExp(
+  r'&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6});',
+);
+final _footnoteNamedEntities = md.Document(
+  encodeHtml: false,
+  withDefaultBlockSyntaxes: false,
+  withDefaultInlineSyntaxes: false,
+  inlineSyntaxes: [md.DecodeHtmlSyntax()],
+);
+final _backtickRun = RegExp(r'`+');
+final _footnoteNonTextTag = RegExp(
+  r'<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\x00-\x20]*>'
+  '|${md.EmailAutolinkSyntax().pattern.pattern}'
+  r'|<!--(?:>|->|[\s\S]*?-->)'
+  '|${md.InlineHtmlSyntax().pattern.pattern}',
+);
+
+String _decodeCommonMarkEntity(String entity) {
+  if (!entity.startsWith('&#')) {
+    return _footnoteNamedEntities.parseInline(entity).single.textContent;
+  }
+  final isHex = entity[2].toLowerCase() == 'x';
+  final value = int.parse(
+    entity.substring(isHex ? 3 : 2, entity.length - 1),
+    radix: isHex ? 16 : 10,
+  );
+  if (value == 0 || value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) {
+    return '\uFFFD';
+  }
+  return String.fromCharCode(value);
+}
+
+bool _isAsciiPunctuation(int code) =>
+    (code >= 0x21 && code <= 0x2f) ||
+    (code >= 0x3a && code <= 0x40) ||
+    (code >= 0x5b && code <= 0x60) ||
+    (code >= 0x7b && code <= 0x7e);
+
+String? _extractFootnoteReferenceLabel(String raw) {
+  final label = StringBuffer();
+  var sawCaret = false;
+  var index = 0;
+  // GFM takes adjacent inline text before processing emphasis and stops at the
+  // first break, code span, autolink, or raw HTML node.
+  while (index < raw.length) {
+    var token = raw[index];
+    index++;
+    if (token == '\r' || token == '\n') break;
+
+    if (token == r'\' && index < raw.length) {
+      final next = raw[index];
+      if (next == '\r' || next == '\n') break;
+      if (_isAsciiPunctuation(raw.codeUnitAt(index))) {
+        token = next;
+        index++;
+      }
+    } else if (token == '&') {
+      final entity = _footnoteEntity.matchAsPrefix(raw, index - 1);
+      if (entity != null) {
+        token = _decodeCommonMarkEntity(entity[0]!);
+        index = entity.end;
+      }
+    } else if (token == '`') {
+      final run = _backtickRun.matchAsPrefix(raw, index - 1)!;
+      final length = run.end - run.start;
+      if (_backtickRun
+          .allMatches(raw, run.end)
+          .any((candidate) => candidate.end - candidate.start == length)) {
+        break;
+      }
+      token = run[0]!;
+      index = run.end;
+    } else if (token == '<' &&
+        _footnoteNonTextTag.matchAsPrefix(raw, index - 1) != null) {
+      break;
+    }
+
+    if (!sawCaret) {
+      if (!token.startsWith('^') ||
+          (token.length == 1 && index == raw.length)) {
+        return null;
+      }
+      sawCaret = true;
+      token = token.substring(1);
+    }
+    label.write(token);
+  }
+  return sawCaret ? label.toString() : null;
+}
+
+class _ReleaseLinkSyntax extends md.LinkSyntax {
+  @override
+  Iterable<md.Node>? close(
+    md.InlineParser parser,
+    covariant md.SimpleDelimiter opener,
+    md.Delimiter? closer, {
+    String? tag,
+    required List<md.Node> Function() getChildren,
+  }) {
+    final closePos = parser.pos;
+    final link = super.close(
+      parser,
+      opener,
+      closer,
+      tag: tag,
+      getChildren: getChildren,
+    );
+    if (link != null) return link;
+
+    final label = _extractFootnoteReferenceLabel(
+      parser.source.substring(opener.endPos, closePos),
+    );
+    if (label == null) return null;
+
+    // A failed lookup may have scanned past the first closing bracket.
+    parser.pos = closePos;
+    getChildren();
+    final document = parser.document as _ReleaseMarkdown;
+    final folded = _normalizeFootnoteLabel(label);
+    if (folded.isNotEmpty &&
+        utf8.encode(label).length <= 999 &&
+        document.definedFootnotes.contains(folded)) {
+      document.referencedFootnotes.add(folded);
+      return [
+        md.Element('sup', [md.Element.text('a', '1')]),
+      ];
+    }
+    final literal = const HtmlEscape(HtmlEscapeMode.element).convert(label);
+    return [md.Text('[^$literal]')];
+  }
+}
+
+class _ReleaseMarkdown extends md.Document {
+  _ReleaseMarkdown()
+    : super(
+        extensionSet: md.ExtensionSet.gitHubFlavored,
+        blockSyntaxes: const [
+          _ReleaseHeadingSyntax(),
+          _ReleaseFootnoteSyntax(),
+          _ReleaseBlockquoteSyntax(),
+        ],
+        encodeHtml: true,
+        inlineSyntaxes: [
+          // markdown 7.3.1's inline HTML syntax misses these legal comments.
+          md.TextSyntax(r'<!--(?:>|->|[\s\S]*?-->)', startCharacter: 0x3c),
+          md.TextSyntax(r'!(?=\[\^)', startCharacter: 0x21),
+          _ReleaseLinkSyntax(),
+        ],
+      );
+
+  final definedFootnotes = <String>{};
+  final referencedFootnotes = <String>{};
 }
 
 Iterable<_ReleaseFootnote> _footnoteDefinitions(Iterable<md.Node> nodes) sync* {
@@ -1466,7 +1761,7 @@ Iterable<_ReleaseFootnote> _footnoteDefinitions(Iterable<md.Node> nodes) sync* {
 List<md.Element> _renderedReleaseFootnotes(
   List<md.Node> section,
   List<md.Node> document,
-  List<String> referenceLabels,
+  Set<String> referenceLabels,
 ) {
   if (referenceLabels.isEmpty) return [];
   final firstDefinitions = <String, _ReleaseFootnote>{};
@@ -1502,29 +1797,29 @@ class _ReleaseHtmlText {
       text.clear();
     }
 
-    void visit(html.Node node) {
+    void visit(html.Node node, {bool literal = false}) {
       if (node is html.Text) {
-        text.write(node.data);
+        if (!literal) text.write(node.data);
       } else if (node is html.Element) {
         final tag = node.localName;
         if (tag == 'br') {
-          text.write(' ');
+          if (!literal) text.write(' ');
           return;
         }
-        if (includeTitles && (tag == 'a' || tag == 'img')) {
+        if (includeTitles &&
+            ((tag == 'a' && _retainsAnchor(node)) || tag == 'img')) {
           if (node.attributes['title'] case final title?) addUnit(title);
         }
         if (tag == 'img') {
-          text.write(node.attributes['alt'] ?? '');
+          if (!literal) text.write(node.attributes['alt'] ?? '');
           return;
         }
-        if (tag == 'code' && !_versionCodeSpan.hasMatch(node.text)) {
-          flush();
-          return;
-        }
-        final block = _htmlBlockTags.contains(tag);
+        final code = tag == 'code' && !_versionCodeSpan.hasMatch(node.text);
+        final block = !literal && (_htmlBlockTags.contains(tag) || code);
         if (block) flush();
-        if (tag != 'pre') node.nodes.forEach(visit);
+        for (final child in node.nodes) {
+          visit(child, literal: literal || tag == 'pre' || code);
+        }
         if (block) flush();
       }
     }
@@ -1546,6 +1841,17 @@ class _ReleaseHtmlText {
     flush();
     return units;
   }
+}
+
+bool _retainsAnchor(html.Element anchor) {
+  final attributes = anchor.attributes;
+  if (attributes.containsKey('id') || attributes.containsKey('name')) {
+    return true;
+  }
+  final href = attributes['href'];
+  if (href == null) return false;
+  final protocol = _anchorProtocol.firstMatch(href)?[1];
+  return protocol == null || _anchorProtocols.contains(protocol.toLowerCase());
 }
 
 bool _isMarkdownBlock(md.Node node) =>
@@ -1686,19 +1992,10 @@ List<String> findPreparedReleaseNotesDrift(
         problems.add('$path must begin with the exact release $version.');
         continue;
       }
-      final markdown = md.Document(
-        extensionSet: md.ExtensionSet.gitHubFlavored,
-        blockSyntaxes: const [
-          _ReleaseHeadingSyntax(),
-          _ReleaseFootnoteSyntax(),
-        ],
-        encodeHtml: true,
-        inlineSyntaxes: [
-          // markdown 7.3.1's inline HTML syntax misses these legal comments.
-          md.TextSyntax(r'<!--(?:>|->|[\s\S]*?-->)', startCharacter: 0x3c),
-        ],
+      final markdown = _ReleaseMarkdown();
+      final document = markdown.parseLines(
+        const LineSplitter().convert(source).map(_expandBlockTabs).toList(),
       );
-      final document = markdown.parse(source);
       bool isReleaseHeading(md.Node node) =>
           node is _ReleaseHeading && sections.containsKey(node.textContent);
 
@@ -1768,7 +2065,7 @@ List<String> findPreparedReleaseNotesDrift(
       final footnotes = _renderedReleaseFootnotes(
         section,
         document,
-        markdown.footnoteLabels,
+        markdown.referencedFootnotes,
       );
       if (_releaseTextUnits(
             section,
