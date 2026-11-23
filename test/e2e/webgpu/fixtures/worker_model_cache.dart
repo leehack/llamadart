@@ -7,6 +7,8 @@ import 'package:llamadart/src/backends/webgpu/interop.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:web/web.dart' show DedicatedWorkerGlobalScope;
 
+import '../../../support/fake_cross_origin_isolation.dart';
+
 const _modelParams = ModelParams(
   contextSize: 512,
   gpuLayers: 0,
@@ -16,6 +18,7 @@ const _modelParams = ModelParams(
 );
 
 Future<void> main() async {
+  useDartTestThreadedCore();
   final worker = globalContext as DedicatedWorkerGlobalScope;
   try {
     final script = Uri.parse(worker.location.href);

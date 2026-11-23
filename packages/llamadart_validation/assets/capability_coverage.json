@@ -188,7 +188,7 @@
       "exemption": {
         "id": "web-single-thread-core",
         "issue": "https://github.com/leehack/llamadart/issues/2090",
-        "reason": "The web-single-thread-core local Chromium scenario checks real wasm32 and memory64 single-thread loads and generation in direct and worker modes, isolated threaded controls, and version-skew and fetch-backed refusals. The existing validation-pack profiles do not encode page isolation or Wasm core selection. Browser and model-size measurements are runner-specific."
+        "reason": "The web-single-thread-core local Chromium scenario checks automatic wasm32 and memory64 single-thread loads and generation in direct and worker modes, one warning across repeated loads, isolated threaded controls, and refusals for opt-out, version skew and forced fetch-backed loading. The existing validation-pack profiles do not encode page isolation or Wasm core selection. Browser and model-size measurements are runner-specific."
       }
     },
     {

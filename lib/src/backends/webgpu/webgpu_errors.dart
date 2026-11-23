@@ -182,14 +182,18 @@ LlamaUnsupportedException? webGpuCrossOriginIsolationError(Object error) {
   } catch (_) {
     return null;
   }
-  return LlamaUnsupportedException(
-    'The Web runtime needs cross-origin isolation (COOP/COEP) for shared '
-    'memory, which this page does not have. Serve the page with '
-    '"Cross-Origin-Opener-Policy: same-origin" and '
-    '"Cross-Origin-Embedder-Policy: require-corp". '
-    '"credentialless" does not isolate Safari.',
-  );
+  return webGpuCrossOriginIsolationRequired();
 }
+
+/// Reports the headers required for the threaded Web core.
+LlamaUnsupportedException webGpuCrossOriginIsolationRequired() =>
+    LlamaUnsupportedException(
+      'The Web runtime needs cross-origin isolation (COOP/COEP) for shared '
+      'memory, which this page does not have. Serve the page with '
+      '"Cross-Origin-Opener-Policy: same-origin" and '
+      '"Cross-Origin-Embedder-Policy: require-corp". '
+      '"credentialless" does not isolate Safari.',
+    );
 
 /// The stable fields carried by a bridge core-asset error on either runtime.
 ({String code, String? asset})? webGpuCoreAssetError(Object error) {

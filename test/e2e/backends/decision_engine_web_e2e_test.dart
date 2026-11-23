@@ -24,6 +24,7 @@ import 'package:test/test.dart';
 import 'package:web/web.dart' show Response, window;
 
 import '../../support/decision_fixture.dart';
+import '../../support/fake_cross_origin_isolation.dart';
 
 // The `decision-gguf-webgpu` validation profile's files: Q8_0, because each
 // F16 load takes 45 to 51 s in the browser.
@@ -35,6 +36,7 @@ const _modelBytes = '421407968';
 const _headUrl = '$_laya/laya-head.safetensors';
 
 void main() {
+  setUpAll(useDartTestThreadedCore);
   test(
     'matches the Laya 0.3.5 reference on WebGPU in the bridge worker',
     () async {

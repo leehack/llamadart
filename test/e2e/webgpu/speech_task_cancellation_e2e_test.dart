@@ -23,6 +23,8 @@ import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart' show window;
 
+import '../../support/fake_cross_origin_isolation.dart';
+
 const String _configPath = '../../../build/web_speech_task_cancel/config.json';
 const GenerationParams _greedy = GenerationParams(
   maxTokens: 256,
@@ -35,6 +37,7 @@ const GenerationParams _greedy = GenerationParams(
 );
 
 void main() {
+  setUpAll(useDartTestThreadedCore);
   final configUrl = Uri.base.resolve(_configPath);
   late Map<String, dynamic> config;
   late JSFunction constructor;

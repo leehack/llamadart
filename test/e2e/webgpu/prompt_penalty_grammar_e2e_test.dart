@@ -14,7 +14,10 @@ import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart' show window;
 
+import '../../support/fake_cross_origin_isolation.dart';
+
 void main() {
+  setUpAll(useDartTestThreadedCore);
   final configUrl = Uri.base.resolve(
     '../../../build/web_lazy_grammar/config.json',
   );

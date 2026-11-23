@@ -85,6 +85,8 @@ import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart' show Response, document, window;
 
+import '../../support/fake_cross_origin_isolation.dart';
+
 const String _configPath = '../../../build/webgpu_bridge_fixes_e2e/config.json';
 
 const GenerationParams _greedy = GenerationParams(
@@ -95,6 +97,7 @@ const GenerationParams _greedy = GenerationParams(
 );
 
 void main() {
+  setUpAll(useDartTestThreadedCore);
   final configUrl = Uri.base.resolve(_configPath);
   late Map<String, Object?> config;
   late JSFunction bridgeConstructor;

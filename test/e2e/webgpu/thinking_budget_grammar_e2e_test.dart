@@ -21,6 +21,7 @@ import 'package:test/test.dart';
 import 'package:web/web.dart' show window;
 
 import '../../support/qwen_xml_budget_tool_replay.dart';
+import '../../support/fake_cross_origin_isolation.dart';
 
 const _messages = [
   LlamaChatMessage.fromText(
@@ -54,6 +55,7 @@ const _model = ModelParams(
 );
 
 void main() {
+  setUpAll(useDartTestThreadedCore);
   final configUrl = Uri.base.resolve(
     '../../../build/web_lazy_grammar/config.json',
   );

@@ -20,6 +20,8 @@ import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart' show window;
 
+import '../../support/fake_cross_origin_isolation.dart';
+
 const _greedy = GenerationParams(
   maxTokens: 32,
   temp: 0,
@@ -31,6 +33,7 @@ const _greedy = GenerationParams(
 const _prompt = 'Once upon a time';
 
 void main() {
+  setUpAll(useDartTestThreadedCore);
   final configUrl = Uri.base.resolve(
     '../../../build/webgpu_generation_e2e/config.json',
   );

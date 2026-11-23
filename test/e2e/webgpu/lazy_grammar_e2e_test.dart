@@ -19,6 +19,8 @@ import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart' show window;
 
+import '../../support/fake_cross_origin_isolation.dart';
+
 const _greedy = GenerationParams(
   maxTokens: 48,
   temp: 0,
@@ -29,6 +31,7 @@ const _greedy = GenerationParams(
 );
 
 void main() {
+  setUpAll(useDartTestThreadedCore);
   final configUrl = Uri.base.resolve(
     '../../../build/web_lazy_grammar/config.json',
   );

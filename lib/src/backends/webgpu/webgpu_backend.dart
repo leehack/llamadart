@@ -101,6 +101,10 @@ class WebGpuLlamaBackend
       'llamadart-webgpu-model-cache-v1';
   static const String _nextTokenScoringUnsupportedMessage =
       'Web next-token scoring requires llama-web-bridge-assets v0.1.52+.';
+  static const String _singleThreadCoreFlag =
+      '__llamadartBridgeAllowSingleThreadCore';
+  static const String _singleThreadCoreWarningFlag =
+      '__llamadartBridgeWarnedSingleThreadCore';
   static const String _singleThreadCoreUnavailable =
       'Single-thread GGUF loading needs llama-web-bridge-assets v0.1.93+ and '
       'matching single-thread core assets. Run dart run llamadart:web_setup '
@@ -488,6 +492,9 @@ class WebGpuLlamaBackend
         try {
           await _loadBridgeScript();
         } on Exception {
+          if (allowSingleThreadCore) {
+            throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
+          }
           if (jsBackedModelStaging == true) {
             throw LlamaUnsupportedException(
               'The configured WebGPU bridge module could not be loaded. '
@@ -574,6 +581,9 @@ class WebGpuLlamaBackend
       jsBackedModelStaging: jsBackedModelStaging,
     );
     if (!ready || _bridge == null) {
+      if (allowSingleThreadCore) {
+        throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
+      }
       if (jsBackedModelStaging == true) {
         throw LlamaUnsupportedException(webGpuJsBackedStagingRequired);
       }
@@ -756,13 +766,22 @@ class WebGpuLlamaBackend
     return null;
   }
 
-  bool get _allowSingleThreadCore {
-    final optIn = globalContext['__llamadartBridgeAllowSingleThreadCore'];
+  bool get _isNonIsolatedPage {
     final isolated = globalContext['crossOriginIsolated'];
-    return optIn.isA<JSBoolean>() &&
-        (optIn as JSBoolean).toDart &&
-        isolated.isA<JSBoolean>() &&
-        !(isolated as JSBoolean).toDart;
+    return isolated.isA<JSBoolean>() && !(isolated as JSBoolean).toDart;
+  }
+
+  void _warnAboutSingleThreadCore() {
+    if (globalContext.has(_singleThreadCoreWarningFlag)) return;
+    globalContext[_singleThreadCoreWarningFlag] = true.toJS;
+    console.warn(
+      'llamadart is using the single-thread GGUF core with lower performance '
+              'because this page has no cross-origin isolation (COOP/COEP). Serve '
+              'Cross-Origin-Opener-Policy: same-origin and '
+              'Cross-Origin-Embedder-Policy: require-corp for the threaded core. '
+              'Set window.$_singleThreadCoreFlag = false to opt out.'
+          .toJS,
+    );
   }
 
   bool _supportsCorePreflight(JSAny? constructor) {
@@ -1464,7 +1483,14 @@ class WebGpuLlamaBackend
     url = webGpuDocumentUrl(url);
     final cacheUrl = webGpuPersistentCacheUrl(url);
     final setup = _prepareUrlLoad(url, params, onProgress);
-    final allowSingleThreadCore = _allowSingleThreadCore;
+    final allowSingleThreadCore = _isNonIsolatedPage;
+    final selection = globalContext[_singleThreadCoreFlag];
+    final explicitSelection = selection.isA<JSBoolean>()
+        ? (selection as JSBoolean).toDart
+        : null;
+    if (allowSingleThreadCore && explicitSelection == false) {
+      throw webGpuCrossOriginIsolationRequired();
+    }
     final sourceUrls = <String>{
       url,
       ..._bridgeAssetUrls(singleThread: allowSingleThreadCore),
@@ -1538,6 +1564,9 @@ class WebGpuLlamaBackend
         final preflightNotes = allowSingleThreadCore
             ? await _preflightSingleThreadCore(bridge)
             : null;
+        if (allowSingleThreadCore && explicitSelection == null) {
+          _warnAboutSingleThreadCore();
+        }
         cachedWebModel ??= await _isModelResponseCachedForUrl(bridge, cacheUrl);
 
         if (jsBackedModelStaging == true) {
@@ -3727,7 +3756,7 @@ class WebGpuLlamaBackend
     final metadata = bridge.getModelMetadata();
     final out = <String, String>{};
     final assetUrls = _bridgeAssetUrls(
-      singleThread: _allowSingleThreadCore,
+      singleThread: _singleThreadPreflightNotes != null,
     ).toList();
     if (metadata != null) {
       final keys = _objectKeys(metadata);

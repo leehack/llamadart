@@ -14,6 +14,7 @@ void main() {
 }
 
 Future<JSString> _run(String modelUrl, bool preferMemory64, bool gpu) async {
+  if (gpu) await LlamaLogging.configure(nativeLevel: LlamaLogLevel.info);
   final engine = LlamaEngine(LlamaBackend());
   try {
     await engine.loadModelFromUrl(

@@ -5,6 +5,7 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 
+import '../../../support/fake_cross_origin_isolation.dart';
 import '../../../support/fake_webgpu_feature_bridge.dart';
 
 void main() {
@@ -12,6 +13,7 @@ void main() {
   late WebGpuLlamaBackend backend;
 
   setUp(() {
+    addTearDown(fakeCrossOriginIsolation());
     bridges = <FakeFeatureBridge>[];
     backend = WebGpuLlamaBackend(
       bridgeFactory: ([config]) {

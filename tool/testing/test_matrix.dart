@@ -986,8 +986,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only, Chromium',
     covers:
-        'Non-isolated direct and worker single-thread wasm32 and memory64 '
-        'generation, typed opt-in and old-asset refusals, and isolated '
+        'Automatic single-thread wasm32 and memory64 generation in direct and '
+        'worker modes, one console warning, opt-out and old-asset refusals, and isolated '
         'threaded controls including forced fetch-backed loading.',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario web-single-thread-core',
