@@ -504,6 +504,28 @@ authored description through the verified merged-main PR association. The
 description uses one physical line per entry. Missing or conflicting
 provenance blocks generation.
 
+Land individual PRs, including independent package release preps, with
+**Squash and merge**. Keep the `(#N)` subject suffix and the `## Changelog`
+section in the squash message. Reserve rebase merges for batch integration
+PRs whose constituent commits already carry both.
+
+To resolve an already-landed, single-commit PR without a trailing `(#N)`,
+commit a reviewed record at `tool/release/pr_resolutions/<40-hex-sha>.json`.
+Use one compact JSON line with the keys in the order below and a final LF.
+Run `dart tool/release/collect_pr_changelog.dart --section-sha256 PR_BODY.md`
+on the reviewed PR description to compute the digest.
+
+```json
+{"version":"0.20.7","sha":"48af8ec5bc294620bd63a1e1818f6c6593afb5d3","pr":2180,"sectionSha256":"c99db03b6bdb4ef1bc771c35d31d2c766d52dd77f21fe94896266271ceb0a14e"}
+```
+
+Land the record on `main` before pinning `--through`. The collector reads
+the regular non-executable file from that commit and requires the record's
+version to match the release being prepared. It verifies through GitHub
+that the PR merged a single commit to this repository's `main`, that its
+merge SHA matches the record, and that its changelog still has the reviewed
+digest. The ledger records the resolution path.
+
 Review the entire ledger including legacy seed, package-only notes, N/A
 entries, duplicates, fallbacks and reversals. Keep the ledger with the PR.
 Copy the emitted `## Release notes input` into the prep body beside its
@@ -520,12 +542,20 @@ and GitHub's default squash message. GitHub rewraps description lines over
 after its key, and a review entry can continue on adjacent unindented lines.
 The verifier reads both forms. Opening, reopening, pushing to, editing or
 retargeting a prep, marking it ready, and adding or removing any label rerun
-the check. An invalid description fails the check. Removing the `release-prep`
-label from a prep without a versioned prep branch rechecks the protected
-changelogs under the ordinary PR rules.
-Before merging, require a completed success from the latest run for the
-current head, base and description. If the run was cancelled or superseded,
-wait for a completed current run.
+the check. An invalid description fails the check. All subscribed events on a
+same-repository PR recheck the protected changelogs. After removing
+`release-prep` from an ordinary branch, later title or label changes continue
+to apply the ordinary PR rules.
+
+A push to `main` or completion of **Docs Version Cut** runs the verifier for
+open core release preps. Find **Verify release prep (#PR)** in the **PR
+changelog** run on `main`. Its log records the PR head and the tested base.
+GitHub Actions cache access is disabled for the verifier job, which runs
+code from the tested merge tree.
+When `main` advances, regenerate the ledger, review and receipt and update the
+PR description to trigger a fresh PR run. GitHub's **Re-run jobs** button
+reuses the original event. Before merging, require a completed success from
+the latest run for the current head, base and description.
 End the receipt block with no trailing attribution or whitespace.
 
 Land a release prep using **Squash and merge** only. Use GitHub's default

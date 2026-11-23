@@ -10,6 +10,7 @@ import 'package:llamadart/src/core/engine/chat_completion_request_planner.dart';
 import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:test/test.dart';
 
+import '../../../support/fake_cross_origin_isolation.dart';
 import '../../../support/fake_webgpu_feature_bridge.dart';
 
 @JS('Error')
@@ -23,6 +24,7 @@ void main() {
   late LlamaEngine engine;
 
   setUp(() {
+    addTearDown(fakeCrossOriginIsolation());
     fake = FakeFeatureBridge()
       ..completionCapabilities = {
         'thinkingBudget': true,

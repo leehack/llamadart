@@ -335,8 +335,9 @@ layouts) opens a separate screen for the experimental `ImageGenerationEngine`
   Windows x64 (Vulkan build). The screen shows the runtime's reason instead of
   the controls on the web, on targets without a `stable_diffusion` build, on
   CPUs without the required instructions, and when a library the runtime
-  needs is missing: the Vulkan loader on Linux or Windows, or the Visual C++
-  runtime on Windows. It is the device QA path for
+  needs is missing, such as the Vulkan loader on Linux or Windows. The
+  Windows bundle includes the required Visual C++ runtime DLLs.
+  It is the device QA path for
   [#779](https://github.com/leehack/llamadart/issues/779): run
   `flutter test --run-skipped -t local-only integration_test/image_generation_e2e_test.dart -d <device>`
   to download SDXS, generate a seeded image, and save both PNGs plus a receipt.
@@ -640,8 +641,9 @@ await prefs.setInt('preferred_backend', backendIndex);
 - LFM2 automatic Python tool calls additionally need bridge v0.1.82+ reporting `penaltyPromptTokensWithGrammar`. That route is text-only and rejects unsupported assets before inference.
 - Lazy tool-call grammars and custom grammar roots require the loaded core's `lazyGrammar` probe. Older cores keep best-effort auto tool parsing; explicit lazy requests reject.
 - Bridge runtime loading prefers local `web/webgpu_bridge` assets on `localhost`/`127.0.0.1` for dev validation, and otherwise prefers pinned jsDelivr assets with local fallback.
-- Override CDN source/version with `window.__llamadartBridgeAssetsRepo` and
-  `window.__llamadartBridgeAssetsTag` in `web/index.html`.
+- The pinned bridge comes from the `llama-web-bridge` npm package on jsDelivr.
+  Override the repository or tag with `window.__llamadartBridgeAssetsRepo`
+  and `window.__llamadartBridgeAssetsTag` in `web/index.html`.
 - To pin self-hosted assets before build:
   `WEBGPU_BRIDGE_ASSETS_TAG=<tag> ./scripts/fetch_webgpu_bridge_assets.sh`.
 - Bridge model loading uses browser Cache Storage by default, so repeated loads
@@ -684,8 +686,14 @@ await prefs.setInt('preferred_backend', backendIndex);
   fetch-backed loading to reduce contiguous allocation pressure; this path may
   bypass prefetch cache reuse.
 - If optional `llama_webgpu_core_mem64` bridge assets are present and supported by the browser, chat app bridge bootstrapping can prefer wasm64 core and transparently fall back to wasm32.
-- Large single-file web model loading requires cross-origin isolation
-  (`window.crossOriginIsolated === true`).
+- Pages with neither cross-origin isolation nor usable `SharedArrayBuffer`
+  automatically initialize the local `_st` GGUF core with bridge assets
+  v0.1.93+ before fetching the model. Set
+  `window.__llamadartBridgeAllowSingleThreadCore = false` before the bootstrap
+  to require the threaded core. Verify `core_preflight_threading:single-thread` in
+  `llamadart.webgpu.runtime_notes`. This core uses one
+  CPU thread, can offload GPU layers, and uses streamed staging. Fetch-backed
+  loading requires the threaded runtime.
 - Web GGUF loads can use `LlamaCppModelParams(jsBackedModelStaging: true)`
   with matching bridge assets v0.1.92+. The app leaves the setting unset,
   which lets the bridge enable staging on supported WebKit cores. Set

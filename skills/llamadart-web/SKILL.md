@@ -54,10 +54,29 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
 - Serve from a secure context (`https://`, `http://localhost` or
   `http://127.0.0.1`) and send `Cross-Origin-Opener-Policy: same-origin` with
   `Cross-Origin-Embedder-Policy: require-corp` (`credentialless` isolates only
-  in Chromium-based browsers; it does not isolate Safari). Without
-  isolation (`window.crossOriginIsolated == false`) assets `v0.1.85+`
-  reject the load at once and llamadart throws `LlamaUnsupportedException`
-  naming COOP/COEP; earlier assets wait minutes for the init timeout before a generic error.
+  in Chromium-based browsers). When threads are unavailable (no cross-origin
+  isolation and no usable `SharedArrayBuffer`), GGUF loads automatically use the
+  single-thread core with matching v0.1.93+ assets from
+  `dart run llamadart:web_setup`. The first automatic selection warns once
+  about lower performance. Before the first GGUF load, set
+  `window.__llamadartBridgeAllowSingleThreadCore = true` to skip the warning or
+  `false` to require the threaded core. Missing or old assets and explicit
+  opt-out when threads are unavailable raise `LlamaUnsupportedException`.
+  For custom hosting, configure
+  `__llamadartBridgeCoreModuleUrlSt` / `__llamadartBridgeWasmUrlSt` and
+  `__llamadartBridgeCoreModuleUrlMem64St` / `__llamadartBridgeWasmUrlMem64St`.
+  The bridge checks and initializes the core before model loading.
+  Verify `core_preflight_threading:single-thread` in
+  `llamadart.webgpu.runtime_notes`. A single-thread core runs streamed model
+  staging and rejects forced fetch-backed loading. It can offload GPU layers
+  when the adapter supports WebGPU.
+- When the host controls `index.html` (for example preview.dartpad.dev), set
+  absolute single-thread core, Wasm, and worker URLs in Dart before the first
+  load. With llamadart 0.20.7 or newer the bridge can select the single-thread
+  core automatically using those URLs. Import the pinned CDN bridge with
+  `dart:js_interop` and assign its constructor to
+  `globalThis.LlamaWebGpuBridge`. See the
+  [DartPad GGUF example](https://github.com/leehack/llamadart/tree/main/example/dartpad_gguf).
 - Treat WebGPU as a runtime capability. A supported browser (Chrome/Edge 128+,
   Firefox 129+, Safari 17.4+) can still lack an adapter, features or memory.
   Prove a first load with a small quantized GGUF, `contextSize: 2048` or less
@@ -182,7 +201,7 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   embeddings, tokenizer, LoRA, state or usage. Use GGUF for anything more.
 - `flutter build web` only copies what is in `web/`: run the setup tool (or
   commit `web/webgpu_bridge/`) before building, and set the COOP/COEP headers on the
-  production host too, not only on the dev server.
+  production host for threaded GGUF.
 
 ## Examples
 
@@ -193,7 +212,7 @@ dart run llamadart:web_setup
 dart run llamadart:web_setup --check  # in CI, before flutter build web
 ```
 
-Or fetch the pinned assets by hand, without checksum verification:
+Or fetch the pinned npm assets by hand, without checksum verification:
 
 ```bash
 TAG=vX.Y.Z # the tag pinned in the WebGPU bridge docs for your llamadart version
@@ -202,7 +221,7 @@ for f in llama_webgpu_bridge.js llama_webgpu_bridge_worker.js \
          llama_webgpu_core.js llama_webgpu_core.wasm \
          llama_webgpu_core_mem64.js llama_webgpu_core_mem64.wasm; do
   curl -fL -o "web/webgpu_bridge/$f" \
-    "https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@$TAG/$f"
+    "https://cdn.jsdelivr.net/npm/llama-web-bridge@${TAG#v}/dist/$f"
 done
 ```
 

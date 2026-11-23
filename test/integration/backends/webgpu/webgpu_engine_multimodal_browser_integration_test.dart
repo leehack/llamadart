@@ -10,6 +10,8 @@ import 'package:llamadart/src/backends/webgpu/interop.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 
+import '../../../support/fake_cross_origin_isolation.dart';
+
 void main() {
   group('WebGPU multimodal engine integration', () {
     late JSObject bridge;
@@ -32,6 +34,7 @@ void main() {
     late List<String> completionPrompts;
 
     setUp(() {
+      addTearDown(fakeCrossOriginIsolation());
       globalContext.delete('__llamadartBridgeAllowAutoRemoteFetchBackend'.toJS);
       globalContext.delete('__llamadartBridgeForceRemoteFetchBackend'.toJS);
       bridge = JSObject();

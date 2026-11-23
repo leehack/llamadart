@@ -214,8 +214,11 @@ A path qualifies only if:
   text, comments included, repository tooling reads with regular expressions.
   These are the release pins (`lib/src/hook/native_release_pins.dart`, read
   by the release-docs verifier, the WebGPU bridge tag check, validation
-  bundles and the native sync scripts), `lib/src/web_setup/web_bridge_setup.dart`
-  (bridge tag check), and `lib/src/backends/litert_lm/litert_lm_runtime.dart`
+  bundles and the native sync scripts), `lib/src/web_setup/web_bridge_setup.dart`,
+  `example/dartpad_gguf/lib/bridge_bootstrap_web.dart` and
+  `packages/genkit_llamadart/example/dartpad/lib/bridge_bootstrap_web.dart`
+  (bridge tag check),
+  and `lib/src/backends/litert_lm/litert_lm_runtime.dart`
   and `hook/build.dart` (rewritten by `sync_native_release_pins.py`). A
   commented-out pin there can change what a CI gate or sync script reads. A
   test fails if a listed path disappears; add any new raw-text reader's source

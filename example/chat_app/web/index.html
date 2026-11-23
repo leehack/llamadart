@@ -157,7 +157,7 @@
       typeof configuredRepo === 'string' && configuredRepo.length > 0
         ? configuredRepo
         : 'leehack/llama-web-bridge-assets';
-    const defaultBridgeAssetsTag = 'v0.1.92';
+    const defaultBridgeAssetsTag = 'v0.1.93';
     const defaultBridgeLlamaCppTag = 'v1.0.0';
     const bridgeAssetsTag =
       typeof configuredTag === 'string' && configuredTag.length > 0
@@ -188,7 +188,14 @@
     window.__llamadartBridgeLocalVersion = localBridgeVersion;
 
     const localBridgeUrl = `./webgpu_bridge/llama_webgpu_bridge.js?v=${localBridgeVersion}`;
-    const cdnBridgeUrl = `https://cdn.jsdelivr.net/gh/${bridgeAssetsRepo}@${bridgeAssetsTag}/llama_webgpu_bridge.js`;
+    const stableTag = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(bridgeAssetsTag);
+    const useNpm = isOfficialBridgeAssetsRepo && stableTag?.[0] === bridgeAssetsTag &&
+      (Number(stableTag[1]) > 0 || Number(stableTag[2]) > 1 ||
+        (Number(stableTag[2]) === 1 && Number(stableTag[3]) >= 91));
+    const cdnBridgeBase = useNpm
+      ? `https://cdn.jsdelivr.net/npm/llama-web-bridge@${bridgeAssetsTag.slice(1)}/dist`
+      : `https://cdn.jsdelivr.net/gh/${bridgeAssetsRepo}@${bridgeAssetsTag}`;
+    const cdnBridgeUrl = `${cdnBridgeBase}/llama_webgpu_bridge.js`;
     const preferLocalBridgeRuntime =
       window.__llamadartPreferLocalBridgeRuntime === true ||
       window.location.hostname === '127.0.0.1' ||
@@ -489,6 +496,15 @@
       window.__llamadartBridgeCoreModuleUrlMem64 = coreModuleUrlMem64;
       window.__llamadartBridgeWasmUrl = wasmUrl;
       window.__llamadartBridgeWasmUrlMem64 = wasmUrlMem64;
+      const singleThreadAsset = (filename) => {
+        const url = new URL(runtimeAssetModuleUrl, window.location.href);
+        url.pathname = url.pathname.replace(/llama_webgpu_bridge\.js$/, filename);
+        return url.href;
+      };
+      window.__llamadartBridgeCoreModuleUrlSt ??= singleThreadAsset('llama_webgpu_core_st.js');
+      window.__llamadartBridgeWasmUrlSt ??= singleThreadAsset('llama_webgpu_core_st.wasm');
+      window.__llamadartBridgeCoreModuleUrlMem64St ??= singleThreadAsset('llama_webgpu_core_mem64_st.js');
+      window.__llamadartBridgeWasmUrlMem64St ??= singleThreadAsset('llama_webgpu_core_mem64_st.wasm');
       window.__llamadartBridgeWorkerUrl = workerModuleUrl;
       window.__llamadartBridgePreferMemory64 = preferMemory64;
       window.__llamadartBridgeWorkerFallbackReason = null;

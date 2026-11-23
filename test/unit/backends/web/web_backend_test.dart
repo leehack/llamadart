@@ -39,6 +39,7 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_backend_web.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 
+import '../../../support/fake_cross_origin_isolation.dart';
 import '../../../support/fake_webgpu_feature_bridge.dart';
 import '../../../support/load_check_agreement.dart';
 import '../../core/engine/engine_test.dart';
@@ -1209,6 +1210,7 @@ void main() {
     for (final (reported, expected) in [(true, true), (false, false)]) {
       test('bridge assets reporting penaltyPromptTokensWithGrammar=$reported '
           '${expected ? 'reach' : 'are refused before'} the bridge', () async {
+        addTearDown(fakeCrossOriginIsolation());
         final fake = FakeFeatureBridge()
           ..completionCapabilities = {
             'lazyGrammar': true,

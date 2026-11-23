@@ -1,0 +1,30 @@
+name: genkit_llamadart_dartpad_example
+description: Stream from local and hosted Genkit models in DartPad Preview.
+publish_to: none
+
+environment:
+  sdk: ^3.12.0
+  flutter: ^3.38.6
+
+dependencies:
+  flutter:
+    sdk: flutter
+  genkit: ^1.0.0
+  genkit_google_genai: 1.2.0
+  genkit_llamadart:
+    path: ../..
+  http: ^1.6.0
+  llamadart: ^0.20.7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp]
+
+flutter:
+  uses-material-design: true

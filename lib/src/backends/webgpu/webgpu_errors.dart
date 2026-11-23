@@ -182,13 +182,36 @@ LlamaUnsupportedException? webGpuCrossOriginIsolationError(Object error) {
   } catch (_) {
     return null;
   }
-  return LlamaUnsupportedException(
-    'The Web runtime needs cross-origin isolation (COOP/COEP) for shared '
-    'memory, which this page does not have. Serve the page with '
-    '"Cross-Origin-Opener-Policy: same-origin" and '
-    '"Cross-Origin-Embedder-Policy: require-corp". '
-    '"credentialless" does not isolate Safari.',
-  );
+  return webGpuCrossOriginIsolationRequired();
+}
+
+/// Reports the headers required for the threaded Web core.
+LlamaUnsupportedException webGpuCrossOriginIsolationRequired() =>
+    LlamaUnsupportedException(
+      'The Web runtime needs cross-origin isolation (COOP/COEP) for shared '
+      'memory, which this page does not have. Serve the page with '
+      '"Cross-Origin-Opener-Policy: same-origin" and '
+      '"Cross-Origin-Embedder-Policy: require-corp". '
+      '"credentialless" does not isolate Safari.',
+    );
+
+/// The stable fields carried by a bridge core-asset error on either runtime.
+({String code, String? asset})? webGpuCoreAssetError(Object error) {
+  try {
+    final object = error as JSObject;
+    String? string(String key) {
+      final value = object[key];
+      return value.isA<JSString>() ? (value as JSString).toDart : null;
+    }
+
+    final code = string('code');
+    if (string('name') == 'CoreAssetError' && code != null) {
+      return (code: code, asset: string('asset'));
+    }
+  } catch (_) {
+    // Primitive rejections carry no bridge error code.
+  }
+  return null;
 }
 
 /// Required bridge capability for an explicit JS-backed staging request.

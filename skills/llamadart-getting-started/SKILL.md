@@ -224,12 +224,9 @@ interface does not establish backend/model support; read `await engine.capabilit
     bindings stay with the hook assets used by model loading. Do not rely on
     `PATH` to replace those assets. An unavailable ggml code asset or missing
     `ggml_backend_reg_count` export throws `LlamaUnsupportedException`.
-  - Windows: llama.cpp and LiteRT-LM bundle the Visual C++ runtime DLLs
-    they need. Use `llamadart-native@v1.0.0-3` or later for the fix to
-    mismatched bundled Visual C++ runtime versions. Machines that run the
-    opt-in `stable_diffusion` runtime need
-    the latest Microsoft Visual C++ v14 Redistributable (x64); stock Windows
-    Server lacks it.
+  - Windows: llama.cpp, LiteRT-LM and the opt-in `stable_diffusion` runtime
+    bundle their required Visual C++ runtime DLLs. The build hook keeps the
+    newest file version of each shared DLL.
   - Web apps must add the WebGPU bridge script to `web/index.html`; the package
     does not inject it. `dart run llamadart:web_setup` vendors the pinned,
     checksum-verified assets and adds it.

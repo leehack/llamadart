@@ -1,0 +1,26 @@
+name: dartpad_gguf_example
+description: Chat with a GGUF model in DartPad Preview.
+publish_to: none
+
+environment:
+  sdk: ^3.10.7
+  flutter: ^3.38.6
+
+dependencies:
+  flutter:
+    sdk: flutter
+  llamadart:
+    path: ../..
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp]
+
+flutter:
+  uses-material-design: true

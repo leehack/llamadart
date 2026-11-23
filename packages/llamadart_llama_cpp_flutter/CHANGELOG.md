@@ -1,3 +1,11 @@
+## 0.20.7
+
+- Update the installation example to core `0.20.7`. Apple SwiftPM stays pinned to `leehack/llamadart-native@v1.0.0-4`.
+
+## 0.20.6
+
+- Update the installation example to core `0.20.6`. Apple SwiftPM stays pinned to `leehack/llamadart-native@v1.0.0-4`.
+
 ## 0.20.5
 
 - Update the installation example to core `0.20.5`. Apple SwiftPM stays pinned to `leehack/llamadart-native@v1.0.0-4`.

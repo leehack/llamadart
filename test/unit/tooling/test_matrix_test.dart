@@ -362,6 +362,17 @@ void main() {
       ),
     );
   });
+  test('single-thread core evidence is listed as a local-only Web smoke', () {
+    final row = testMatrixRows.singleWhere(
+      (row) => row.id == 'web-single-thread-core',
+    );
+    expect(row.mode, 'local-only, Chromium');
+    expect(
+      row.command,
+      'dart run tool/testing/run_local_e2e.dart --scenario web-single-thread-core',
+    );
+  });
+
   test('JS-backed staging evidence is listed as a local-only Web smoke', () {
     final row = testMatrixRows.singleWhere(
       (row) => row.id == 'web-js-backed-model-staging',

@@ -206,7 +206,7 @@ jobs:
         working-directory: packages/genkit_llamadart
         run: |
           dart --version
-          dart pub add crypto@3.0.7 genkit@1.0.0 http@1.6.0 llamadart@0.19.7 schemantic@1.0.0
+          dart pub add crypto@3.0.7 genkit@1.0.0 http@1.6.0 llamadart@0.20.6 schemantic@1.0.0
       - name: Analyze and test minimum dependencies
         if: matrix.part == 'lower bounds and published'
         working-directory: packages/genkit_llamadart
@@ -250,6 +250,15 @@ jobs:
           dart pub get
           dart analyze --fatal-infos
           TMPDIR="$(mktemp -d)" dart test -x real-model
+      - name: Verify the Genkit DartPad example against checkout core
+        if: ${{ !cancelled() && matrix.part == 'local core' }}
+        working-directory: packages/genkit_llamadart/example/dartpad
+        run: |
+          printf 'dependency_overrides:\n  llamadart:\n    path: ../../../..\n' > pubspec_overrides.yaml
+          flutter pub get
+          flutter analyze --fatal-infos
+          TMPDIR="$(mktemp -d)" flutter test
+          flutter test --platform chrome test/bridge_bootstrap_web_test.dart
       - name: Cache existing real-model fixtures
         if: ${{ !cancelled() && matrix.part == 'local core' }}
         uses: actions/cache@v6
@@ -282,10 +291,10 @@ jobs:
           test/integration/genkit/converters/genkit_to_llama/rich_tool_schemas_test.dart
           test/integration/genkit/actions/model_action/rich_tool_schemas_test.dart
           test/integration/genkit/plugin/rich_tool_schema_loop_test.dart
-      - name: Remove local override
+      - name: Remove local overrides
         if: ${{ always() && matrix.part == 'local core' }}
         working-directory: packages/genkit_llamadart
-        run: rm -f pubspec_overrides.yaml
+        run: rm -f pubspec_overrides.yaml example/dartpad/pubspec_overrides.yaml
 
   model-store:
     needs: changes
@@ -827,6 +836,13 @@ jobs:
         run: |
           flutter pub get
           TMPDIR="$(mktemp -d)" dart test --exclude-tags local-only
+
+      - name: Test dartpad_gguf
+        if: ${{ !cancelled() }}
+        working-directory: example/dartpad_gguf
+        run: |
+          flutter pub get
+          TMPDIR="$(mktemp -d)" flutter test --exclude-tags local-only
 
       - name: Test laya_command_bar
         if: ${{ !cancelled() }}

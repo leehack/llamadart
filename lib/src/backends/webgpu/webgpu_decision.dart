@@ -483,16 +483,47 @@ class WebGpuDecisionHeads {
   }
 }
 
-/// Returns the message of a bridge [error] with URLs redacted by
-/// [redactUrlSecrets], parsing [sourceUrls] as the browser does.
+final RegExp _opaqueUrlScheme = RegExp(r'^(data|blob):', caseSensitive: false);
+final RegExp _opaqueUrlInText = RegExp(
+  r'''(?<![\w.+-])(?:(data):(?:<redacted>|(?=\S)[\s\S]*)|'''
+  r'''(blob):(?:<redacted>|[^\s"'<>]+))''',
+  caseSensitive: false,
+);
+
+/// Returns the message of a bridge [error] with opaque URLs removed and
+/// other URLs redacted by [redactUrlSecrets].
 String webGpuBridgeErrorText(
   Object error, {
   Iterable<String> sourceUrls = const <String>[],
-}) => redactUrlSecrets(
-  _bridgeErrorMessage(error),
-  sourceUrls: sourceUrls,
-  parseUrl: _parseBrowserUrl,
-);
+}) {
+  var text = _bridgeErrorMessage(error);
+  final opaque = <String, String>{};
+  for (final url in sourceUrls) {
+    final trimmed = url.trim();
+    final scheme = _opaqueUrlScheme.firstMatch(trimmed);
+    if (scheme == null) continue;
+    final placeholder = '${scheme[1]!.toLowerCase()}:<redacted>';
+    opaque[trimmed] = placeholder;
+    final href = _parseBrowserUrl(url)?.href;
+    if (href != null && href.isNotEmpty) opaque[href] = placeholder;
+  }
+  if (opaque.isNotEmpty) {
+    final candidates = opaque.keys.toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+    text = text.replaceAllMapped(
+      RegExp(candidates.map(RegExp.escape).join('|')),
+      (match) => opaque[match[0]!]!,
+    );
+  }
+  return redactUrlSecrets(
+    text.replaceAllMapped(
+      _opaqueUrlInText,
+      (match) => '${(match[1] ?? match[2])!.toLowerCase()}:<redacted>',
+    ),
+    sourceUrls: sourceUrls,
+    parseUrl: _parseBrowserUrl,
+  );
+}
 
 String _sourceDisplayUrl(String url) =>
     sourceUrlDisplay(url, parseUrl: _parseBrowserUrl);

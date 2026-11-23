@@ -1275,7 +1275,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
           contains('crypto@3.0.7'),
           contains('genkit@1.0.0'),
           contains('http@1.6.0'),
-          contains('llamadart@0.19.7'),
+          contains('llamadart@0.20.6'),
           contains('schemantic@1.0.0'),
         ),
       );
@@ -1494,15 +1494,38 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
       legs[localCore],
       containsAll([
         'Test adapter against checkout core',
+        'Verify the Genkit DartPad example against checkout core',
         'Run existing native real-model contracts',
         'Verify browser contracts against checkout core',
-        'Remove local override',
+        'Remove local overrides',
       ]),
     );
     expect(
       legs[localCore],
       isNot(contains(startsWith('dart-lang/setup-dart'))),
     );
+    const example = 'packages/genkit_llamadart/example/dartpad';
+    final dartPad = steps.singleWhere(
+      (step) => step['working-directory'] == example,
+    );
+    expect(dartPad['if'], contains("matrix.part == 'local core'"));
+    expect(
+      dartPad['run'],
+      allOf(
+        contains('path: ../../../..'),
+        contains('flutter pub get'),
+        contains('flutter analyze --fatal-infos'),
+        contains(r'TMPDIR="$(mktemp -d)" flutter test'),
+        contains(
+          'flutter test --platform chrome test/bridge_bootstrap_web_test.dart',
+        ),
+      ),
+    );
+    final cleanup = steps.singleWhere(
+      (step) => step['name'] == 'Remove local overrides',
+    );
+    expect(cleanup['if'], r"${{ always() && matrix.part == 'local core' }}");
+    expect(cleanup['run'], contains('example/dartpad/pubspec_overrides.yaml'));
   });
 
   test(

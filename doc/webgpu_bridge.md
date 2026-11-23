@@ -8,15 +8,16 @@ memory64, fallback, troubleshooting) is on the docs site:
 
 ## Ownership
 
-Bridge source and build CI live in `leehack/llama-web-bridge`; published CDN
-assets in `leehack/llama-web-bridge-assets`. `llamadart` only consumes them;
-see `website/docs/maintainers/runtime-ownership.md`.
+Bridge source and build CI live in `leehack/llama-web-bridge`. The build
+publishes matching assets to the `llama-web-bridge` npm package and the
+`leehack/llama-web-bridge-assets` GitHub repository. See
+`website/docs/maintainers/runtime-ownership.md`.
 
 ## Chat app bootstrap
 
 `example/chat_app/web/index.html` builds two bridge URLs:
 
-- CDN: `https://cdn.jsdelivr.net/gh/<repo>@<tag>/llama_webgpu_bridge.js`
+- CDN: `https://cdn.jsdelivr.net/npm/llama-web-bridge@<version>/dist/llama_webgpu_bridge.js`
 - Local: `./webgpu_bridge/llama_webgpu_bridge.js?v=<tag>-local-<llama.cpp tag>`
 
 It prefers the local runtime, then falls back to the CDN, when the page is
@@ -57,7 +58,7 @@ an earlier `<script>`:
 
 | Global | Effect |
 | --- | --- |
-| `__llamadartBridgeAssetsRepo`, `__llamadartBridgeAssetsTag` | CDN source; defaults to `leehack/llama-web-bridge-assets` at the pinned tag |
+| `__llamadartBridgeAssetsRepo`, `__llamadartBridgeAssetsTag` | CDN source and tag. Official stable tags from v0.1.91 use npm. Earlier tags, suffixed tags, other refs and custom repositories use jsDelivr's GitHub route. |
 | `__llamadartPreferLocalBridgeRuntime` | `true` loads local assets first off `localhost` |
 | `__llamadartBridgeEnableMem64` | `true` sets `__llamadartBridgePreferMemory64`; default off |
 | `__llamadartBridgeThreadPoolSize` | Thread hint; chat app default 1 when the page is not cross-origin isolated, else `hardwareConcurrency` clamped to 2..4 |
@@ -67,17 +68,21 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.92`.
+Default pinned tag in the example is `v0.1.93`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.92 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.93 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
-`WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
-`sha256sums.txt` when the release provides it.
+`WEBGPU_BRIDGE_OUT_DIR` changes the destination.
+`WEBGPU_BRIDGE_CDN_BASE` overrides the download URL. Without an override, the
+script uses the same tag mapping as the chat app. For official stable releases
+from v0.1.91 onward, `vX.Y.Z` becomes `X.Y.Z` under the npm package's `dist/`
+directory. The script verifies `sha256sums.txt` when the release provides it.
 
-Apps use `dart run llamadart:web_setup` (`bin/web_setup.dart`) instead. It
+Apps use `dart run llamadart:web_setup` (`bin/web_setup.dart`). It downloads
+from the pinned npm version through jsDelivr and
 pins the tag and the manifest SHA-256 in
 `lib/src/web_setup/web_bridge_setup.dart`, verifies every runtime file against
 that manifest's `files` digests and sizes before replacing anything, and keeps
@@ -90,17 +95,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.92';
+  window.__llamadartBridgeAssetsTag = 'v0.1.93';
 </script>
 ```
 
 That release embeds llama.cpp `v1.0.0`, matching the `hook/build.dart` native pin
 (`v1.0.0-4`, both built from upstream llama.cpp `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`)
-even though the bridge asset tag `v0.1.92` differs from the native runtime tag
-`v1.0.0-4`. Provenance for this immutable consumer artifact: release `454541989`,
-tag commit `056f474f389feaa4e02a62a3125549cb9154fabf`, bridge source
-`d7236223d2393d51dab541df6caf3ef88f06d49b`, and manifest SHA-256
-`4f2fb82d55a932e9182e703d5265f3fc5875f808d4d9aa0ba18a0585d0d7784b`.
+even though the bridge asset tag `v0.1.93` differs from the native runtime tag
+`v1.0.0-4`. Provenance for this immutable consumer artifact: release `454836373`,
+tag commit `00866ed50f48ea4f9622c1b5e380f27405567033`, bridge source
+`273fe3bb59e7dcbb419ab25409863bb39826709a`, and manifest SHA-256
+`d6200d9f467b20a942f4a77ff7041d98815ecb16acecd5176040b503f3544f95`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
@@ -378,16 +383,37 @@ web backend load options).
 
 ## Hosting headers
 
-Large single-file GGUF loads are only reliable when the page is cross-origin
-isolated (`Cross-Origin-Opener-Policy: same-origin`,
-`Cross-Origin-Embedder-Policy: require-corp`; `credentialless` isolates only in
-Chromium-based browsers, see
-[#1025](https://github.com/leehack/llamadart/issues/1025)). Without it
-the web core cannot start: assets `v0.1.85+` reject the load at once
-with `CrossOriginIsolationError` (`code: 'CROSS_ORIGIN_ISOLATION_REQUIRED'`),
-which `WebGpuLlamaBackend` throws as `LlamaUnsupportedException` on the direct
-and worker paths; earlier assets waited minutes (the init timeout, retried: 180 s direct,
-360 s worker) before a generic `Bridge core init timeout` error. `credentialless` does not isolate Safari.
+Cross-origin isolation enables shared memory for the threaded GGUF core
+(`Cross-Origin-Opener-Policy: same-origin`,
+`Cross-Origin-Embedder-Policy: require-corp`; `credentialless` isolates only
+in Chromium-based browsers, see
+[#1025](https://github.com/leehack/llamadart/issues/1025)). Dart also uses the
+threaded core on non-isolated pages that can post shared Wasm memory.
+
+When a non-isolated page cannot post shared Wasm memory, Dart passes
+`allowSingleThreadCore: true` and selects the single-thread URLs for both Wasm
+widths. With the flag unset, the first successful core preflight logs a
+console warning about lower performance and how to enable isolation or opt
+out. Set `true` to skip that warning or `false` to require the threaded core
+and throw `LlamaUnsupportedException` before dispatch when threads are
+unavailable. The flag also accepts the other bridge globals' boolean aliases.
+
+Dart requires assets v0.1.93+ and checks the constructor's
+`supportsCorePreflight` flag before calling `preflightCore()`. The bridge
+initializes the core before model transfer and handles memory64 fallback
+and adjacent Wasm resolution. The model load reuses that core and retains
+the same `modelBytesHint` selection and allocation retry policy. Missing
+core assets and older bridges or workers produce `LlamaUnsupportedException`
+with instructions to run `dart run llamadart:web_setup` or enable COOP/COEP.
+Bridge module load failures retain their redacted bootstrap or import error.
+Model download and GGUF failures retain their ordinary error types.
+
+The preflight must report `threading: 'single-thread'`. After model load,
+`llamadart.webgpu.runtime_notes` includes the preflight variant, threading
+and fallback result. The bridge also reports the actual loaded
+`core_variant`, the `execution` mode and the `core_single_thread` runtime note.
+Fetch-backed loading requires pthreads. Dart excludes it from automatic
+staging recovery on the single-thread path and rejects a forced request.
 
 For Hugging Face Spaces with `sdk: static`, set the headers in the Space
 README frontmatter; keys and values must be lowercase:
@@ -462,6 +488,8 @@ window.LlamaWebGpuBridge = class LlamaWebGpuBridge {
 ## Required methods
 
 `WebGpuLlamaBackend` can use these methods if present:
+
+- `preflightCore()` when the constructor reports `supportsCorePreflight: true`
 
 - `loadModelFromUrl(url, { nCtx, nThreads, nThreadsBatch, nBatch, nUbatch, nGpuLayers, nSeqMax, flashAttention, cacheTypeK, cacheTypeV, kvUnified, ropeFrequencyBase, ropeFrequencyScale, splitMode, mainGpu, useCache, forceRemoteFetchBackend, remoteFetchChunkBytes, loadMtp, speculativeRollbackTokenMax, progressCallback })`
 - `prefetchModelToCache(url, { useCache, force, cacheName, progressCallback })`
@@ -620,6 +648,13 @@ in both runtimes.
 
 ## Runtime globals read by `llamadart`
 
+- `window.__llamadartBridgeAllowSingleThreadCore`: unset uses the single-thread
+  core when threads are unavailable and warns once. `true` accepts it without
+  a warning. `false` requires the threaded core.
+- `window.__llamadartBridgeCoreModuleUrlSt` and
+  `window.__llamadartBridgeWasmUrlSt` supply the single-thread wasm32 core.
+  `window.__llamadartBridgeCoreModuleUrlMem64St` and
+  `window.__llamadartBridgeWasmUrlMem64St` supply its memory64 variant.
 - `window.__llamadartBridgeAllowAutoRemoteFetchBackend`: default `false`;
   streamed staging stays the default. `true` only for a controlled origin that
   serves valid GGUF byte ranges; it also lets Dart recovery paths retry with

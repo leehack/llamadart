@@ -11,11 +11,14 @@ import 'package:yaml/yaml.dart';
 
 import '../../../tool/release/collect_pr_changelog.dart';
 import '../../../tool/release/pr_changelog.dart';
+import '../../support/dart_script_snapshot.dart';
 
 const _root = 'CHANGELOG.md';
 const _docs = 'website/docs/changelog/recent-releases.md';
 const _archive = 'doc/changelog_archive.md';
 const _marker = 'tool/release/changelog_pr_cutover.json';
+const _resolutions = 'tool/release/pr_resolutions';
+const _collector = 'tool/release/collect_pr_changelog.dart';
 const _rootIntro = '# Notes\n\n[Archive](doc/changelog_archive.md)\n\n';
 const _docsIntro =
     '---\ntitle: Releases\n---\n\n[All releases](CHANGELOG.md)\n\n';
@@ -40,13 +43,17 @@ const _identity = {
 const _coauthorBlock = '---------\n\nCo-authored-by: A <a@example.invalid>';
 const _signoff = 'Signed-off-by: B <b@example.invalid>';
 
+late final _Repo _seedRepo;
+late final String _collectorSnapshot;
+
 String _fixtureBridgeDefault(String tag) =>
     r'ASSETS_TAG="${WEBGPU_BRIDGE_ASSETS_TAG:-'
     '$tag'
     r'}"';
 
 class _Repo {
-  _Repo({
+  _Repo(
+    this.dir, {
     String? legacyRoot,
     String? legacyDocs,
     String previous = '0.20.2',
@@ -95,7 +102,21 @@ const String webBridgeManifestSha256 =
     );
   }
 
-  final dir = Directory.systemTemp.createTempSync('clpre-changelog-git-');
+  _Repo.clone(this.dir, _Repo seed)
+    : from = seed.from,
+      boundary = seed.boundary,
+      activation = seed.activation {
+    git([
+      'clone',
+      '--shared',
+      '--config',
+      'core.autocrlf=false',
+      seed.dir.path,
+      '.',
+    ]);
+  }
+
+  final Directory dir;
   final String from;
   late final String boundary;
   late final String activation;
@@ -159,31 +180,36 @@ const String webBridgeManifestSha256 =
 
   Future<ProcessResult> cli(List<String> args) => Process.run(
     Platform.resolvedExecutable,
-    [File('tool/release/collect_pr_changelog.dart').absolute.path, ...args],
+    [_collectorSnapshot, ...args],
     workingDirectory: dir.path,
     environment: const {'GH_HOST': 'github.com'},
   );
 }
 
-_Repo _repo({
+_Repo _repo() => _Repo.clone(_repoDirectory(), _seedRepo);
+
+Directory _repoDirectory() {
+  final dir = Directory.systemTemp.createTempSync('clpre-changelog-git-');
+  addTearDown(() => dir.deleteSync(recursive: true));
+  return dir;
+}
+
+_Repo _customRepo({
   String? legacyRoot,
   String? legacyDocs,
   String previous = '0.20.2',
   String history = _oldRelease,
   String activationSection = 'N/A: Enables maintainer tooling.',
   String? taggedVersion,
-}) {
-  final repo = _Repo(
-    legacyRoot: legacyRoot,
-    legacyDocs: legacyDocs,
-    previous: previous,
-    history: history,
-    activationSection: activationSection,
-    taggedVersion: taggedVersion,
-  );
-  addTearDown(() => repo.dir.deleteSync(recursive: true));
-  return repo;
-}
+}) => _Repo(
+  _repoDirectory(),
+  legacyRoot: legacyRoot,
+  legacyDocs: legacyDocs,
+  previous: previous,
+  history: history,
+  activationSection: activationSection,
+  taggedVersion: taggedVersion,
+);
 
 String _draft(String stdout) => stdout.substring(stdout.indexOf('## 0.20.3\n'));
 
@@ -207,7 +233,286 @@ Map<String, Object?> _ledgerRow(String output, int number) => output
     .map((line) => jsonDecode(line) as Map<String, Object?>)
     .singleWhere((row) => row['pr'] == number);
 
+String _resolutionRecord(
+  String sha,
+  String digest, {
+  int pr = 42,
+  String version = '0.20.3',
+}) =>
+    '${jsonEncode({'version': version, 'sha': sha, 'pr': pr, 'sectionSha256': digest})}\n';
+
+Future<String> _resolutionDigest(_Repo repo, String body) async {
+  final input = repo.file('.git/resolution-body.md')..writeAsStringSync(body);
+  return (await _collect(repo, ['--section-sha256', input.path])).trim();
+}
+
 void main() {
+  setUpAll(() async {
+    // Shared clones borrow objects from this repository until they are deleted.
+    _seedRepo = _Repo(_repoDirectory());
+    _collectorSnapshot = await compileDartScript(_collector);
+  });
+
+  group('reviewed PR resolution', () {
+    const body = '## Changelog\nN/A: Package maintenance.';
+    late _Repo repo;
+    late String commit;
+    late String path;
+    late String digest;
+
+    setUp(() async {
+      repo = _repo();
+      commit = repo.commit('Prepare the companion package');
+      path = '$_resolutions/$commit.json';
+      digest = await _resolutionDigest(repo, body);
+    });
+
+    for (final (section, disposition) in [
+      ('N/A: Package maintenance.', 'n/a'),
+      ('- Keep the resolved core note.', 'included'),
+    ]) {
+      test('collects $disposition notes and verifies the receipt', () async {
+        final authored = '## Changelog\n$section';
+        final expectedDigest = await _resolutionDigest(repo, authored);
+        final through = repo.pr(43, 'N/A: Reviews the resolution.', {
+          path: _resolutionRecord(commit, expectedDigest),
+        });
+        final pull = _pull(42, commit, body: authored);
+        final responses = <String, Object?>{
+          'commits/$commit/pulls': [
+            [pull],
+          ],
+          'pulls/42': {...pull, 'commits': 1},
+        };
+        final calls = <String>[];
+        final output = await _collect(
+          repo,
+          repo.args(write: true),
+          responses,
+          calls,
+        );
+        expect(calls, ['commits/$commit/pulls', 'pulls/42']);
+        expect(_ledgerRow(output, 42), {
+          'sha': commit,
+          'pr': 42,
+          'source': 'api',
+          'disposition': disposition,
+          'resolution': path,
+          'sectionSha256': expectedDigest,
+          if (disposition == 'n/a')
+            'reason': 'Package maintenance.'
+          else
+            'bullets': [
+              {'target': 'core', 'text': 'Keep the resolved core note.'},
+            ],
+        });
+        for (final changelog in [_root, _docs]) {
+          final notes = repo.file(changelog).readAsStringSync();
+          expect(notes, contains('## 0.20.3\n'));
+          expect(notes, isNot(contains('Package maintenance.')));
+          if (disposition == 'included') expect(notes, contains('$section\n'));
+        }
+
+        final receipt = repo.file('.git/resolution-receipt.md')
+          ..writeAsStringSync(_receiptBlock(output));
+        repo.write(path, 'Uncommitted edit.\n');
+        expect(
+          await _collect(repo, repo.args(verify: receipt.path), responses),
+          contains('Release notes input verified.'),
+        );
+        expect(_receiptBlock(output), contains('Through: $through\n'));
+      });
+    }
+
+    test('ignores old resolutions outside the new release window', () async {
+      repo.pr(43, 'N/A: Reviews the resolution.', {
+        path: _resolutionRecord(commit, digest),
+      });
+      repo.commit('Release 0.20.3', {
+        'pubspec.yaml': 'name: llamadart\nversion: 0.20.3\n',
+        _root: '$_rootIntro## 0.20.3\n\n- Released.\n\n$_oldRelease',
+        _docs: '$_docsIntro## 0.20.3\n\n- Released.\n\n$_oldRelease',
+      });
+      repo.git(['tag', '-a', 'v0.20.3', '-m', 'Next release']);
+      repo.pr(44, '- New release note.');
+      final output = await _collect(
+        repo,
+        repo.args(version: '0.20.4', from: 'v0.20.3'),
+      );
+      expect(output, contains('- New release note.'));
+      expect(output, isNot(contains(path)));
+    });
+
+    test('ignores working-tree, staged and newer commit records', () async {
+      repo.write(path, _resolutionRecord(commit, digest));
+      final calls = <String>[];
+      Future<void> check() => expectLater(
+        _collect(repo, repo.args(through: commit), {}, calls),
+        throwsA(_formatError('missing final PR number in commit subject')),
+      );
+      await check();
+      repo.git(['add', path]);
+      await check();
+      repo.pr(43, 'N/A: Reviews the resolution.');
+      await check();
+      expect(calls, isEmpty);
+    });
+
+    test('keeps the anchored subject PR ahead of a resolution', () async {
+      final repo = _repo();
+      final numbered = repo.pr(4, '- Keep the landed note.');
+      final path = '$_resolutions/$numbered.json';
+      repo.pr(43, 'N/A: Reviews the resolution.', {
+        path: _resolutionRecord(numbered, digest, pr: 99),
+      });
+      final output = await _collect(repo, repo.args());
+      expect(_ledgerRow(output, 4)['source'], 'git');
+      expect(output, isNot(contains(path)));
+    });
+
+    for (final (kind, message) in [
+      ('wrong version', 'PR resolution version 0.20.4 does not match 0.20.3'),
+      ('wrong SHA', 'invalid canonical PR resolution record'),
+      ('extra key', 'invalid canonical PR resolution record'),
+      ('duplicate key', 'invalid canonical PR resolution record'),
+      ('whitespace', 'invalid canonical PR resolution record'),
+      ('invalid JSON', 'invalid PR resolution JSON'),
+      ('executable', 'must be a regular non-executable file'),
+      ('symlink', 'must be a regular non-executable file'),
+    ]) {
+      test('rejects a record with $kind', () async {
+        final valid = _resolutionRecord(commit, digest);
+        final source = switch (kind) {
+          'wrong version' => _resolutionRecord(
+            commit,
+            digest,
+            version: '0.20.4',
+          ),
+          'wrong SHA' => _resolutionRecord(repo.activation, digest),
+          'extra key' => valid.replaceFirst('{', '{"extra":0,'),
+          'duplicate key' => valid.replaceFirst('{', '{"pr":42,'),
+          'whitespace' => ' $valid',
+          'invalid JSON' => '{\n',
+          _ => valid,
+        };
+        repo.write(path, source);
+        if (kind == 'executable') {
+          repo.git(['add', '--chmod=+x', path]);
+          repo.git(['commit', '-m', 'Add executable resolution (#43)']);
+        } else {
+          if (kind == 'symlink') {
+            repo.file(path).deleteSync();
+            Link(repo.file(path).path).createSync('elsewhere.json');
+          }
+          repo.pr(43, 'N/A: Fixture resolution.');
+        }
+        await expectLater(
+          _collect(repo, repo.args()),
+          throwsA(_formatError(message)),
+        );
+      });
+    }
+
+    for (final (kind, message) in [
+      ('missing association', 'no matching merged main PR association'),
+      ('wrong PR', 'no matching merged main PR association'),
+      ('wrong merge SHA', 'PR association has the wrong merge commit'),
+      ('ambiguous associations', 'ambiguous merged main PR associations'),
+      ('unmerged detail', 'PR detail conflicts'),
+      ('foreign repo detail', 'PR detail conflicts'),
+      ('non-main detail', 'PR detail conflicts'),
+      ('multiple commits', 'resolved PR must contain exactly one commit'),
+      ('missing commit count', 'resolved PR must contain exactly one commit'),
+      (
+        'non-integer commit count',
+        'resolved PR must contain exactly one commit',
+      ),
+      (
+        'edited body',
+        'Changelog digest conflicts with the reviewed resolution',
+      ),
+    ]) {
+      test('rejects GitHub evidence with $kind', () async {
+        repo.pr(43, 'N/A: Reviews the resolution.', {
+          path: _resolutionRecord(commit, digest),
+        });
+        final pull = _pull(42, commit, body: body);
+        final associations = switch (kind) {
+          'missing association' => [],
+          'wrong PR' => [_pull(44, commit)],
+          'wrong merge SHA' => [_pull(42, repo.activation)],
+          'ambiguous associations' => [pull, _pull(44, commit)],
+          _ => [pull],
+        };
+        final detail = _pull(
+          42,
+          commit,
+          body: kind == 'edited body' ? '## Changelog\n- Edited.' : body,
+          merged: kind != 'unmerged detail',
+          repository: kind == 'foreign repo detail'
+              ? 'fork/llamadart'
+              : 'leehack/llamadart',
+          branch: kind == 'non-main detail' ? 'other' : 'main',
+        );
+        await expectLater(
+          _collect(repo, repo.args(), {
+            'commits/$commit/pulls': [associations],
+            'pulls/42': {
+              ...detail,
+              if (kind != 'missing commit count')
+                'commits': switch (kind) {
+                  'multiple commits' => 2,
+                  'non-integer commit count' => 1.0,
+                  _ => 1,
+                },
+            },
+          }),
+          throwsA(_formatError(message)),
+        );
+      });
+    }
+
+    test('rejects a shared batch association before reading details', () async {
+      final previous = repo.pr(44, '- Keep the constituent note.');
+      final batch = repo.commit('Land the batch tip');
+      repo.pr(43, 'N/A: Reviews the resolution.', {
+        '$_resolutions/$batch.json': _resolutionRecord(batch, digest),
+      });
+      final pull = _pull(42, batch, body: body);
+      final calls = <String>[];
+      await expectLater(
+        _collect(repo, repo.args(), {
+          'commits/$batch/pulls': [
+            [pull],
+          ],
+          'commits/$previous/pulls': [
+            [pull],
+          ],
+          'pulls/42': {...pull, 'commits': 1},
+        }, calls),
+        throwsA(_formatError('shared batch association')),
+      );
+      expect(calls, ['commits/$batch/pulls', 'commits/$previous/pulls']);
+    });
+  });
+
+  test('pins the committed PR #2180 resolution', () {
+    const sha = '48af8ec5bc294620bd63a1e1818f6c6593afb5d3';
+    const digest =
+        'c99db03b6bdb4ef1bc771c35d31d2c766d52dd77f21fe94896266271ceb0a14e';
+    final source = File('$_resolutions/$sha.json').readAsStringSync();
+    expect(
+      source,
+      '{"version":"0.20.7","sha":"$sha","pr":2180,"sectionSha256":"$digest"}\n',
+    );
+    expect(jsonDecode(source), {
+      'version': '0.20.7',
+      'sha': sha,
+      'pr': 2180,
+      'sectionSha256': digest,
+    });
+  });
+
   for (final (wide, skipped, badInverse, failure, ambiguous) in [
     (false, 0, false, null, false),
     (false, 0, false, null, true),
@@ -568,9 +873,6 @@ void main() {
         setBody(body);
         final script = File('tool/release/verify_release_candidate.sh');
         repo.write(script.path, script.readAsStringSync());
-        final dart = File(
-          'tool/release/collect_pr_changelog.dart',
-        ).absolute.path;
         repo.write('.git/dart', r'''#!/usr/bin/env bash
 if [[ "$1" == tool/testing/check_released_changelog_sections.dart ]]; then
   echo 'Core release prep: true'
@@ -634,7 +936,7 @@ exec cat "$FIXTURE_GITHUB_SQUASH"
           'RUNNER_TEMP': repo.file('.git').path,
           'PATH': '${repo.file('.git').path}:${Platform.environment['PATH']}',
           'FIXTURE_DART': Platform.resolvedExecutable,
-          'FIXTURE_COLLECTOR': dart,
+          'FIXTURE_COLLECTOR': _collectorSnapshot,
           'FIXTURE_GITHUB_SQUASH': github.path,
           'GITHUB_REPOSITORY': 'owner/repo',
         };
@@ -903,7 +1205,7 @@ fi
   );
 
   test('hashes the golden JSONL input in order with a final LF', () async {
-    final repo = _repo(legacyRoot: '- Seed café.\n\n');
+    final repo = _customRepo(legacyRoot: '- Seed café.\n\n');
     final first = repo.pr(
       4,
       '- Fixture note.\n- [packages/genkit_llamadart] Package note.',
@@ -1216,7 +1518,7 @@ fi
   );
 
   test('rejects an activation commit with a bullet instead of N/A', () async {
-    final repo = _repo(activationSection: '- Adds a release note.');
+    final repo = _customRepo(activationSection: '- Adds a release note.');
     await expectLater(
       _collect(repo, repo.args()),
       throwsA(_formatError('introduced by its N/A activation commit')),
@@ -1224,7 +1526,7 @@ fi
   });
 
   test('rejects --from when it differs from the latest heading', () async {
-    final repo = _repo(
+    final repo = _customRepo(
       history: '## 0.20.4\n\n- Later release.\n\n$_oldRelease',
     );
     await expectLater(
@@ -1238,7 +1540,7 @@ fi
   test(
     'rejects a core tag whose version differs from the root pubspec',
     () async {
-      final repo = _repo(taggedVersion: '0.20.1');
+      final repo = _customRepo(taggedVersion: '0.20.1');
       await expectLater(
         _collect(repo, repo.args()),
         throwsA(
@@ -1266,7 +1568,9 @@ fi
   test(
     'includes the matching legacy seed once and skips it after a newer tag',
     () async {
-      final repo = _repo(legacyRoot: '- Seed note.\n  Preserve  wrapping.\n\n');
+      final repo = _customRepo(
+        legacyRoot: '- Seed note.\n  Preserve  wrapping.\n\n',
+      );
       repo.pr(3, '- First post-cutover note.');
       final first = await _collect(repo, repo.args(write: true));
       expect(_draft(first), contains('Seed note.\n  Preserve  wrapping.'));
@@ -1287,7 +1591,10 @@ fi
   );
 
   test('rejects unequal legacy seed blobs', () async {
-    final repo = _repo(legacyRoot: '- First.\n\n', legacyDocs: '- Second.\n\n');
+    final repo = _customRepo(
+      legacyRoot: '- First.\n\n',
+      legacyDocs: '- Second.\n\n',
+    );
     await expectLater(
       _collect(repo, repo.args()),
       throwsA(
@@ -1316,7 +1623,7 @@ fi
           '## 0.20.2\r\n\r\n- Two.  \r\n\r\n'
           '## 0.20.0\n\n- Zero.\n\n';
       const tail = '## 0.18.7\n\n* Older  release.\n';
-      final repo = _repo(history: '$headHistory$tail');
+      final repo = _customRepo(history: '$headHistory$tail');
       await _collect(repo, repo.args(version: '1.0.0', write: true));
       final root = repo.file(_root).readAsStringSync();
       final docs = repo.file(_docs).readAsStringSync();
@@ -1331,7 +1638,7 @@ fi
     'only moves a whole root section to the archive when size requires it',
     () async {
       final oldest = '## 0.18.7\n\n- ${'x' * (256 * 1024)}.\n';
-      final repo = _repo(history: '$_oldRelease$oldest');
+      final repo = _customRepo(history: '$_oldRelease$oldest');
       const rootPrefix = 'Releases before 0.18.7 are in the\narchive.\n\n';
       const archivePrefix =
           'Releases of `llamadart` before 0.18.7, moved verbatim from\nroot.\n\n';

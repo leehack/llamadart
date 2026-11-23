@@ -49,12 +49,9 @@ after load. The bridge ignores negative `mainGpu` values, including with
   credentialless` isolates the page in Chromium-based browsers only: Safari 27
   reports `crossOriginIsolated === false` with it and `true` with
   `require-corp` ([#1025](https://github.com/leehack/llamadart/issues/1025)).
-  Without isolation (`window.crossOriginIsolated === false`) the web core
-  cannot start, and bridge assets `v0.1.85+` reject the load at once
-  with `CrossOriginIsolationError` (`code: 'CROSS_ORIGIN_ISOLATION_REQUIRED'`).
-  llamadart reports it as a `LlamaUnsupportedException` that names COOP/COEP
-  `require-corp`; earlier assets waited minutes (the init timeout, retried) before a generic
-  `Bridge core init timeout` error.
+  Pages with neither cross-origin isolation nor usable `SharedArrayBuffer` use the
+  [single-thread GGUF core](#single-threaded-gguf-without-isolation)
+  with matching bridge assets v0.1.93+.
 
 A supported browser version does not guarantee that a GGUF loads with WebGPU
 offload; the GPU, driver, OS, flags and memory pressure all matter.
@@ -72,7 +69,8 @@ From the app root, run:
 dart run llamadart:web_setup
 ```
 
-It downloads the bridge assets your `llamadart` version pins
+It downloads the bridge assets your `llamadart` version pins from
+the `llama-web-bridge` npm package through jsDelivr
 ([Pinned bridge assets](#pinned-bridge-assets)) into `web/webgpu_bridge/`,
 checks every file against the release manifest whose SHA-256 the package pins,
 and adds a marked bootstrap block to `web/index.html` before
@@ -110,6 +108,40 @@ then fails to load in the browser, the generated bootstrap sets
 `__llamadartBridgeLoadError`, so the first model load throws
 `LlamaUnsupportedException` at once instead of waiting.
 
+### Single-threaded GGUF without isolation
+
+Run `dart run llamadart:web_setup` to install the matching wasm32 and memory64
+single-thread assets (v0.1.93+). When a non-isolated page cannot post shared
+Wasm memory to workers, GGUF loads automatically use the single-thread core
+and warn once in the console about lower performance. A non-isolated page
+with usable `SharedArrayBuffer` uses the threaded core.
+
+Set `window.__llamadartBridgeAllowSingleThreadCore = true` before the first
+model load to accept the single-thread core without a warning. Set it to
+`false` to require the threaded core. If threads are unavailable, the load
+throws `LlamaUnsupportedException` with the COOP/COEP headers to serve.
+The flag also accepts boolean aliases such as `'false'`, `'0'`, and `0`.
+
+The bridge initializes the selected core before fetching the GGUF. Missing
+core assets or an older bridge or worker produce `LlamaUnsupportedException`
+with instructions to refresh the assets or enable COOP/COEP. In
+`getMetadata()`, check `llamadart.webgpu.runtime_notes` for the
+`core_preflight_variant`, `core_preflight_threading` and
+`core_preflight_fallback` entries. The bridge reports the loaded width in
+`llamadart.webgpu.core_variant` and the execution mode in
+`llamadart.webgpu.execution`.
+
+The core uses one CPU thread. GPU layers can still be offloaded on a browser
+with a suitable WebGPU adapter. Fetch-backed loading requires pthreads and
+a browser worker. Automatic loading uses streamed staging on this core, and
+forcing fetch-backed loading throws `LlamaUnsupportedException`. Model size
+limits depend on the address space, context, GPU memory and browser. Select
+memory64 when available for larger files. Safari uses wasm32.
+
+See the [DartPad GGUF example](../examples/dartpad-gguf) for a Dart bootstrap
+that imports the bridge and sets absolute asset URLs in the preview.dartpad.dev
+iframe.
+
 ### Manual setup
 
 Without the tool, download the assets into `web/webgpu_bridge/`, with `TAG`
@@ -122,14 +154,20 @@ for f in llama_webgpu_bridge.js llama_webgpu_bridge_worker.js \
          llama_webgpu_core.js llama_webgpu_core.wasm \
          llama_webgpu_core_mem64.js llama_webgpu_core_mem64.wasm; do
   curl -fL -o "web/webgpu_bridge/$f" \
-    "https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@$TAG/$f"
+    "https://cdn.jsdelivr.net/npm/llama-web-bridge@${TAG#v}/dist/$f"
 done
 ```
 
 This loop does not verify checksums. In a llamadart checkout,
 `scripts/fetch_webgpu_bridge_assets.sh` with
 `WEBGPU_BRIDGE_OUT_DIR=<app>/web/webgpu_bridge` does the same and verifies
-them.
+them. Set `WEBGPU_BRIDGE_CDN_BASE` to use a custom download base URL.
+
+For pages without usable shared memory, also download
+`llama_webgpu_core_st.js/.wasm` and `llama_webgpu_core_mem64_st.js/.wasm` from
+the same tag. Set
+`__llamadartBridgeCoreModuleUrlSt` to the wasm32 loader URL. Configure the
+matching Wasm and memory64 URLs as needed.
 
 Then load the bridge in `web/index.html`, before `flutter_bootstrap.js`:
 
@@ -139,6 +177,15 @@ Then load the bridge in `web/index.html`, before `flutter_bootstrap.js`:
     const base = new URL('webgpu_bridge/', document.baseURI);
     window.__llamadartBridgeCoreModuleUrlMem64 =
       new URL('llama_webgpu_core_mem64.js', base).href;
+    // Supply these URLs for pages without usable shared memory.
+    window.__llamadartBridgeCoreModuleUrlSt =
+      new URL('llama_webgpu_core_st.js', base).href;
+    window.__llamadartBridgeWasmUrlSt =
+      new URL('llama_webgpu_core_st.wasm', base).href;
+    window.__llamadartBridgeCoreModuleUrlMem64St =
+      new URL('llama_webgpu_core_mem64_st.js', base).href;
+    window.__llamadartBridgeWasmUrlMem64St =
+      new URL('llama_webgpu_core_mem64_st.wasm', base).href;
     window.__llamadartBridgeSpeechToTextSupported = true;
     const mod = await import(new URL('llama_webgpu_bridge.js', base).href);
     window.__llamadartBridgeAdaptiveSafariGpu =
@@ -416,7 +463,7 @@ When retries run out, the load throws an error with runtime hints such as
 | --- | --- | --- |
 | `Web bridge is unavailable` | Bridge not loaded | Run `dart run llamadart:web_setup --check`, then [Add the bridge to your app](#add-the-bridge-to-your-app); check `window.__llamadartBridgeLoadError` and asset URLs. |
 | `navigator.gpu` missing or no adapter | Browser or device | Use a secure context, update browser and drivers, or run CPU or native. |
-| `thread constructor failed`, `error 138`, or `Browser runtime blocked worker thread creation` | Cross-origin isolation | Send COOP/COEP headers and check `window.crossOriginIsolated`, or use a smaller or sharded model. |
+| `thread constructor failed`, `error 138`, or `Browser runtime blocked worker thread creation` | Cross-origin isolation | Send COOP/COEP headers and check `window.crossOriginIsolated`, or install the single-thread assets for streamed staging. |
 | Memory, OOM, `bad_alloc` or abort during load | Model or config pressure | Reduce model size, context, threads or GPU layers; use memory64. |
 | Safari forces CPU | Safari safeguard | Set `__llamadartBridgeAdaptiveSafariGpu` from the loaded assets, or `__llamadartAllowSafariWebGpu` for testing. |
 | Works on `localhost` but not hosted | Deployment | Check base href, asset paths, COOP/COEP headers and service-worker cache. |
@@ -425,7 +472,7 @@ When retries run out, the load throws an error with runtime hints such as
 | `MODEL_STAGING_ALLOCATION_FAILED` | JavaScript staging allocation failed | Close other memory-intensive pages or use a smaller model. |
 | `MODEL_STAGING_MOUNT_FAILED` | The staging filesystem could not be mounted or retained | Reload the page and check that the bridge, worker and core assets match. |
 | `MODEL_TRANSFER_LENGTH_ERROR` | The response body length differs from its declared size | Check the model or projector origin and its range responses. |
-| `CrossOriginIsolationError` or "needs cross-origin isolation" | Page is not isolated | Send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`; `credentialless` does not isolate Safari. |
+| `CrossOriginIsolationError` or "needs cross-origin isolation" | The threaded core cannot share memory with workers | Send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`; `credentialless` does not isolate Safari. See the [single-thread setup](#single-threaded-gguf-without-isolation) for hosts that cannot set the headers. |
 | `ComputeDevice.gpu` fails with "without GPU layers" and `gpu_unavailable:adapter_missing_shader_f16` | Adapter lacks `shader-f16` | WebGPU needs `shader-f16`. On Linux with an NVIDIA GPU, Chrome exposes it only with driver 615.71 or newer; older drivers run on the CPU. |
 | GPU output unstable, CPU fine | Adapter, feature or driver | Check adapter features such as `shader-f16`; lower GPU layers. |
 
@@ -440,6 +487,9 @@ first model load, for diagnosis or controlled deployments:
 | --- | --- |
 | `__llamadartBridgeCoreModuleUrl`, `__llamadartBridgeWasmUrl` | wasm32 core module and `.wasm` URLs; default next to the bridge module |
 | `__llamadartBridgeCoreModuleUrlMem64`, `__llamadartBridgeWasmUrlMem64` | memory64 core module and `.wasm` URLs |
+| `__llamadartBridgeAllowSingleThreadCore` | Unset selects the single-thread core when threads are unavailable and warns once. `true` skips the warning. `false` requires the threaded core. |
+| `__llamadartBridgeCoreModuleUrlSt`, `__llamadartBridgeWasmUrlSt` | Single-thread wasm32 core and binary |
+| `__llamadartBridgeCoreModuleUrlMem64St`, `__llamadartBridgeWasmUrlMem64St` | Single-thread memory64 core and binary |
 | `__llamadartBridgeWorkerUrl` | Dedicated worker module URL |
 | `__llamadartBridgePreferMemory64` | memory64 preference when neither `preferMemory64` nor `modelBytesHint` decides |
 | `__llamadartBridgeThreadPoolSize` | Thread-count hint; match the bridge build's pthread pool |
@@ -464,11 +514,11 @@ worker and restores the model on the next call.
 
 ## Pinned bridge assets
 
-This llamadart version pins bridge assets `v0.1.92`, which include the
+This llamadart version pins bridge assets `v0.1.93`, which include the
 staging capability flag, API-version-1 media embedding contract, and
 `thinkingBudgetMultiEnd`.
 
-- The pinned `v0.1.92` bridge assets embed llama.cpp `v1.0.0`, matching the native runtime `v1.0.0-4`.
+- The pinned `v0.1.93` bridge assets embed llama.cpp `v1.0.0`, matching the native runtime `v1.0.0-4`.
 - Opt-in fetch-backed loads use the full GGUF URL and reuse the same WasmFS
   fetch worker across model loads. The model origin must serve valid HTTP
   byte ranges.
@@ -479,7 +529,7 @@ Provenance and the pinned manifest digest are in
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.92 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.93 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -487,7 +537,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.92';
+  window.__llamadartBridgeAssetsTag = 'v0.1.93';
 </script>
 ```
 

@@ -13,17 +13,15 @@ For Genkit or Flutter Edge AI integration setup, see
 - Flutter SDK `>= 3.38.6` (if you build Flutter apps)
 - Flutter iOS apps: deployment target `16.4` or newer
 - Flutter macOS apps: deployment target `14.0` or newer
-- Windows: nothing extra for llama.cpp and LiteRT-LM, which bundle the
-  Visual C++ runtime DLLs they need. Machines that run the opt-in
-  `stable_diffusion` runtime need the latest Microsoft Visual C++ v14
-  Redistributable (x64), which stock Windows Server lacks; see
-  [Image generation](../guides/image-generation).
+- Windows: llama.cpp, LiteRT-LM and the opt-in `stable_diffusion` runtime
+  bundle their Visual C++ runtime DLLs. See
+  [Image generation](../guides/image-generation) for CPU and Vulkan requirements.
 
 ## Add the package
 
 ```yaml
 dependencies:
-  llamadart: ^0.20.5
+  llamadart: ^0.20.7
 ```
 
 Then resolve packages:
@@ -42,10 +40,10 @@ Apple XCFrameworks:
 
 ```yaml
 dependencies:
-  llamadart: ^0.20.5
-  llamadart_llama_cpp_flutter: ^0.20.5 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.20.5 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.20.5 # Apple image generation, opt-in
+  llamadart: ^0.20.7
+  llamadart_llama_cpp_flutter: ^0.20.7 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.20.7 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.20.7 # Apple image generation, opt-in
 ```
 
 Companions use the core's `MAJOR.MINOR`; pub refuses a mismatched pair.

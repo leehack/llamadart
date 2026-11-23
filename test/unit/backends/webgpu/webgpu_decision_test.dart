@@ -763,6 +763,29 @@ void main() {
       }
     });
 
+    for (final (scheme, prefix) in [
+      ('data', 'data:text/javascript,AAA'),
+      ('blob', 'blob:https://example.com/AAA'),
+    ]) {
+      for (final suffixFirst in [false, true]) {
+        test(
+          'redacts overlapping $scheme URLs (suffix first: $suffixFirst)',
+          () {
+            final extended = '$prefix<SECRET>';
+            expect(
+              webGpuBridgeErrorText(
+                _jsError('Failed: $extended'),
+                sourceUrls: suffixFirst
+                    ? [extended, prefix]
+                    : [prefix, extended],
+              ),
+              'Failed: $scheme:<redacted>',
+            );
+          },
+        );
+      }
+    }
+
     test('redacts relative and quote-delimited URLs in bridge errors', () {
       const cases = <String, String>{
         'Failed to fetch /relative/mmproj.gguf?token=S7':

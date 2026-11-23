@@ -79,25 +79,285 @@ void main() {
   });
 
   test(
-    'the named prep job routes by identity even after body validation fails',
+    'later same-repository events cannot skip the named check after unlabeling',
     () {
-      expect(verify['name'], 'Verify release prep');
-      expect(verify['needs'], 'changelog');
+      expect(
+        verify['name'],
+        r"Verify release prep${{ matrix.number != 0 && format(' (#{0})', matrix.number) || '' }}",
+      );
       expect(
         (verify['if'] as String).replaceAll(RegExp(r'\s+'), ' '),
-        "!cancelled() && (github.event.label.name == 'release-prep' || "
-        '(github.event.pull_request.head.repo.full_name == github.repository && '
-        "(contains(github.event.pull_request.labels.*.name, 'release-prep') || "
-        "startsWith(github.event.pull_request.head.ref, 'release/'))))",
+        "!cancelled() && (github.event_name == 'pull_request' && "
+        "(github.event.label.name == 'release-prep' || "
+        'github.event.pull_request.head.repo.full_name == github.repository) || '
+        "github.event_name != 'pull_request' && "
+        "needs.open-preps.outputs.numbers != '[]' && "
+        "needs.open-preps.result == 'success')",
       );
     },
+  );
+
+  test('advances of main feed open preps into the named check', () async {
+    expect(workflow['on']['push'], {
+      'branches': ['main'],
+    });
+    expect(workflow['on']['workflow_run']['workflows'], ['Docs Version Cut']);
+    expect(workflow['on']['workflow_run']['types'], ['completed']);
+    expect(verify['needs'], ['changelog', 'open-preps']);
+    expect(
+      verify['strategy']['matrix']['number'],
+      r"${{ fromJSON(needs.open-preps.outputs.numbers || '[0]') }}",
+    );
+    final discover = jobs['open-preps'] as YamlMap;
+    expect(discover['if'], "github.event_name != 'pull_request'");
+    expect(
+      discover['outputs']['numbers'],
+      r'${{ steps.list.outputs.numbers }}',
+    );
+    expect(discover['permissions'], {'pull-requests': 'read'});
+    final step = (discover['steps'] as YamlList).single as YamlMap;
+    final temp = Directory.systemTemp.createTempSync('p3rp-open-preps-');
+    addTearDown(() => temp.deleteSync(recursive: true));
+    final output = File('${temp.path}/output');
+    final gh = File('${temp.path}/gh')
+      ..writeAsStringSync(r'''#!/bin/bash
+[[ "$*" == 'api --paginate --slurp repos/owner/repo/pulls?base=main&state=open&per_page=100' ]] || exit 64
+cat "$PREP_PAGES"
+''');
+    expect(Process.runSync('chmod', ['+x', gh.path]).exitCode, 0);
+    Map<String, Object> pr(
+      int number,
+      String ref, {
+      String repo = 'owner/repo',
+      List<String> labels = const [],
+    }) => {
+      'number': number,
+      'labels': [
+        for (final name in labels) {'name': name},
+      ],
+      'head': {
+        'ref': ref,
+        'repo': {'full_name': repo},
+      },
+    };
+    final pages = File('${temp.path}/pages')
+      ..writeAsStringSync(
+        jsonEncode([
+          [
+            pr(1, 'fix/ordinary'),
+            pr(2, 'release/0.20.7-prep', repo: 'fork/repo'),
+            pr(3, 'release/genkit_llamadart-0.1.3'),
+            pr(4, 'release/prep-0.20.7'),
+          ],
+          [
+            pr(5, 'patch-release', labels: ['release-prep']),
+          ],
+        ]),
+      );
+    final result = await Process.run(
+      'bash',
+      ['-e', '-o', 'pipefail', '-c', step['run'] as String],
+      environment: {
+        'PATH': '${temp.path}:${Platform.environment['PATH']}',
+        'PREP_PAGES': pages.path,
+        'GITHUB_REPOSITORY': 'owner/repo',
+        'GITHUB_OUTPUT': output.path,
+      },
+    );
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    expect(output.readAsStringSync(), 'numbers=[4,5]\n');
+  }, skip: Platform.isWindows ? 'Runs the Bash workflow step.' : false);
+
+  test('release prep runs with read-only API access and no Actions cache', () {
+    expect(verify['cache-mode'], 'none');
+    expect(verify['permissions'], {
+      'contents': 'read',
+      'pull-requests': 'read',
+    });
+    final setup = (verify['steps'] as YamlList)
+        .cast<YamlMap>()
+        .where((step) => step.containsKey('uses'))
+        .toList();
+    expect(setup.map((step) => step['uses']), [
+      'actions/checkout@v7',
+      'dart-lang/setup-dart@v1',
+    ]);
+    expect(setup.first['with']['persist-credentials'], isFalse);
+  });
+
+  test(
+    'base refresh requires the current main SHA and the tested PR merge ref',
+    () async {
+      final steps = (verify['steps'] as YamlList).cast<YamlMap>();
+      final checkout = steps.singleWhere(
+        (step) => step['uses'] == 'actions/checkout@v7',
+      );
+      expect(
+        checkout['with']['ref'],
+        r"${{ matrix.number != 0 && format('refs/pull/{0}/merge', matrix.number) || github.sha }}",
+      );
+      final step = steps.singleWhere(
+        (step) => step['name'] == 'Read current release prep PR',
+      );
+      final temp = Directory.systemTemp.createTempSync('p3rp-pr-snapshot-');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      final output = File('${temp.path}/env');
+      final response = File('${temp.path}/pr');
+      final gh = File('${temp.path}/gh')
+        ..writeAsStringSync(r'''#!/bin/bash
+case "$*" in
+  'api repos/owner/repo/git/ref/heads/main --jq .object.sha') echo "$MAIN_SHA" ;;
+  'api repos/owner/repo/pulls/4') cat "$PR_RESPONSE" ;;
+  *viewerMergeBodyText*) echo '{"data":{"repository":{"pullRequest":{"viewerMergeHeadlineText":"GitHub title (#4)","viewerMergeBodyText":"GitHub body"}}}}' ;;
+  *) exit 64 ;;
+esac
+''');
+      expect(Process.runSync('chmod', ['+x', gh.path]).exitCode, 0);
+      final main = 'a' * 40;
+      final head = 'b' * 40;
+      Future<ProcessResult> run(
+        String base, {
+        String repo = 'owner/repo',
+        String body = 'Original description',
+      }) {
+        response.writeAsStringSync(
+          jsonEncode({
+            'number': 4,
+            'state': 'open',
+            'title': 'Refreshed title',
+            'body': body,
+            'base': {
+              'sha': base,
+              'ref': 'main',
+              'repo': {'full_name': 'owner/repo'},
+            },
+            'head': {
+              'sha': head,
+              'repo': {'full_name': repo},
+            },
+          }),
+        );
+        return Process.run(
+          'bash',
+          ['-e', '-o', 'pipefail', '-c', step['run'] as String],
+          environment: {
+            'PATH': '${temp.path}:${Platform.environment['PATH']}',
+            'GITHUB_REPOSITORY': 'owner/repo',
+            'GITHUB_ENV': output.path,
+            'RUNNER_TEMP': temp.path,
+            'PR_NUMBER': '4',
+            'PR_RESPONSE': response.path,
+            'MAIN_SHA': main,
+          },
+        );
+      }
+
+      expect((await run('c' * 40)).exitCode, isNot(0));
+      expect((await run(main, repo: 'fork/repo')).exitCode, isNot(0));
+      expect(output.existsSync(), isFalse);
+      final result = await run(main);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      final snapshot = File('${temp.path}/release-prep-event.json');
+      expect(output.readAsStringSync(), 'PR_EVENT_PATH=${snapshot.path}\n');
+      expect(jsonDecode(snapshot.readAsStringSync()), {
+        'pull_request': jsonDecode(response.readAsStringSync()),
+      });
+
+      final git = File('${temp.path}/git')
+        ..writeAsStringSync(r'''#!/bin/bash
+case "$*" in
+  'show -s --format=%P HEAD') echo "$TESTED_BASE $TESTED_HEAD" ;;
+  "show $MAIN_SHA:tool/release/pr_changelog.dart") cat "$BODY_CHECK" ;;
+  'rev-parse HEAD'|"rev-parse HEAD^{tree}") echo "$TESTED_MERGE" ;;
+  *commit-tree*) cp "${!#}" "$RUNNER_TEMP/squash" && echo "$TESTED_MERGE" ;;
+  "checkout --detach $TESTED_MERGE") ;;
+  "show -s --format=%B $TESTED_MERGE") cat "$RUNNER_TEMP/squash" ;;
+  *) exit 64 ;;
+esac
+''');
+      final dart = File('${temp.path}/dart')
+        ..writeAsStringSync(r'''#!/bin/bash
+if [[ "$1" == "$RUNNER_TEMP/pr_changelog.dart" ]]; then
+  exec "$DART" "$@"
+fi
+if [[ "$*" == 'pub get' ]]; then exit 0; fi
+[[ "$*" == 'tool/testing/check_released_changelog_sections.dart' &&
+   "$GITHUB_EVENT_NAME" == pull_request && "$GITHUB_SHA" == "$TESTED_MERGE" &&
+   "$GITHUB_EVENT_PATH" == "$PR_EVENT_PATH" ]] || exit 64
+echo "Core release prep: $CORE_PREP"
+''');
+      File('${temp.path}/tool/release/verify_release_candidate.sh')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('cat "\$3"\n');
+      expect(Process.runSync('chmod', ['+x', git.path, dart.path]).exitCode, 0);
+      final verifyStep = steps.singleWhere(
+        (step) =>
+            step['name'] == 'Check the real PR head and tested merge result',
+      );
+      final push = File('${temp.path}/push')
+        ..writeAsStringSync(
+          '{"pull_request":{"title":"Stale title","number":4,"body":"Stale body"}}',
+        );
+      Future<ProcessResult> check(String testedBase, {bool corePrep = false}) =>
+          Process.run(
+            'bash',
+            ['-e', '-o', 'pipefail', '-c', verifyStep['run'] as String],
+            workingDirectory: temp.path,
+            environment: {
+              'PATH': '${temp.path}:${Platform.environment['PATH']}',
+              'RUNNER_TEMP': temp.path,
+              'GITHUB_EVENT_PATH': push.path,
+              'GITHUB_EVENT_NAME': 'push',
+              'GITHUB_SHA': main,
+              'PR_EVENT_PATH': snapshot.path,
+              'MAIN_SHA': main,
+              'TESTED_BASE': testedBase,
+              'TESTED_HEAD': head,
+              'TESTED_MERGE': 'd' * 40,
+              'BODY_CHECK': File(
+                'tool/release/pr_changelog.dart',
+              ).absolute.path,
+              'DART': Platform.resolvedExecutable,
+              'CORE_PREP': '$corePrep',
+            },
+          );
+      final staleMerge = await check('c' * 40);
+      expect(staleMerge.exitCode, 1);
+      expect(staleMerge.stderr, contains('Tested merge must have the PR base'));
+      final badBody = await check(main);
+      expect(badBody.exitCode, 1);
+      expect(
+        badBody.stderr,
+        contains('add a top-level "## Changelog" section'),
+      );
+      expect(
+        (await run(
+          main,
+          body: '## Changelog\nN/A: Prepares the release.',
+        )).exitCode,
+        0,
+      );
+      final fresh = await check(main);
+      expect(fresh.exitCode, 0, reason: '${fresh.stderr}');
+      expect(fresh.stdout, contains('Core release prep: false'));
+
+      final squash = await check(main, corePrep: true);
+      expect(squash.exitCode, 0, reason: '${squash.stderr}');
+      expect(
+        'Refreshed title (#4)\n\n## Changelog\nN/A: Prepares the release.'
+            .allMatches(squash.stdout as String),
+        hasLength(4),
+      );
+      expect(squash.stdout, contains('GitHub title (#4)\n\nGitHub body'));
+    },
+    skip: Platform.isWindows ? 'Runs the Bash workflow step.' : false,
   );
 
   test(
     'the named prep job fails invalid descriptions before checkout',
     () async {
       final step = (verify['steps'] as YamlList).first as YamlMap;
-      expect(step['if'], isNull);
+      expect(step['if'], "github.event_name == 'pull_request'");
       expect(step['continue-on-error'], isNull);
       expect(step['shell'], 'bash');
       expect(step['env']['CHANGELOG_RESULT'], r'${{ needs.changelog.result }}');

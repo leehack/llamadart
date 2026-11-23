@@ -15,14 +15,14 @@ import '../core/exceptions.dart';
 const String webBridgeAssetsRepository = 'leehack/llama-web-bridge-assets';
 
 /// The bridge asset release this llamadart version is qualified against.
-const String webBridgeAssetsTag = 'v0.1.92';
+const String webBridgeAssetsTag = 'v0.1.93';
 
 /// SHA-256 of the exact approved `manifest.json` of [webBridgeAssetsTag].
 ///
 /// The manifest lists the SHA-256 and size of every asset, so pinning its
 /// bytes pins every file the tool writes.
 const String webBridgeManifestSha256 =
-    '4f2fb82d55a932e9182e703d5265f3fc5875f808d4d9aa0ba18a0585d0d7784b';
+    'd6200d9f467b20a942f4a77ff7041d98815ecb16acecd5176040b503f3544f95';
 
 /// Directory under the app's `web/` directory that receives the assets.
 const String webBridgeAssetsDirName = 'webgpu_bridge';
@@ -35,6 +35,10 @@ const List<String> webBridgeRuntimeFiles = <String>[
   'llama_webgpu_core.wasm',
   'llama_webgpu_core_mem64.js',
   'llama_webgpu_core_mem64.wasm',
+  'llama_webgpu_core_st.js',
+  'llama_webgpu_core_st.wasm',
+  'llama_webgpu_core_mem64_st.js',
+  'llama_webgpu_core_mem64_st.wasm',
 ];
 
 const String _manifestFileName = 'manifest.json';
@@ -42,6 +46,9 @@ const int _maxManifestBytes = 64 * 1024;
 const String _beginMarker = '<!-- llamadart:web_setup:begin -->';
 const String _endMarker = '<!-- llamadart:web_setup:end -->';
 final RegExp _sha256Hex = RegExp(r'^[0-9a-f]{64}$');
+final RegExp _stableBridgeTag = RegExp(
+  r'^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$',
+);
 final RegExp _flutterBootstrapScript = RegExp(
   r'''^([ \t]*)<script\b[^>]*\bsrc=["'](?:\./)?flutter_bootstrap\.js["']''',
   multiLine: true,
@@ -86,7 +93,27 @@ final class WebBridgePin {
   final String manifestSha256;
 
   /// The CDN directory that serves this release.
-  Uri get baseUri => Uri.parse('https://cdn.jsdelivr.net/gh/$repository@$tag/');
+  ///
+  /// Official stable releases from v0.1.91 use npm. Other tags and custom
+  /// repositories use the GitHub route.
+  Uri get baseUri {
+    final stable = _stableBridgeTag.firstMatch(tag);
+    if (repository == webBridgeAssetsRepository && stable?.end == tag.length) {
+      final major = stable![1]!;
+      final minor = stable[2]!;
+      final patch = stable[3]!;
+      if (major != '0' ||
+          (minor != '0' && minor != '1') ||
+          (minor == '1' &&
+              (patch.length > 2 ||
+                  (patch.length == 2 && patch.compareTo('91') >= 0)))) {
+        return Uri.parse(
+          'https://cdn.jsdelivr.net/npm/llama-web-bridge@${tag.substring(1)}/dist/',
+        );
+      }
+    }
+    return Uri.parse('https://cdn.jsdelivr.net/gh/$repository@$tag/');
+  }
 }
 
 /// The pin this llamadart version ships with.
@@ -479,6 +506,10 @@ const String _bootstrapTemplate = r'''
     window.__llamadartBridgeWasmUrl = asset('llama_webgpu_core.wasm');
     window.__llamadartBridgeCoreModuleUrlMem64 = asset('llama_webgpu_core_mem64.js');
     window.__llamadartBridgeWasmUrlMem64 = asset('llama_webgpu_core_mem64.wasm');
+    window.__llamadartBridgeCoreModuleUrlSt = asset('llama_webgpu_core_st.js');
+    window.__llamadartBridgeWasmUrlSt = asset('llama_webgpu_core_st.wasm');
+    window.__llamadartBridgeCoreModuleUrlMem64St = asset('llama_webgpu_core_mem64_st.js');
+    window.__llamadartBridgeWasmUrlMem64St = asset('llama_webgpu_core_mem64_st.wasm');
     if (typeof mod.enableBridgeWorkerHost === 'function') {
       window.__llamadartBridgeWorkerUrl = asset('llama_webgpu_bridge_worker.js');
     }

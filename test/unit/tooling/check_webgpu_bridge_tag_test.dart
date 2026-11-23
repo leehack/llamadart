@@ -70,53 +70,53 @@ const String _approvedManifestJson = '''
 {
   "artifacts": {
     "llama_webgpu_bridge.d.ts": {
-      "sha256": "bab791021bb7a2654127b7e3eced01f408e7960d75699596f5fe6f7ad6af56a6",
-      "size_bytes": 28814
+      "sha256": "52c4681d0fc38734671405574e547dad78193e8123b4ee64adff1d6a768559d2",
+      "size_bytes": 30299
     },
     "llama_webgpu_bridge.js": {
-      "sha256": "c72d480fba9feef0405562bebd7a70b7e44fc63562ad1d7da8018753856d4018",
-      "size_bytes": 424423
+      "sha256": "2af5bca8d17b77dd57cbd4abb3f6e02cfecb3e4ac86e221bd5fe68e66c5859cb",
+      "size_bytes": 238361
     },
     "llama_webgpu_bridge_worker.js": {
-      "sha256": "4c708c879eeaad19dc55c7f01fdd3ab901b8f83e69f63e0669a36024f32d3ef7",
-      "size_bytes": 423465
+      "sha256": "ca54bb1e94043ade41519b1d156804140c0b70b7b166cfe493ab12f98dd9d45e",
+      "size_bytes": 237705
     },
     "llama_webgpu_core.js": {
-      "sha256": "63decaee039c8f91b5923494a44bff7b7f3d83e3eafefff40cef274868069b82",
-      "size_bytes": 134847
+      "sha256": "21803768c374c45296f14fc5781ed8517d6e3da9b40117f007081c2e2a734010",
+      "size_bytes": 135118
     },
     "llama_webgpu_core.wasm": {
-      "sha256": "6e816f27ca86afca37425b56388f16b777da59016d3609b3d3683f0b3316b4a4",
-      "size_bytes": 11105672
+      "sha256": "0035e4c9c7ef610155735cb52db019f0ccef3f3fd29c8ebe11254fb77890fa9f",
+      "size_bytes": 10034672
     },
     "llama_webgpu_core_mem64.js": {
-      "sha256": "78f2fc465f8280b63371422954e6146bb5f5cbe386dd203973abcd4844bd3e3d",
-      "size_bytes": 157733
+      "sha256": "b971d2e636797a89a0cdd4e23f521711cd4d4aecf8adc53157b1b0871e344d13",
+      "size_bytes": 157856
     },
     "llama_webgpu_core_mem64.wasm": {
-      "sha256": "0e5557e452f39be574c0d9304e14a5c9808ff67c5641dc4b0e347ad9506b3fbf",
-      "size_bytes": 11431602
+      "sha256": "f5fd3f92124b594ce24e7b40ea467b3d615480ed50164372f139c4af89e17d24",
+      "size_bytes": 10315334
     },
     "llama_webgpu_core_mem64_st.js": {
-      "sha256": "6eb83f4f322027b3de864ed61f64d4b5df57cc4e1317de39d344f7e720ba7430",
-      "size_bytes": 136514
+      "sha256": "dec1a1dd76a1adafcebc58beba8c59e03924d789b1f613f7b39d9ffa267eee15",
+      "size_bytes": 136637
     },
     "llama_webgpu_core_mem64_st.wasm": {
-      "sha256": "b976d7b8b2804d6780a7146736973700adc7b4fbdef5dd52841fd741d8f34174",
-      "size_bytes": 10764413
+      "sha256": "42872f136ef1d3b696424df033cdc60112f7303d68644fe1a7e003aa3070631d",
+      "size_bytes": 9741407
     },
     "llama_webgpu_core_st.js": {
-      "sha256": "f2bc8115ed9f397919a81630e15a55cd68a8ea40e0b1fd6ad4c3c2b6228b04de",
-      "size_bytes": 115126
+      "sha256": "aa4943d985c1b89ac7953430d74b82e4282b7700b008de4e129ceac34b58e19e",
+      "size_bytes": 115397
     },
     "llama_webgpu_core_st.wasm": {
-      "sha256": "ae92804f607c2bdbd07178dba2fc73d0dc8de3a4e473f38fc0a9221a6455a343",
-      "size_bytes": 10476055
+      "sha256": "3a7c7e959dfb12ae87e5b0ba3d838d18712de6bd9a2a81d06c5065edf64b1ef7",
+      "size_bytes": 9445586
     }
   },
   "assets_repository": "leehack/llama-web-bridge-assets",
-  "bridge_assets_tag": "v0.1.92",
-  "bridge_commit": "d7236223d2393d51dab541df6caf3ef88f06d49b",
+  "bridge_assets_tag": "v0.1.93",
+  "bridge_commit": "273fe3bb59e7dcbb419ab25409863bb39826709a",
   "bridge_repository": "leehack/llama-web-bridge",
   "capabilities": {
     "memory64": true,
@@ -147,59 +147,59 @@ const String _approvedManifestJson = '''
   "emscripten_version": "6.0.8",
   "files": {
     "llama_webgpu_bridge.d.ts": {
-      "sha256": "bab791021bb7a2654127b7e3eced01f408e7960d75699596f5fe6f7ad6af56a6",
-      "size_bytes": 28814
+      "sha256": "52c4681d0fc38734671405574e547dad78193e8123b4ee64adff1d6a768559d2",
+      "size_bytes": 30299
     },
     "llama_webgpu_bridge.js": {
-      "sha256": "c72d480fba9feef0405562bebd7a70b7e44fc63562ad1d7da8018753856d4018",
-      "size_bytes": 424423
+      "sha256": "2af5bca8d17b77dd57cbd4abb3f6e02cfecb3e4ac86e221bd5fe68e66c5859cb",
+      "size_bytes": 238361
     },
     "llama_webgpu_bridge_worker.js": {
-      "sha256": "4c708c879eeaad19dc55c7f01fdd3ab901b8f83e69f63e0669a36024f32d3ef7",
-      "size_bytes": 423465
+      "sha256": "ca54bb1e94043ade41519b1d156804140c0b70b7b166cfe493ab12f98dd9d45e",
+      "size_bytes": 237705
     },
     "llama_webgpu_core.js": {
-      "sha256": "63decaee039c8f91b5923494a44bff7b7f3d83e3eafefff40cef274868069b82",
-      "size_bytes": 134847
+      "sha256": "21803768c374c45296f14fc5781ed8517d6e3da9b40117f007081c2e2a734010",
+      "size_bytes": 135118
     },
     "llama_webgpu_core.wasm": {
-      "sha256": "6e816f27ca86afca37425b56388f16b777da59016d3609b3d3683f0b3316b4a4",
-      "size_bytes": 11105672
+      "sha256": "0035e4c9c7ef610155735cb52db019f0ccef3f3fd29c8ebe11254fb77890fa9f",
+      "size_bytes": 10034672
     },
     "llama_webgpu_core_mem64.js": {
-      "sha256": "78f2fc465f8280b63371422954e6146bb5f5cbe386dd203973abcd4844bd3e3d",
-      "size_bytes": 157733
+      "sha256": "b971d2e636797a89a0cdd4e23f521711cd4d4aecf8adc53157b1b0871e344d13",
+      "size_bytes": 157856
     },
     "llama_webgpu_core_mem64.wasm": {
-      "sha256": "0e5557e452f39be574c0d9304e14a5c9808ff67c5641dc4b0e347ad9506b3fbf",
-      "size_bytes": 11431602
+      "sha256": "f5fd3f92124b594ce24e7b40ea467b3d615480ed50164372f139c4af89e17d24",
+      "size_bytes": 10315334
     },
     "llama_webgpu_core_mem64_st.js": {
-      "sha256": "6eb83f4f322027b3de864ed61f64d4b5df57cc4e1317de39d344f7e720ba7430",
-      "size_bytes": 136514
+      "sha256": "dec1a1dd76a1adafcebc58beba8c59e03924d789b1f613f7b39d9ffa267eee15",
+      "size_bytes": 136637
     },
     "llama_webgpu_core_mem64_st.wasm": {
-      "sha256": "b976d7b8b2804d6780a7146736973700adc7b4fbdef5dd52841fd741d8f34174",
-      "size_bytes": 10764413
+      "sha256": "42872f136ef1d3b696424df033cdc60112f7303d68644fe1a7e003aa3070631d",
+      "size_bytes": 9741407
     },
     "llama_webgpu_core_st.js": {
-      "sha256": "f2bc8115ed9f397919a81630e15a55cd68a8ea40e0b1fd6ad4c3c2b6228b04de",
-      "size_bytes": 115126
+      "sha256": "aa4943d985c1b89ac7953430d74b82e4282b7700b008de4e129ceac34b58e19e",
+      "size_bytes": 115397
     },
     "llama_webgpu_core_st.wasm": {
-      "sha256": "ae92804f607c2bdbd07178dba2fc73d0dc8de3a4e473f38fc0a9221a6455a343",
-      "size_bytes": 10476055
+      "sha256": "3a7c7e959dfb12ae87e5b0ba3d838d18712de6bd9a2a81d06c5065edf64b1ef7",
+      "size_bytes": 9445586
     }
   },
-  "github_run_id": "45031773094",
-  "github_run_url": "https://github.com/leehack/llama-web-bridge/actions/runs/45031773094",
+  "github_run_id": "45082255964",
+  "github_run_url": "https://github.com/leehack/llama-web-bridge/actions/runs/45082255964",
   "llama_cpp_commit": "b1b770d90d94cad9e9ea5b993bdbc383a522fb28",
   "llama_cpp_tag": "v1.0.0",
   "native_commit": "4b480fbf303d69c1f67416a25986bd0913728ede",
   "native_manifest_sha256": "7d8e69971e2e3bd73d258005c86d5f47d0cd96e1d7f08a23fdf44dd244ea1316",
   "native_release_tag": "v1.0.0-4",
   "native_repository": "leehack/llamadart-native",
-  "orchestrator_correlation_id": "manual-v0.1.92-d723622",
+  "orchestrator_correlation_id": "manual-v0.1.93-273fe3b",
   "qualification_gates": {
     "multimodal": "passed",
     "speech_to_text": "required-automated-qualification",
@@ -208,9 +208,9 @@ const String _approvedManifestJson = '''
   },
   "release_channel": "stable",
   "release_rebuild": 0,
-  "release_tag": "v0.1.92",
+  "release_tag": "v0.1.93",
   "schema_version": 2,
-  "source_commit": "d7236223d2393d51dab541df6caf3ef88f06d49b",
+  "source_commit": "273fe3bb59e7dcbb419ab25409863bb39826709a",
   "source_repository": "leehack/llama-web-bridge",
   "unproven_capabilities": {
     "hardware_gpu_acceleration": "unavailable-on-hosted-runners",
@@ -231,7 +231,7 @@ Future<List<String>> _verifyManifestJson(
 }) {
   final bytes = utf8.encode(manifestJson);
   return verifyManifest(
-    expectedTag: 'v0.1.92',
+    expectedTag: 'v0.1.93',
     expectedLlamaCppTag: bridgeLlamaCppTag,
     expectedLlamaCppCommit: bridgeLlamaCppCommit,
     expectedBridgeCommit: bridgeSourceCommit,
@@ -529,6 +529,677 @@ void main() {
   }
 
   for (final path in _preparedChangelogs) {
+    const badClaim = 'Native audio (unchanged from 1.2.1).';
+    const footnoteClaim = 'Native audio unchanged since 1.2.1.';
+    for (final (shape, notes, rejected, rendered) in [
+      (
+        'a blockquote closing an outer HTML pre',
+        '<div><pre>\n\n> Sample. </pre></div>\n\n'
+            'Ordinary paragraph.\n\n- $badClaim',
+        true,
+        'GitHub renders the final list after </pre>.',
+      ),
+      (
+        'a list item closing an outer HTML pre',
+        '<div><pre>\n\n- Sample ends here. </pre></div>\n\n$badClaim',
+        true,
+        'GitHub renders the final paragraph after </pre>.',
+      ),
+      (
+        'an HTML pre ending with its list item',
+        '- <pre>\n  Sample.\n- $badClaim',
+        true,
+        'GitHub closes the pre inside the first item and renders the claim in the second.',
+      ),
+      (
+        'an HTML pre ending with its blockquote',
+        '> <div><pre>\n>\n> Sample.\n\n$badClaim',
+        true,
+        'GitHub closes the pre inside the blockquote and renders the claim outside.',
+      ),
+      (
+        'a blockquote inside an open HTML pre',
+        '<div><pre>\n\n> Sample $badClaim\n\n</pre></div>',
+        false,
+        'GitHub renders the blockquote inside the still-open pre.',
+      ),
+      (
+        'an HTML pre with a closing tag inside a table cell',
+        '<div><pre>\n\n| Sample |\n| --- |\n| End. </pre></div> |\n\n$badClaim',
+        false,
+        'GitHub keeps the table and the final paragraph inside the pre.',
+      ),
+      (
+        'a Markdown link title',
+        '- [Reference](notes.md "$badClaim")',
+        true,
+        'GitHub retains the claim as the link title.',
+      ),
+      (
+        'a Markdown image title',
+        '- ![Diagram](image.png "$badClaim")',
+        true,
+        'GitHub retains the claim as the image title and Diagram as its alt text.',
+      ),
+      (
+        'a link title without a retention claim',
+        '- [Reference](notes.md "Native audio notes.")',
+        false,
+        'GitHub retains the ordinary title on the link.',
+      ),
+      (
+        'a raw HTML link title',
+        '<a href="notes.md" title="$badClaim">Reference</a>',
+        true,
+        'GitHub retains the claim as the raw HTML link title.',
+      ),
+      (
+        'an active link title inside code',
+        '- <code><a href="notes.md" title="$badClaim">audio_api</a></code>',
+        true,
+        'GitHub keeps the link and its title inside code.',
+      ),
+      (
+        'a literal link title in a Markdown code span',
+        '- `<a href="notes.md" title="$badClaim">audio_api</a>`',
+        false,
+        'GitHub escapes the anchor as literal code.',
+      ),
+      (
+        'an active link title inside raw HTML pre',
+        '<pre><a href="path" title="$badClaim">entry</a></pre>',
+        true,
+        'GitHub keeps the link and its title inside pre.',
+      ),
+      (
+        'a title on an omitted anchor',
+        '- <a title="$footnoteClaim">Docs</a>',
+        false,
+        'GitHub unwraps the anchor, leaving only Docs.',
+      ),
+      (
+        'a title on a named anchor',
+        '- <a name="audio" title="$footnoteClaim">Audio</a>',
+        true,
+        'GitHub retains the anchor and its title and prefixes the name.',
+      ),
+      (
+        'a title on an ID anchor',
+        '- <a id="audio" title="$footnoteClaim">Audio</a>',
+        true,
+        'GitHub retains the anchor and its title and prefixes the ID.',
+      ),
+      (
+        'a title on an anchor with an empty href',
+        '- <a href="" title="$footnoteClaim">Audio</a>',
+        true,
+        'GitHub retains the anchor with an empty href and its title.',
+      ),
+      (
+        'a title on a stripped href',
+        '- <a href="tel:+100" title="$footnoteClaim">Docs</a>',
+        false,
+        'GitHub removes the href and unwraps the anchor, leaving only Docs.',
+      ),
+      (
+        'an unreferenced list footnote',
+        '- [^a]: Changelog search is unchanged since 1.2.1.',
+        false,
+        'GitHub renders an empty list item and omits the definition.',
+      ),
+      (
+        'a second definition of a referenced footnote',
+        'See the note[^a].\n\n[^a]: Ordinary.\n\n[^a]: $footnoteClaim',
+        false,
+        'GitHub renders only the first definition, Ordinary.',
+      ),
+      (
+        'the only definition of a referenced footnote',
+        'See the note[^a].\n\n[^a]: $footnoteClaim',
+        true,
+        'GitHub renders the claim in the footnotes section.',
+      ),
+      (
+        'a footnote marker in inline code',
+        'See `[^a]`.\n\n[^a]: $badClaim',
+        false,
+        'GitHub renders the marker as code and emits no footnote.',
+      ),
+      (
+        'a duplicate footnote label with different case',
+        'See note[^a].\n\n[^A]: First note.\n\n[^a]: $badClaim',
+        false,
+        'GitHub resolves both spellings to the first definition.',
+      ),
+      (
+        'a case-folded Unicode footnote reference',
+        'See the guide[^STRASSE].\n\n[^straße]: $badClaim',
+        true,
+        'GitHub resolves STRASSE to straße and emits the claim.',
+      ),
+      (
+        'a duplicate Unicode footnote label',
+        'See the guide[^STRASSE].\n\n[^straße]: Ordinary.\n\n'
+            '[^STRASSE]: $footnoteClaim',
+        false,
+        'GitHub renders only the first definition, Ordinary.',
+      ),
+      (
+        'a case-folded footnote reference with surrounding spaces',
+        'See[^ STRASSE  ].\n\n[^straße]: $badClaim',
+        true,
+        'GitHub ignores the surrounding spaces and emits the claim.',
+      ),
+      (
+        'a footnote label with a supplementary letter and a ligature',
+        'See[^𐐨-OFFICE].\n\n[^𐐀-oﬃce]: $badClaim',
+        true,
+        'GitHub folds the Deseret letter and expands the ligature.',
+      ),
+      (
+        'a footnote label with a distinct dotted I',
+        'See[^i].\n\n[^İ]: $badClaim',
+        false,
+        'GitHub leaves the reference literal and omits the definition.',
+      ),
+      (
+        'a footnote label with a Georgian case pair added after Unicode 9',
+        'See[^ა].\n\n[^Ა]: $badClaim',
+        false,
+        'GitHub leaves the reference literal and omits the definition.',
+      ),
+      (
+        'a footnote label containing nonbreaking space',
+        'See[^audio   release].\n\n[^audio\u00a0release]: $badClaim',
+        false,
+        'GitHub does not match ASCII space to nonbreaking space.',
+      ),
+      (
+        'a footnote paragraph indented with a tab',
+        'See the audio note[^audio].\n\n[^audio]: Supported devices.'
+            '\n\n\t$badClaim',
+        true,
+        'GitHub renders the tab-indented claim as a second paragraph.',
+      ),
+      (
+        'a footnote paragraph with mixed tab and space indentation',
+        'See the audio note[^audio].\n\n[^audio]: Supported devices.'
+            '\n\n  \t  $badClaim',
+        true,
+        'GitHub renders the claim with six columns of indentation as prose.',
+      ),
+      (
+        'literal code indented with spaces and a tab in a footnote',
+        'See the audio note[^audio].\n\n[^audio]: Supported devices.'
+            '\n\n    \t$badClaim',
+        false,
+        'GitHub renders the claim with eight columns of indentation as code.',
+      ),
+      (
+        'tab indentation after a blockquote marker',
+        '> See[^audio].\n>\n> [^audio]: Supported devices.'
+            '\n>\n> \t  $badClaim',
+        false,
+        'GitHub renders the claim as code in the quote, outside the footnote.',
+      ),
+      (
+        'a footnote reference after an exclamation mark',
+        'See ![^STRASSE].\n\n[^straße]: $badClaim',
+        true,
+        'GitHub renders the exclamation mark and the footnote.',
+      ),
+      (
+        'a footnote reference with escaped punctuation',
+        'See[^STRASSE\\!].\n\n[^straße!]: $badClaim',
+        true,
+        'GitHub matches the label after removing the escape.',
+      ),
+      (
+        'a footnote reference with a numeric entity',
+        'See[^STRASSE&#33;].\n\n[^straße!]: $badClaim',
+        true,
+        'GitHub matches the label after decoding the entity.',
+      ),
+      (
+        'a newline before the label of a footnote reference',
+        'See[^\nSTRASSE\n].\n\n[^straße]: $badClaim',
+        false,
+        'GitHub ends the label at the line break and omits the footnote.',
+      ),
+      (
+        'four spaces of code indentation after a quoted blank',
+        '> See[^audio].\n>\n> [^audio]: Supported devices.\n>\n>     $badClaim',
+        false,
+        'GitHub renders the claim as code in the quote.',
+      ),
+      (
+        'five spaces of code indentation after a quoted blank',
+        '> See[^audio].\n>\n> [^audio]: Supported devices.\n>\n>      $badClaim',
+        false,
+        'GitHub renders the claim as code in the quote.',
+      ),
+      (
+        'unquoted indented code after a quoted blank',
+        '> See[^audio].\n>\n> [^audio]: Supported devices.\n>\n      $badClaim',
+        false,
+        'GitHub renders the claim as code outside the quote.',
+      ),
+      (
+        'unquoted indented code after a quoted list and a blank',
+        '> - Example.\n>\n    $badClaim',
+        false,
+        'GitHub renders the claim as code outside the quoted list.',
+      ),
+      (
+        'two columns of tab indentation after a blockquote marker',
+        '> See[^audio].\n>\n> [^audio]: Supported devices.\n>\n>\t$badClaim',
+        true,
+        'GitHub renders the claim as prose in the quote.',
+      ),
+      (
+        'a quoted blank indented four spaces',
+        '> See[^audio].\n>\n> [^audio]: Supported devices.\n>     \n'
+            '>     $badClaim',
+        true,
+        'GitHub renders the claim as the next paragraph of the footnote.',
+      ),
+      (
+        'a top-level blank indented three spaces',
+        'See[^audio].\n\n[^audio]: Supported devices.\n   \n    $badClaim',
+        false,
+        'GitHub closes the footnote and renders the claim as code.',
+      ),
+      (
+        'a footnote reference after an unresolved link',
+        'See [the note][^STRASSE\\!].\n\n[^straße!]: $badClaim',
+        true,
+        'GitHub renders the footnote reference after the unresolved link.',
+      ),
+      (
+        'a footnote reference after an unresolved image',
+        'See ![alt][^STRASSE&#33;].\n\n[^straße!]: $badClaim',
+        true,
+        'GitHub renders the footnote reference after the unresolved image.',
+      ),
+      (
+        'a footnote reference with a named entity',
+        'See[^STRASSE&excl;].\n\n[^straße!]: $badClaim',
+        true,
+        'GitHub decodes the named entity before lookup.',
+      ),
+      (
+        'a footnote reference with an encoded ampersand',
+        'See[^a&amp;b].\n\n[^a&b]: $badClaim',
+        true,
+        'GitHub matches the encoded reference to the literal definition.',
+      ),
+      (
+        'a newline after the label of a footnote reference',
+        'See[^STRASSE\n].\n\n[^straße]: $badClaim',
+        true,
+        'GitHub resolves the label before the line break.',
+      ),
+      (
+        'an unmatched multiline footnote reference with a claim inside',
+        'See[^\n$badClaim\n].',
+        false,
+        'GitHub renders the unmatched reference as [^].',
+      ),
+      (
+        'a code span after the label of a footnote reference',
+        'See[^STRASSE`code`].\n\n[^straße]: $badClaim',
+        true,
+        'GitHub resolves the label before the code span.',
+      ),
+      (
+        'a footnote reference followed by an unresolved bracket',
+        'See[^STRASSE][missing].\n\n[^straße]: $badClaim',
+        true,
+        'GitHub resolves the footnote and keeps the following brackets.',
+      ),
+      (
+        'a visible claim in unresolved brackets after a footnote reference',
+        'See[^STRASSE][$badClaim].\n\n[^straße]: Ordinary.',
+        true,
+        'GitHub renders the unresolved brackets and their text.',
+      ),
+      (
+        'a footnote in a quoted list followed by a quoted blank',
+        '> - See[^audio].\n>\n>   [^audio]: Supported devices.\n>\n'
+            '>       $badClaim',
+        false,
+        'GitHub closes the footnote and renders the claim as code.',
+      ),
+      (
+        'an unindented claim after a four-space footnote blank',
+        '[^audio]: Supported devices.\n    \n$badClaim',
+        true,
+        'GitHub renders the claim as an independent paragraph.',
+      ),
+      (
+        'lazy prose in an unreferenced footnote',
+        '[^audio]: Supported devices.\n$badClaim',
+        false,
+        'GitHub omits the unreferenced footnote and its continuation.',
+      ),
+      (
+        'a tab-indented footnote paragraph inside a list',
+        '- See[^audio].\n\n  [^audio]: Supported devices.\n\n \t  $badClaim',
+        true,
+        'GitHub renders the claim as the second paragraph of the footnote.',
+      ),
+      (
+        'a footnote referenced from an omitted definition',
+        '[^a]: Read this[^b].\n\n[^b]: $badClaim',
+        true,
+        'GitHub omits a but emits b in the footnotes section.',
+      ),
+      (
+        'a footnote referenced from a superseded definition',
+        'See note[^a].\n\n[^a]: First note.\n\n'
+            '[^a]: Read this[^b].\n\n[^b]: $badClaim',
+        true,
+        'GitHub emits the first a and also emits b.',
+      ),
+      (
+        'a footnote with its reference and a duplicate in an older release',
+        '[^a]: $badClaim\n\n## 1.2.2\n\nSee note[^a].\n\n[^a]: Later note.',
+        true,
+        'GitHub renders the first definition, which belongs to the current release.',
+      ),
+      (
+        'a Setext heading spelling an older release',
+        '1.2.2\n-----\n\n$badClaim\n\n## 1.2.2\n\nPrevious notes.',
+        true,
+        'GitHub renders the claim after the Setext heading and before the actual release boundary.',
+      ),
+    ]) {
+      test('strict prep checks rendered Markdown for $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        File(
+          '${root.path}/$path',
+        ).writeAsStringSync('\n$notes\n', mode: FileMode.append);
+        expect(_verifyPreparedRelease(root), [
+          if (rejected)
+            startsWith('$path contains an (unchanged from ...) claim'),
+        ], reason: rendered);
+      });
+    }
+
+    for (final (shape, notes) in [
+      (
+        'prose after an opening textarea',
+        '- Support <textarea> controls. $badClaim',
+      ),
+      (
+        'formatted prose after an opening textarea',
+        '- Support <textarea> controls. Native audio (unchanged <em>from</em> 1.2.1).',
+      ),
+      for (final tag in [
+        'textarea',
+        'script',
+        'style',
+        'title',
+        'xmp',
+        'iframe',
+        'noembed',
+        'noframes',
+        'plaintext',
+      ])
+        ('prose within filtered HTML tag $tag', '- <$tag>$badClaim</$tag>'),
+      ('image alt text', '- Add a status graphic: ![$badClaim](missing.png)'),
+      (
+        'a footnote referenced from an older release',
+        '[^rt]: $badClaim\n\n## 1.2.2\n\nSee details[^rt].',
+      ),
+      (
+        'prose after a multiblock HTML pre',
+        '> <div><pre>\n>\n> Literal example.\n>\n'
+            '> </pre></div>\n>\n> $badClaim',
+      ),
+      (
+        'ordinary bullet continuation',
+        '- Native audio\n  (unchanged from 1.2.1).',
+      ),
+      ('nested sub-bullet', '- Runtime notes\n  - $badClaim'),
+      ('blockquote', '> $badClaim'),
+      ('wrapped quote', '> Native audio unchanged from\n> 1.2.1.'),
+      ('lazy quote continuation', '> Runtime notes:\n$badClaim'),
+      ('trailing inline comment', '- $badClaim <!-- editorial -->'),
+      (
+        'split inline comment',
+        '- Native audio (unchanged <!-- x --> from 1.2.1).',
+      ),
+      (
+        'double hyphen in a comment',
+        '- Native audio (unchanged <!-- a -- b --> from 1.2.1).',
+      ),
+      (
+        'empty inline comment',
+        '- Native audio (unchanged <!----> from 1.2.1).',
+      ),
+      ('bare claim with a code span', '- Native audio unchanged from `1.2.1`.'),
+      ('bare since claim', '- Native audio unchanged since 1.2.1.'),
+      ('parenthesized since claim', '- Native audio (unchanged since 1.2.1).'),
+      ('HTML div', '<div>\n$badClaim\n</div>'),
+      (
+        'HTML attribute with a comment opener',
+        '<span title="<!--">$badClaim</span>',
+      ),
+      ('HTML entity', '- Native audio &#40;unchanged from 1.2.1).'),
+      (
+        'GFM table cell',
+        '| Runtime | Notes |\n| --- | --- |\n| Audio | $badClaim |',
+      ),
+      ('indented code before prose', '    <!--\n\n$badClaim'),
+      (
+        'quoted indented code before quoted prose',
+        '>     <!--\n>\n> $badClaim',
+      ),
+      ('quoted indented code before outside prose', '>     <!--\n\n$badClaim'),
+      ('list item fence before prose', '- ```html\n  <!--\n  ```\n\n$badClaim'),
+      (
+        'fence on a list continuation',
+        '- Example\n\n  ```html\n  <!--\n  ```\n\n$badClaim',
+      ),
+      (
+        'list fence ending at an outdent',
+        '- Example\n\n  ```html\n  <!--\n\n$badClaim',
+      ),
+      (
+        'quoted list fence before quoted prose',
+        '> - ```html\n>   <!--\n>   ```\n>\n> $badClaim',
+      ),
+      (
+        'inline code with a comment opener',
+        'Use `<!--` in the sample.\n\n$badClaim',
+      ),
+      (
+        'quoted inline code with a comment opener',
+        '> Use `<!--` in the sample.\n>\n> $badClaim',
+      ),
+      (
+        'multiline code span',
+        'Use `the literal\nmarker <!--` in the sample.\n\n$badClaim',
+      ),
+      (
+        'shorter closing fence',
+        '> ````text\n> ```\n> <!--\n> ````\n\n$badClaim',
+      ),
+      (
+        'wrong closing fence marker',
+        '> ~~~~text\n> ````\n> <!--\n> ~~~~\n>\n> $badClaim',
+      ),
+      ('comment around a fence marker', '<!--\n```text\n-->\n\n$badClaim'),
+      (
+        'quoted comment around a fence marker',
+        '> <!--\n> ```text\n> -->\n>\n> $badClaim',
+      ),
+      (
+        'quoted HTML pre with a fence marker',
+        '> <pre>\n> ```\n> </pre>\n>\n> $badClaim',
+      ),
+      (
+        'quoted list fence ending at an outdent',
+        '> - Sample\n>\n>   ```html\n>   <!--\n> - $badClaim',
+      ),
+      (
+        'outer quote after a nested unclosed comment',
+        '> > <!--\n>\n> $badClaim',
+      ),
+    ]) {
+      test('strict prep rejects retention in $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        changelog.writeAsStringSync('\n$notes\n', mode: FileMode.append);
+        expect(_verifyPreparedRelease(root), [
+          startsWith('$path contains an (unchanged from ...) claim'),
+        ]);
+      });
+    }
+
+    for (final (shape, notes) in [
+      (
+        'an inline-code search query',
+        '- Document the literal search query `unchanged since 1.2.1`.',
+      ),
+      (
+        'a quoted inline-code example',
+        '> The old checker matched the literal string `(unchanged from 1.2.1)`.',
+      ),
+      (
+        'a multiblock HTML pre inside a quote',
+        '> <div><pre>\n>\n> Literal sample (unchanged from 1.2.1).\n>\n'
+            '> </pre></div>',
+      ),
+      ('top-level indented code', '    $badClaim'),
+      ('list-item fenced code', '- ```text\n  $badClaim\n  ```'),
+      ('indented code in a list', '- Example\n\n      $badClaim'),
+      ('HTML preformatted code', '<pre><code>$badClaim</code></pre>'),
+      ('HTML preformatted text', '<pre>$badClaim</pre>'),
+      (
+        'a footnote defined in an older release',
+        'See details[^rt].\n\n## 1.2.2\n\n[^rt]: $badClaim',
+      ),
+      (
+        'shorter marker inside fenced code',
+        '> ````text\n> ```\n> $badClaim\n> ````',
+      ),
+      (
+        'separate list item and quote',
+        '- Native audio (unchanged\n> from 1.2.1).',
+      ),
+      ('separate list items', '- Native audio is unchanged\n- from 1.2.1.'),
+      (
+        'separate HTML paragraphs',
+        '<p>Native audio is unchanged</p>\n<p>from 1.2.1.</p>',
+      ),
+      (
+        'separate GFM table cells',
+        '| State | Version |\n| --- | --- |\n| unchanged | from 1.2.1 |',
+      ),
+      (
+        'line-start comment interrupting a code span',
+        'Use `the token\n<!--` in the sample.\n\n$badClaim',
+      ),
+    ]) {
+      test('strict prep accepts notes with $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        changelog.writeAsStringSync('\n$notes\n', mode: FileMode.append);
+        expect(_verifyPreparedRelease(root), isEmpty);
+      });
+    }
+
+    test(
+      'strict prep accepts a loose bridge item before a list fence in $path',
+      () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        changelog.writeAsStringSync(
+          changelog.readAsStringSync().replaceFirst(
+            _preparedBaseline,
+            '- ```html\n  <!--\n  ```\n\n$_preparedBaseline',
+          ),
+        );
+        expect(_verifyPreparedRelease(root), isEmpty);
+      },
+    );
+
+    for (final (shape, child) in [
+      ('nested bullet', '  - The download instructions now include checksums.'),
+      ('fenced example', '\n  ```text\n  $badClaim\n  ```'),
+    ]) {
+      test('strict prep accepts a Keep claim with a $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        changelog.writeAsStringSync(
+          changelog.readAsStringSync().replaceFirst(
+            '.\n\nRuntime',
+            '.\n$child\n\nRuntime',
+          ),
+        );
+        expect(_verifyPreparedRelease(root), isEmpty);
+      });
+    }
+
+    for (final (shape, bridgeChanged, extra) in [
+      ('changed bridge continuation', true, '  $badClaim\n'),
+      ('Keep continuation', false, '  $badClaim\n'),
+      ('Keep sub-bullet', false, '  - $badClaim\n'),
+    ]) {
+      test('strict prep scans $shape in $path', () {
+        final root = bridgeChanged
+            ? _preparedReleaseRepo(
+                '- Aligned the default WebGPU bridge assets to `v9.9.9`.',
+              )
+            : _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        changelog.writeAsStringSync(
+          changelog.readAsStringSync().replaceFirst(
+            '.\n\nRuntime',
+            '.\n$extra\nRuntime',
+          ),
+        );
+        expect(
+          _verifyPreparedRelease(
+            root,
+            previousBridge: bridgeChanged ? 'v9.9.8' : 'v9.9.9',
+          ),
+          contains(startsWith('$path contains an (unchanged from ...) claim')),
+        );
+      });
+    }
+
+    test('strict prep rejects duplicate bridge claims in $path', () {
+      const claim = '- Aligned the default WebGPU bridge assets to `v9.9.9`.';
+      final root = _preparedReleaseRepo(claim);
+      final changelog = File('${root.path}/$path');
+      changelog.writeAsStringSync(
+        changelog.readAsStringSync().replaceFirstMapped(
+          RegExp(r'^- Aligned.*$', multiLine: true),
+          (match) => '${match[0]}\n${match[0]}',
+        ),
+      );
+      expect(_verifyPreparedRelease(root, previousBridge: 'v9.9.8'), [
+        startsWith(
+          '$path must contain exactly one matching WebGPU bridge claim',
+        ),
+      ]);
+    });
+
+    test('strict prep rejects duplicate baselines in $path', () {
+      final root = _preparedReleaseRepo();
+      File(
+        '${root.path}/$path',
+      ).writeAsStringSync('\n$_preparedBaseline\n', mode: FileMode.append);
+      expect(_verifyPreparedRelease(root), [
+        startsWith('$path must contain one complete Runtime baseline'),
+      ]);
+    });
+  }
+
+  for (final path in _preparedChangelogs) {
     for (final (runtime, pin, previousPin) in [
       ('native llama.cpp', 'v1.0.0-3', 'v1.0.0-2'),
       ('LiteRT-LM', 'v0.19.1-5', 'v0.19.1-4'),
@@ -564,7 +1235,7 @@ void main() {
   }
 
   test('default assets include the qualified media embedding API', () {
-    expect(readPinnedBridgeTag(Directory.current), 'v0.1.92');
+    expect(readPinnedBridgeTag(Directory.current), 'v0.1.93');
     expect(bridgeNativeReleaseTag, 'v1.0.0-4');
     expect(bridgeApprovedNativePin, 'v1.0.0-4');
     expect(
@@ -606,6 +1277,28 @@ void main() {
     ).writeAsStringSync("const defaultBridgeAssetsTag = 'v9.9.8';\n");
     expect(findBridgeTagDrift(root, 'v9.9.9'), contains(contains('$path:')));
   });
+
+  for (final path in [
+    'example/dartpad_gguf/lib/bridge_bootstrap_web.dart',
+    'packages/genkit_llamadart/example/dartpad/lib/bridge_bootstrap_web.dart',
+  ]) {
+    test('the DartPad bootstrap pin cannot drift in $path', () {
+      final root = _fakeRepo(
+        'v9.9.9',
+        files: {path: "const String defaultBridgeAssetsTag = 'v9.9.9';\n"},
+      );
+      Process.runSync('git', ['init', '--quiet'], workingDirectory: root.path);
+      Process.runSync('git', ['add', '-A'], workingDirectory: root.path);
+      expect(findUnregisteredTagSites(root, 'v9.9.9'), isEmpty);
+      File(
+        '${root.path}/$path',
+      ).writeAsStringSync("const String defaultBridgeAssetsTag = 'v9.9.8';\n");
+      expect(
+        findBridgeTagDrift(root, 'v9.9.9'),
+        contains('$path: pins v9.9.8, expected v9.9.9'),
+      );
+    });
+  }
 
   test('the checked-in pins all quote the source of truth', () {
     final repoRoot = Directory.current;
@@ -1195,10 +1888,9 @@ void main() {
       String liteRt = 'v0.19.1-5',
       String sd = 'v0.3.0-3',
       String upstream = '$bridgeLlamaCppTag@$commit',
-      String liteRtVerb = 'uses',
     }) =>
         'Runtime baseline: native llama.cpp `$llama` and Web use upstream '
-        '`$upstream`; native LiteRT-LM $liteRtVerb `$liteRt` and '
+        '`$upstream`; native LiteRT-LM uses `$liteRt` and '
         'stable-diffusion uses `$sd`. Web LiteRT-LM uses '
         '`@litert-lm/core@0.19.0`.\n';
 
@@ -1220,12 +1912,27 @@ void main() {
     );
 
     test('accepts a paragraph that matches the pins', () {
-      final root = baselineRepo(
-        changelog: paragraph(),
-        docs: paragraph(liteRtVerb: 'stays'),
-      );
+      final root = baselineRepo(changelog: paragraph(), docs: paragraph());
       expect(findRuntimeBaselineDrift(root), isEmpty);
     });
+
+    for (final runtime in ['native LiteRT-LM', 'stable-diffusion']) {
+      for (final (index, path) in _preparedChangelogs.indexed) {
+        test('rejects stays for $runtime in $path', () {
+          final valid = paragraph();
+          final invalid = valid.replaceFirst('$runtime uses', '$runtime stays');
+          final root = baselineRepo(
+            changelog: index == 0 ? invalid : valid,
+            docs: index == 0 ? valid : invalid,
+          );
+          expect(findRuntimeBaselineDrift(root), [
+            startsWith(
+              '$path: the Runtime baseline paragraph no longer states the $runtime tag',
+            ),
+          ]);
+        });
+      }
+    }
 
     test('a section without the paragraph is skipped', () {
       expect(findRuntimeBaselineDrift(baselineRepo()), isEmpty);
@@ -1656,8 +2363,8 @@ void main() {
     });
 
     test('immutable release identity stays pinned to the approved release', () {
-      expect(bridgeAssetsReleaseId, '454541989');
-      expect(bridgeAssetsTagCommit, '056f474f389feaa4e02a62a3125549cb9154fabf');
+      expect(bridgeAssetsReleaseId, '454836373');
+      expect(bridgeAssetsTagCommit, '00866ed50f48ea4f9622c1b5e380f27405567033');
     });
 
     test('accepts equivalent CRLF documentation passages', () {
@@ -1787,20 +2494,70 @@ void main() {
     });
   });
 
+  test('asset fetcher honors the CDN override and legacy tags', () async {
+    final scratch = Directory.systemTemp.createTempSync('bridge-fetch-');
+    addTearDown(() => scratch.deleteSync(recursive: true));
+    final curl = File('${scratch.path}/curl')
+      ..writeAsStringSync('#!/bin/sh\nprintf "%s\\n" "\$@"\nexit 42\n');
+    final chmod = await Process.run('chmod', ['+x', curl.path]);
+    expect(chmod.exitCode, 0, reason: '${chmod.stderr}');
+    final version = readPinnedBridgeTag(Directory.current).substring(1);
+    const legacy =
+        'https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets';
+    for (final (settings, base) in <(Map<String, String>, String)>[
+      ({}, 'https://cdn.jsdelivr.net/npm/llama-web-bridge@$version/dist'),
+      (
+        {'WEBGPU_BRIDGE_CDN_BASE': 'https://example.test/custom/'},
+        'https://example.test/custom',
+      ),
+      ({'WEBGPU_BRIDGE_ASSETS_TAG': 'v0.1.90'}, '$legacy@v0.1.90'),
+      (
+        {'WEBGPU_BRIDGE_ASSETS_TAG': 'v0.1.93-preview'},
+        '$legacy@v0.1.93-preview',
+      ),
+    ]) {
+      final result = await Process.run(
+        'bash',
+        [bridgeTagSourcePath],
+        environment: {
+          'PATH': '${scratch.path}:${Platform.environment['PATH']}',
+          'WEBGPU_BRIDGE_OUT_DIR': scratch.path,
+          'WEBGPU_BRIDGE_CDN_BASE': '',
+          'WEBGPU_BRIDGE_ASSETS_REPO': '',
+          'WEBGPU_BRIDGE_ASSETS_TAG': '',
+          ...settings,
+        },
+      );
+      expect(result.exitCode, 42, reason: '${result.stderr}');
+      expect(
+        LineSplitter.split(result.stdout as String),
+        contains('$base/llama_webgpu_bridge.js'),
+      );
+    }
+  }, skip: Platform.isWindows);
+
   group('Remote manifest machine verification', () {
     test('verifies success for the exact approved manifest', () async {
       // Deliberately the production constants, not literals: the fixture is
       // the only offline proof that they describe the approved bytes, and
       // repeating them here would let a half-finished bump still pass.
       final bytes = utf8.encode(_approvedManifestJson);
+      final tag = readPinnedBridgeTag(Directory.current);
       final errors = await verifyManifest(
-        expectedTag: readPinnedBridgeTag(Directory.current),
+        expectedTag: tag,
         expectedLlamaCppTag: bridgeLlamaCppTag,
         expectedLlamaCppCommit: bridgeLlamaCppCommit,
         expectedBridgeCommit: bridgeSourceCommit,
         expectedNativeReleaseTag: bridgeNativeReleaseTag,
         expectedManifestSha256: bridgeManifestSha256,
-        fetcher: (_) async => ManifestResponse(HttpStatus.ok, bytes),
+        fetcher: (url) async {
+          expect(
+            url.toString(),
+            'https://cdn.jsdelivr.net/npm/llama-web-bridge@'
+            '${tag.substring(1)}/dist/manifest.json',
+          );
+          return ManifestResponse(HttpStatus.ok, bytes);
+        },
       );
 
       expect(errors, isEmpty);

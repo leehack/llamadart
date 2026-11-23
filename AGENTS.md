@@ -195,6 +195,9 @@ analyze and the relevant tests before the final commit.
 - `main` stays production-ready. The PR body follows
   `.github/pull_request_template.md`; fill every section or mark it N/A with a
   reason.
+- Land individual PRs, including independent package release preps, with
+  **Squash and merge** to preserve the `(#N)` subject suffix and landed
+  `## Changelog`. Reserve rebase merges for batch integration PRs.
 - Update an open PR branch only through `tool/git/safe_pr_head_update.dart`
   (expected-head CAS, fast-forward only); writers it cannot govern are in
   `doc/pr_branch_writer_inventory.md`. Whenever the head moves, earlier CI runs,

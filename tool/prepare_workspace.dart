@@ -43,6 +43,7 @@ const List<WorkspacePackage> workspacePackages = <WorkspacePackage>[
   WorkspacePackage('.', WorkspacePackageManager.flutter),
   WorkspacePackage('example/basic_app', WorkspacePackageManager.flutter),
   WorkspacePackage('example/chat_app', WorkspacePackageManager.flutter),
+  WorkspacePackage('example/dartpad_gguf', WorkspacePackageManager.flutter),
   WorkspacePackage('example/laya_command_bar', WorkspacePackageManager.flutter),
   WorkspacePackage('example/laya_tetris', WorkspacePackageManager.flutter),
   WorkspacePackage('example/llamadart_cli', WorkspacePackageManager.dart),
@@ -51,6 +52,11 @@ const List<WorkspacePackage> workspacePackages = <WorkspacePackage>[
   WorkspacePackage(
     'packages/genkit_llamadart',
     WorkspacePackageManager.dart,
+    prepareForRootQualityGates: false,
+  ),
+  WorkspacePackage(
+    'packages/genkit_llamadart/example/dartpad',
+    WorkspacePackageManager.flutter,
     prepareForRootQualityGates: false,
   ),
   WorkspacePackage(

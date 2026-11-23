@@ -1618,6 +1618,35 @@ verified local copy before expiry; independently verify its outer digest and
 inner inventory using the fixture verifier. A passing normal aggregate does not
 establish a qualification result or replace independent interpretation.
 
+## Web single-thread core
+
+Stage the existing Stories15M GGUF at
+`build/web_single_thread_core/model.gguf` and install Playwright Chromium.
+Run `dart run tool/testing/run_local_e2e.dart --scenario web-single-thread-core --dry-run`
+first, then omit `--dry-run`. Use `--python` to select a Python environment
+with Playwright. The scenario uses the pinned bridge through Dart on
+Chromium, verifies actual isolation and shared-memory availability, and
+compares automatic selection and repeated generation in direct and worker
+execution for both Wasm widths. The console warns once per page when the flag
+is unset and stays quiet with explicit `true`. The scenario also exercises the
+explicit `false` COOP/COEP refusal, a forced-fetch refusal and an isolated threaded
+worker that successfully loads through the fetch backend. Non-isolated Chromium
+pages launched with `--enable-features=SharedArrayBuffer` use the threaded core
+without a warning in both modes, with the flag unset or set to `false`. The
+shipped chat bootstrap refuses legacy v0.1.92 before core or worker requests, and reports
+typed unsupported errors for missing loaders and explicit or adjacent Wasm
+files. In both execution modes a GGUF download 404 or invalid GGUF retains
+its model error. Invalid GGUF on memory64 leaves the unused wasm32 binary
+unrequested.
+
+Add `--backend webgpu` to require GPU offload for non-isolated Stories15M
+generation. Pass `--model-url` to measure another GGUF in a single-thread
+CPU worker, starting once on wasm32 and once on memory64. If the wasm32
+attempt retries on memory64, the smoke verifies requests for both matching
+single-thread binaries. The run reports the loaded core, execution mode,
+model size, loader and thread count. Other models, browsers and
+hardware require their own measurements.
+
 ## Web JS-backed model staging
 
 Stage a checksum-verified Stories15M GGUF at
