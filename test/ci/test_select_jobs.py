@@ -135,7 +135,6 @@ class SelectionTest(unittest.TestCase):
             '.github/CODEOWNERS': static_and_vm,
             '.github/pull_request_template.md': {'markdown-tests'},
             '.github/dependabot.yml': static,
-            '.gitignore': static_and_vm | {'model-store', 'companion-packages'},
             '.pubignore': static_and_vm,
             '.dockerignore': {'markdown-tests'},
             'codecov.yml': {'test-linux-coverage'},
@@ -148,15 +147,26 @@ class SelectionTest(unittest.TestCase):
                 with self.subTest(path=path, pull_request=pull_request):
                     plan = ci.select([path], pull_request=pull_request)
                     self.assertEqual({j for j, v in plan['jobs'].items() if v}, expected)
-                    companions = (['packages/' + name for name in ci.COMPANIONS]
-                                  if path == '.gitignore' else [])
-                    self.assertEqual(plan['companions'], companions)
-                    for key in ('apps', 'desktops', 'test-other-os-matrix', 'reasons'):
+                    for key in ('apps', 'desktops', 'companions', 'test-other-os-matrix',
+                                'reasons'):
                         self.assertEqual(plan[key], [], key)
                     for key in ('macos-native', 'windows-native', 'studio-macos',
                                 'macos-validation-memory', 'apple-cache'):
                         self.assertFalse(plan[key], key)
                     self.assertEqual(plan['coverage'], not pull_request)
+
+    def test_root_gitignore_keeps_full_validation_bundle_admission(self):
+        for pull_request, desktops, apps in (
+            (True, ['ubuntu-24.04', 'windows-2022'], ['web', 'ios-inputs']),
+            (False, ['ubuntu-24.04', 'windows-2022', 'macos-15'],
+             ['android', 'web', 'ios-inputs']),
+        ):
+            with self.subTest(pull_request=pull_request):
+                plan = ci.select(['.gitignore'], pull_request=pull_request)
+                self.assertEqual(plan['desktops'], desktops)
+                self.assertEqual(plan['apps'], apps)
+                self.assertEqual(
+                    plan['reasons'], ['shared/runtime or unclassified path: .gitignore'])
 
     def test_metadata_mixes_with_docs_bundles_and_full_fallback(self):
         for pull_request in (True, False):
@@ -172,7 +182,7 @@ class SelectionTest(unittest.TestCase):
                 self.assertEqual(plan['desktops'], [])
                 self.assertEqual(plan['reasons'], [])
 
-            for path in ('.gitattributes', '.github/unknown.yml',
+            for path in ('.gitattributes', '.gitignore', '.github/unknown.yml',
                          'skills-backup/example.md', 'docker-backup/Dockerfile',
                          'codecov.yml.backup', 'nested/.pubignore'):
                 with self.subTest(path=path, pull_request=pull_request):

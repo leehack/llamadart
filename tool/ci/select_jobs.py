@@ -157,10 +157,6 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
             jobs.add('analyze')
         elif path in ('.github/CODEOWNERS', '.pubignore'):
             jobs.update(('analyze', 'test-linux-coverage'))
-        elif path == '.gitignore':
-            # The companion and Model Store lanes check for untracked files.
-            jobs.update(('analyze', 'test-linux-coverage', 'model-store'))
-            companions.update(COMPANIONS)
         elif path == 'codecov.yml':
             jobs.add('test-linux-coverage')
         elif any(path.startswith('packages/' + name + '/') for name in COMPANIONS):
@@ -258,7 +254,8 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
         elif path.startswith(('lib/', 'example/')):
             full('shared/runtime or example path: ' + path)
         else:
-            # This includes .gitattributes, which can change checkout bytes in any lane.
+            # .gitattributes can change checkout bytes. .gitignore can expose
+            # generated files to the validation bundle clean-tree checks.
             full('shared/runtime or unclassified path: ' + path)
     if 'analyze' in jobs:
         jobs.discard('docs-versions')  # Already included in root static validation.

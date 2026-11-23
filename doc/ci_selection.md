@@ -14,7 +14,7 @@ PR. A path filter must not prevent a required workflow from reporting.
 | PR description template | Markdown Tests (template and release-note contracts) | None |
 | Root `.dockerignore` | Markdown Tests | None |
 | `.github/CODEOWNERS` or `.pubignore` | Root static checks and Linux VM tests (ownership and package archive contracts) | None |
-| Root `.gitignore` | Root static checks, Linux VM tests, Model Store, and all three Apple companion packages | None |
+| Root `.gitignore` | Full fallback. Root ignore rules affect the clean-tree checks in the Model Store, Apple companions and validation bundles. | Linux and Windows desktops, Web and iOS inputs on PRs. All targets on pushes. |
 | `codecov.yml` | Linux VM tests. Coverage calculation and Codecov upload run after merge. | None |
 | `.gitattributes` | Full fallback. Git attributes can change checkout bytes across platforms, including hash-checked fixtures. | Full fallback targets |
 | Genkit or Model Store package | Affected package checks and root Linux VM tests | None |
@@ -47,8 +47,7 @@ controller/app tests and is omitted when Web Chat, which runs all Flutter app
 tests, is selected.
 Root static checks validate shipped skills and Docker files through the core
 archive check and Pana, and run the Dependabot package inventory test. Docker
-builds use local scripts. The Model Store and Apple companion jobs check for
-untracked package output, so root `.gitignore` changes select both.
+builds use local scripts.
 For DartPad GGUF, the root static job runs `public_entrypoints_test.dart` and
 `dartpad_examples_imports_test.dart` in place of the Linux VM shards.
 Markdown-only changes in the example run the docs jobs and Markdown Tests,
