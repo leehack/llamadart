@@ -51,6 +51,7 @@ void main() {
     List<LlamaChatMessage> messages = messages,
     Map<String, dynamic>? responseFormat,
     List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
   }) async {
     final chunks = await engine
         .create(
@@ -59,6 +60,7 @@ void main() {
           enableThinking: false,
           responseFormat: responseFormat,
           tools: tools,
+          toolChoice: toolChoice,
         )
         .toList();
     final performance = await engine.getPerformanceContext();
@@ -120,21 +122,48 @@ void main() {
       run(ignoring, responseFormat: const {'type': 'json_object'}),
       rejected,
     );
-    await expectLater(
-      run(
-        ignoring,
-        tools: [
-          ToolDefinition(
-            name: 'get_time',
-            description: 'Returns the current time.',
-            parameters: const [],
-            handler: (_) async => '12:00',
-          ),
-        ],
+    final tools = [
+      ToolDefinition(
+        name: 'get_time',
+        description: 'Returns the current time.',
+        parameters: const [],
+        handler: (_) async => '12:00',
       ),
-      rejected,
+    ];
+    for (final (toolChoice, lazy) in [
+      (ToolChoice.auto, true),
+      (ToolChoice.required, false),
+    ]) {
+      final template = await engine.chatTemplate(
+        messages,
+        tools: tools,
+        toolChoice: toolChoice,
+        enableThinking: false,
+      );
+      expect(template.grammar, isNotEmpty, reason: '$toolChoice');
+      expect(template.grammarLazy, lazy, reason: '$toolChoice');
+      await expectLater(
+        run(ignoring, tools: tools, toolChoice: toolChoice),
+        rejected,
+        reason: '$toolChoice',
+      );
+    }
+    final (_, noneReason, _) = await run(
+      ignoring,
+      tools: tools,
+      toolChoice: ToolChoice.none,
     );
+    expect(noneReason, 'length', reason: 'ToolChoice.none has no grammar');
     final (_, reason, _) = await run(params);
     expect(reason, 'stop');
+  });
+
+  test('a stop sequence still ends the reply', skip: skip, () async {
+    final (text, _, _) = await run(params);
+    final (stopped, reason, _) = await run(
+      params.copyWith(ignoreEos: true, stopSequences: [text.trim()]),
+    );
+    expect(reason, 'stop');
+    expect(stopped.trim(), isEmpty);
   });
 }

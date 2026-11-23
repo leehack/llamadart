@@ -954,17 +954,20 @@ class GenerationParams {
   final List<String> stopSequences;
 
   /// Whether to keep generating past the model's end-of-generation tokens, as
-  /// llama.cpp's `--ignore-eos` does.
+  /// llama.cpp's `--ignore-eos` CLI option does.
   ///
   /// Native llama.cpp gives every end-of-generation token a bias of negative
-  /// infinity, so generation runs until [maxTokens], a stop sequence or
-  /// cancellation. Speculative decoding verifies drafts with the same
-  /// sampler, so a drafted end-of-generation token is never accepted. Useful
-  /// for benchmarks that need an exact number of generated tokens.
+  /// infinity, so generation runs until [maxTokens], the context limit, a stop
+  /// sequence (including a chat template's own stop strings) or cancellation.
+  /// Speculative decoding verifies drafts with the same sampler, so a drafted
+  /// end-of-generation token is never accepted. Useful for benchmarks that
+  /// need a fixed number of generated tokens. End-of-generation tokens include
+  /// tool-call and fill-in-the-middle markers some vocabularies declare, so a
+  /// model cannot close a tool call with this set.
   ///
-  /// It cannot be combined with a grammar, whether set through [grammar] or
-  /// derived from tools or a response format: native llama.cpp throws
-  /// `LlamaUnsupportedException`. LiteRT-LM and WebGPU reject it.
+  /// A non-empty grammar, whether set through [grammar] or derived from tools
+  /// or a response format, throws `LlamaUnsupportedException` on native
+  /// llama.cpp. WebGPU and LiteRT-LM reject the option.
   final bool ignoreEos;
 
   /// GBNF grammar string for structured output (e.g., "root ::= \"hello\" | \"world\"").

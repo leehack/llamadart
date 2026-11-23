@@ -490,16 +490,22 @@ Important fields:
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.
 - `ignoreEos`: native llama.cpp gives every end-of-generation token a bias of
-  negative infinity, as `--ignore-eos` does, so generation runs to
-  `maxTokens`, a stop sequence or cancellation, for benchmarks that need an
-  exact token count. Speculative decoding verifies drafts with the same
-  sampler, so a drafted end-of-generation token is never accepted. Any
-  grammar, including tool-call and `responseFormat` grammars, throws
-  `LlamaUnsupportedException`. WebGPU and LiteRT-LM reject it.
+  negative infinity, as the `--ignore-eos` CLI option does, so generation
+  runs until `maxTokens`, the context limit, a stop sequence (including the
+  chat template's own stop strings) or cancellation, for benchmarks that need
+  a fixed token count. Speculative decoding verifies drafts with the same
+  sampler, so a drafted end-of-generation token is never accepted. Some
+  vocabularies count tool-call and fill-in-the-middle markers as
+  end-of-generation, so a model cannot close a tool call with it set. A
+  non-empty grammar, including tool-call grammars (any `ToolChoice` but
+  `none`) and `responseFormat` grammars, throws `LlamaUnsupportedException`.
+  WebGPU and LiteRT-LM reject it.
 
 After a model loads, `engine.capabilities` reports which of these options the
-runtime applies. A request that sets one it reports `false` to a value other
-than the default throws `LlamaUnsupportedException`:
+runtime applies. With the built-in backends, a request that sets one it
+reports `false` to a value other than the default throws
+`LlamaUnsupportedException`; `LlamaEngine` does not check these fields
+itself, so a custom backend must reject what it does not apply:
 
 | Option | `LlamaEngineCapabilities` field | llama.cpp native | WebGPU | LiteRT-LM native | LiteRT-LM web |
 | --- | --- | --- | --- | --- | --- |

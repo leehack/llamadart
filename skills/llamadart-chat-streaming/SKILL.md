@@ -195,9 +195,11 @@ modalities and speculative strategies before offering them.
   basic support. An explicit `endTag`, including `</think>`, selects a
   single delimiter.
 - `GenerationParams(ignoreEos: true)` keeps generating past end-of-generation
-  tokens, so a benchmark gets exactly `maxTokens` (`finishReason` `length`).
-  Only native llama.cpp applies it (`supportsIgnoreEos`); any grammar,
-  including tools and `responseFormat`, throws `LlamaUnsupportedException`.
+  tokens, until `maxTokens`, the context limit, a stop sequence (including the
+  chat template's own stop strings) or cancellation. Only native llama.cpp
+  applies it (`supportsIgnoreEos`); a tool-call grammar (any `ToolChoice` but
+  `none`), a `responseFormat` grammar or a non-empty `grammar` throws
+  `LlamaUnsupportedException`.
 - Token usage (`chunk.usage`) is only on the final chunk and may be null (for
   example on LiteRT-LM or a cancelled request). Never assume it is present.
 - `chunk.model` is the last path segment of the model source (`qwen.gguf`),

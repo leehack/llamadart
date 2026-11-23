@@ -7,9 +7,10 @@ import 'package:test/test.dart';
 
 import '../test_helper.dart';
 
-// stories15M never emits an end-of-generation token, so generation that runs
-// past one is checked on Qwen3.5 in
-// core/engine/qwen35_ignore_eos_test.dart (local-only).
+// stories15M does not reliably emit an end-of-generation token. Generation
+// that runs past one is checked on a synthetic GGUF in
+// unit/backends/llama_cpp/llama_cpp_service_ignore_eos_test.dart and on
+// Qwen3.5 in core/engine/qwen35_ignore_eos_test.dart (local-only).
 void main() {
   late LlamaEngine engine;
 
@@ -40,13 +41,24 @@ void main() {
     expect((await engine.capabilities).supportsIgnoreEos, isTrue);
   });
 
-  test(
-    'ignoreEos with a grammar is rejected and the engine recovers',
-    () async {
+  for (final lazy in [false, true]) {
+    test('ignoreEos with a ${lazy ? 'lazy' : 'eager'} grammar is rejected '
+        'and the engine recovers', () async {
       await expectLater(
         engine.generate(
           'Once upon a time',
-          params: params.copyWith(grammar: 'root ::= "a"'),
+          params: params.copyWith(
+            grammar: 'root ::= "a"',
+            grammarLazy: lazy,
+            grammarTriggers: lazy
+                ? const [
+                    GenerationGrammarTrigger.typed(
+                      type: GrammarTriggerType.word,
+                      value: 'a',
+                    ),
+                  ]
+                : null,
+          ),
         ),
         emitsError(
           isA<LlamaUnsupportedException>().having(
@@ -60,6 +72,6 @@ void main() {
         await engine.generate('Once upon a time', params: params).join(),
         isNotEmpty,
       );
-    },
-  );
+    });
+  }
 }

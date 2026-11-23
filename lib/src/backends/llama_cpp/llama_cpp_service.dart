@@ -109,8 +109,8 @@ LlamaArgumentException _draftMicroBatchTooSmall(
 
 const String _ignoreEosWithGrammar =
     'GenerationParams.ignoreEos is not supported with a grammar, including '
-    'one derived from tools or a response format, as llama.cpp rejects '
-    '--ignore-eos with --grammar or --json-schema.';
+    'one derived from tools or a response format, as llama.cpp\'s '
+    '--ignore-eos CLI option does.';
 
 const String _draftBlockRequirement =
     'for llama.cpp draft-dflash and draft-dspark, which decode a whole draft '
@@ -2989,12 +2989,19 @@ class LlamaCppService {
   }) {
     try {
       final vocab = llama_model_get_vocab(modelPointer);
+      final vocabSize = llama_vocab_n_tokens(vocab);
+      final suppressedTokens = readModelSuppressTokens(vocab);
       return _LlamaModelWrapper(
         modelPointer,
         _calls,
         sourcePath: sourcePath,
-        vocabSize: llama_vocab_n_tokens(vocab),
-        suppressedTokens: readModelSuppressTokens(vocab),
+        vocabSize: vocabSize,
+        suppressedTokens: suppressedTokens,
+        // Read with the other metadata at load, not during a generation.
+        suppressedTokensIgnoringEos: List<int>.unmodifiable({
+          ...suppressedTokens,
+          ...readModelEndOfGenerationTokens(vocab, vocabSize),
+        }),
       );
     } catch (_) {
       IsolateShutdownReleases.current.release(modelPointer);
@@ -4131,6 +4138,7 @@ class LlamaCppService {
       calls,
       vocabSize: 0,
       suppressedTokens: const <int>[],
+      suppressedTokensIgnoringEos: const <int>[],
     );
     final ctxWrapper = _LlamaContextWrapper(
       Pointer<llama_context>.fromAddress(contextAddress),
@@ -5419,6 +5427,17 @@ class LlamaCppService {
     );
   }
 
+  /// The tokens a generation of [modelHandle] suppresses, for unit tests.
+  List<int> debugSuppressedTokensForTesting(
+    int modelHandle, {
+    required bool ignoreEos,
+  }) {
+    final model = _models[modelHandle]!;
+    return ignoreEos
+        ? model.suppressedTokensIgnoringEos
+        : model.suppressedTokens;
+  }
+
   /// Resolves llama.cpp penalty sampler parameters for unit tests.
   Map<String, Object> debugResolvePenaltySamplerParamsForTesting(
     GenerationParams params,
@@ -5600,7 +5619,7 @@ class LlamaCppService {
           projectorLoaded: _modelToMtmd[modelHandle] != null,
         );
       }
-      if (params.ignoreEos && params.grammar != null) {
+      if (params.ignoreEos && (params.grammar?.isNotEmpty ?? false)) {
         throw LlamaUnsupportedException(_ignoreEosWithGrammar);
       }
       final thinkingBudgetConfig = _resolveLlamaCppThinkingBudgetConfig(
@@ -5752,10 +5771,7 @@ class LlamaCppService {
         vocab,
         model.vocabSize,
         params.ignoreEos
-            ? model.suppressedTokensIgnoringEos ??= List<int>.unmodifiable({
-                ...model.suppressedTokens,
-                ...readModelEndOfGenerationTokens(vocab, model.vocabSize),
-              })
+            ? model.suppressedTokensIgnoringEos
             : model.suppressedTokens,
         grammarPtr,
         rootPtr,
@@ -11625,9 +11641,8 @@ class _LlamaModelWrapper {
   final int vocabSize;
   final List<int> suppressedTokens;
 
-  /// [suppressedTokens] plus every end-of-generation token, read on the first
-  /// `ignoreEos` generation.
-  List<int>? suppressedTokensIgnoringEos;
+  /// [suppressedTokens] plus every end-of-generation token.
+  final List<int> suppressedTokensIgnoringEos;
   final LlamaCppObjectCalls _calls;
   _LlamaModelWrapper(
     this.pointer,
@@ -11635,6 +11650,7 @@ class _LlamaModelWrapper {
     this.sourcePath,
     required this.vocabSize,
     required this.suppressedTokens,
+    required this.suppressedTokensIgnoringEos,
   });
   void dispose() {
     IsolateShutdownReleases.current.release(pointer);
