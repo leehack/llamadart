@@ -530,6 +530,131 @@ void main() {
 
   for (final path in _preparedChangelogs) {
     const badClaim = 'Native audio (unchanged from 1.2.1).';
+    const footnoteClaim = 'Native audio unchanged since 1.2.1.';
+    for (final (shape, notes, rejected, rendered) in [
+      (
+        'a blockquote closing an outer HTML pre',
+        '<div><pre>\n\n> Sample. </pre></div>\n\n'
+            'Ordinary paragraph.\n\n- $badClaim',
+        true,
+        'GitHub renders the final list after </pre>.',
+      ),
+      (
+        'a list item closing an outer HTML pre',
+        '<div><pre>\n\n- Sample ends here. </pre></div>\n\n$badClaim',
+        true,
+        'GitHub renders the final paragraph after </pre>.',
+      ),
+      (
+        'an HTML pre ending with its list item',
+        '- <pre>\n  Sample.\n- $badClaim',
+        true,
+        'GitHub closes the pre inside the first item and renders the claim in the second.',
+      ),
+      (
+        'an HTML pre ending with its blockquote',
+        '> <div><pre>\n>\n> Sample.\n\n$badClaim',
+        true,
+        'GitHub closes the pre inside the blockquote and renders the claim outside.',
+      ),
+      (
+        'a blockquote inside an open HTML pre',
+        '<div><pre>\n\n> Sample $badClaim\n\n</pre></div>',
+        false,
+        'GitHub renders the blockquote inside the still-open pre.',
+      ),
+      (
+        'a Markdown link title',
+        '- [Reference](notes.md "$badClaim")',
+        true,
+        'GitHub retains the claim as the link title.',
+      ),
+      (
+        'a Markdown image title',
+        '- ![Diagram](image.png "$badClaim")',
+        true,
+        'GitHub retains the claim as the image title and Diagram as its alt text.',
+      ),
+      (
+        'a link title without a retention claim',
+        '- [Reference](notes.md "Native audio notes.")',
+        false,
+        'GitHub retains the ordinary title on the link.',
+      ),
+      (
+        'a raw HTML link title',
+        '<a href="notes.md" title="$badClaim">Reference</a>',
+        true,
+        'GitHub retains the claim as the raw HTML link title.',
+      ),
+      (
+        'an unreferenced list footnote',
+        '- [^a]: Changelog search is unchanged since 1.2.1.',
+        false,
+        'GitHub renders an empty list item and omits the definition.',
+      ),
+      (
+        'a second definition of a referenced footnote',
+        'See the note[^a].\n\n[^a]: Ordinary.\n\n[^a]: $footnoteClaim',
+        false,
+        'GitHub renders only the first definition, Ordinary.',
+      ),
+      (
+        'the only definition of a referenced footnote',
+        'See the note[^a].\n\n[^a]: $footnoteClaim',
+        true,
+        'GitHub renders the claim in the footnotes section.',
+      ),
+      (
+        'a footnote marker in inline code',
+        'See `[^a]`.\n\n[^a]: $badClaim',
+        false,
+        'GitHub renders the marker as code and emits no footnote.',
+      ),
+      (
+        'a duplicate footnote label with different case',
+        'See note[^a].\n\n[^A]: First note.\n\n[^a]: $badClaim',
+        false,
+        'GitHub resolves both spellings to the first definition.',
+      ),
+      (
+        'a footnote referenced from an omitted definition',
+        '[^a]: Read this[^b].\n\n[^b]: $badClaim',
+        true,
+        'GitHub omits a but emits b in the footnotes section.',
+      ),
+      (
+        'a footnote referenced from a superseded definition',
+        'See note[^a].\n\n[^a]: First note.\n\n'
+            '[^a]: Read this[^b].\n\n[^b]: $badClaim',
+        true,
+        'GitHub emits the first a and also emits b.',
+      ),
+      (
+        'a footnote with its reference and a duplicate in an older release',
+        '[^a]: $badClaim\n\n## 1.2.2\n\nSee note[^a].\n\n[^a]: Later note.',
+        true,
+        'GitHub renders the first definition, which belongs to the current release.',
+      ),
+      (
+        'a Setext heading spelling an older release',
+        '1.2.2\n-----\n\n$badClaim\n\n## 1.2.2\n\nPrevious notes.',
+        true,
+        'GitHub renders the claim after the Setext heading and before the actual release boundary.',
+      ),
+    ]) {
+      test('strict prep checks rendered Markdown for $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        File(
+          '${root.path}/$path',
+        ).writeAsStringSync('\n$notes\n', mode: FileMode.append);
+        expect(_verifyPreparedRelease(root), [
+          if (rejected)
+            startsWith('$path contains an (unchanged from ...) claim'),
+        ], reason: rendered);
+      });
+    }
+
     for (final (shape, notes) in [
       (
         'prose after an opening textarea',

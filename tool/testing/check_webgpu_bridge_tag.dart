@@ -1355,14 +1355,12 @@ const _markdownProseTags = {
   'th',
   'td',
 };
+const _markdownContainers = {'blockquote', 'ol', 'ul', 'li'};
 const _markdownBlockTags = {
   ..._markdownProseTags,
-  'blockquote',
+  ..._markdownContainers,
   'pre',
   'hr',
-  'ol',
-  'ul',
-  'li',
   'table',
   'thead',
   'tbody',
@@ -1408,30 +1406,91 @@ final _versionCodeSpan = RegExp(
   caseSensitive: false,
 );
 
+class _ReleaseHeading extends md.Element {
+  _ReleaseHeading(List<md.Node> children) : super('h2', children);
+}
+
+class _ReleaseHeadingSyntax extends md.HeaderSyntax {
+  const _ReleaseHeadingSyntax();
+
+  static final _levelTwo = RegExp(r'^ {0,3}##[ \t]');
+
+  @override
+  bool canParse(md.BlockParser parser) =>
+      super.canParse(parser) && _levelTwo.hasMatch(parser.current.content);
+
+  @override
+  md.Node parse(md.BlockParser parser) {
+    final heading = super.parse(parser) as md.Element;
+    return _ReleaseHeading(heading.children!);
+  }
+}
+
+class _ReleaseFootnote extends md.Element {
+  _ReleaseFootnote(this.label, List<md.Node> children) : super('li', children);
+
+  final String label;
+}
+
 class _ReleaseFootnoteSyntax extends md.FootnoteDefSyntax {
   const _ReleaseFootnoteSyntax();
 
   @override
   md.Node? parse(md.BlockParser parser) {
     final definition = super.parse(parser) as md.Element;
-    // References can live in older sections. Keep definitions in the section
-    // that owns them before Markdown drops or relocates them.
-    return md.Element('li', definition.children);
+    // Retain the definition's position so it can be attributed to its release.
+    return _ReleaseFootnote(
+      definition.footnoteLabel!.toLowerCase(),
+      definition.children!,
+    );
   }
 }
 
-class _ReleaseHtmlText {
-  _ReleaseHtmlText([this.openPre = '']);
+Iterable<_ReleaseFootnote> _footnoteDefinitions(Iterable<md.Node> nodes) sync* {
+  for (final node in nodes.whereType<md.Element>()) {
+    if (node is _ReleaseFootnote) yield node;
+    if (node.children case final children?) {
+      yield* _footnoteDefinitions(children);
+    }
+  }
+}
 
-  String openPre;
+List<md.Element> _renderedReleaseFootnotes(
+  List<md.Node> section,
+  List<md.Node> document,
+  List<String> referenceLabels,
+) {
+  if (referenceLabels.isEmpty) return [];
+  final firstDefinitions = <String, _ReleaseFootnote>{};
+  for (final definition in _footnoteDefinitions(document)) {
+    firstDefinitions.putIfAbsent(definition.label, () => definition);
+  }
+  final owned = _footnoteDefinitions(section).toSet();
+  return [
+    for (final label in referenceLabels)
+      if (firstDefinitions[label] case final definition?
+          when owned.contains(definition))
+        md.Element('li', definition.children),
+  ];
+}
+
+class _ReleaseHtmlText {
+  _ReleaseHtmlText({this.includeTitles = false});
+
+  final bool includeTitles;
+  String _openContext = '';
 
   List<String> read(String fragment) {
     final units = <String>[];
     final text = StringBuffer();
 
-    void flush() {
-      final unit = text.toString().replaceAll(_releaseWhitespace, ' ').trim();
+    void addUnit(String value) {
+      final unit = value.replaceAll(_releaseWhitespace, ' ').trim();
       if (unit.isNotEmpty) units.add(unit);
+    }
+
+    void flush() {
+      addUnit(text.toString());
       text.clear();
     }
 
@@ -1443,6 +1502,9 @@ class _ReleaseHtmlText {
         if (tag == 'br') {
           text.write(' ');
           return;
+        }
+        if (includeTitles && (tag == 'a' || tag == 'img')) {
+          if (node.attributes['title'] case final title?) addUnit(title);
         }
         if (tag == 'img') {
           text.write(node.attributes['alt'] ?? '');
@@ -1460,18 +1522,21 @@ class _ReleaseHtmlText {
     }
 
     final parser = html_parser.HtmlParser(
-      openPre + fragment.replaceAll(_gfmFilteredTag, '&lt;'),
+      _openContext + fragment.replaceAll(_gfmFilteredTag, '&lt;'),
     );
     parser.parseFragment().nodes.forEach(visit);
-    // A raw pre can span Markdown blocks. Carry only its HTML context so a
-    // comment in one fragment still cannot consume the next fragment.
+    // Preserve only pre and container context across fragments. HTML end tags
+    // in a container can close an inherited pre, and container end tags can
+    // close a pre opened inside them.
     final openTags = parser.tree.openElements
         .map((node) => node.localName)
         .toList();
-    final pre = openTags.lastIndexOf('pre');
-    openPre = pre < 0
+    final context = openTags.lastIndexWhere(
+      (tag) => tag == 'pre' || _markdownContainers.contains(tag),
+    );
+    _openContext = context < 0
         ? ''
-        : openTags.skip(1).take(pre).map((tag) => '<$tag>').join();
+        : openTags.skip(1).take(context).map((tag) => '<$tag>').join();
     flush();
     return units;
   }
@@ -1493,15 +1558,15 @@ bool _isMarkdownBlock(md.Node node) =>
 }
 
 Iterable<String> _releaseTextUnits(
-  Iterable<md.Node> nodes, {
+  Iterable<md.Node> nodes,
+  _ReleaseHtmlText htmlText, {
   md.Element? verifiedBridge,
   md.Element? verifiedBaseline,
   bool inListItem = false,
-  String openPre = '',
 }) sync* {
-  final htmlText = _ReleaseHtmlText(openPre);
   final inlineRun = <md.Node>[];
   for (final node in nodes) {
+    if (node is _ReleaseFootnote) continue;
     if (inListItem && !_isMarkdownBlock(node)) {
       inlineRun.add(node);
       continue;
@@ -1520,13 +1585,16 @@ Iterable<String> _releaseTextUnits(
       if (_markdownProseTags.contains(node.tag)) {
         yield* htmlText.read(md.renderToHtml(children.toList()));
       } else {
+        final container = _markdownContainers.contains(node.tag);
+        if (container) htmlText.read('<${node.tag}>');
         yield* _releaseTextUnits(
           children,
+          htmlText,
           verifiedBridge: verifiedBridge,
           verifiedBaseline: verifiedBaseline,
           inListItem: node.tag == 'li',
-          openPre: htmlText.openPre,
         );
+        if (container) htmlText.read('</${node.tag}>');
       }
     }
   }
@@ -1606,21 +1674,35 @@ List<String> findPreparedReleaseNotesDrift(
     final bridgeUnchanged = bridge == previousBridge;
     for (final (index, file) in files.indexed) {
       final path = releasedChangelogs[index];
-      final sections = ChangelogHistory.parse(file.readAsStringSync()).sections;
+      final source = file.readAsStringSync();
+      final sections = ChangelogHistory.parse(source).sections;
       if (sections.keys.first != version) {
         problems.add('$path must begin with the exact release $version.');
         continue;
       }
       final markdown = md.Document(
         extensionSet: md.ExtensionSet.gitHubFlavored,
-        blockSyntaxes: const [_ReleaseFootnoteSyntax()],
+        blockSyntaxes: const [
+          _ReleaseHeadingSyntax(),
+          _ReleaseFootnoteSyntax(),
+        ],
         encodeHtml: true,
         inlineSyntaxes: [
           // markdown 7.3.1's inline HTML syntax misses these legal comments.
           md.TextSyntax(r'<!--(?:>|->|[\s\S]*?-->)', startCharacter: 0x3c),
         ],
       );
-      final section = markdown.parse(sections.values.first);
+      final document = markdown.parse(source);
+      bool isReleaseHeading(md.Node node) =>
+          node is _ReleaseHeading && sections.containsKey(node.textContent);
+
+      final section = document
+          .skipWhile(
+            (node) => !isReleaseHeading(node) || node.textContent != version,
+          )
+          .skip(1)
+          .takeWhile((node) => !isReleaseHeading(node))
+          .toList();
       final article = index == 0 ? 'the ' : '';
       final bridgeClaim = [
         for (final list in section.whereType<md.Element>())
@@ -1677,11 +1759,23 @@ List<String> findPreparedReleaseNotesDrift(
           '$path must contain one complete Runtime baseline matching the candidate pins.',
         );
       }
-      if (_releaseTextUnits(
+      final footnotes = _renderedReleaseFootnotes(
         section,
-        verifiedBridge: bridgeUnchanged && matchingBridge ? bridgeClaim : null,
-        verifiedBaseline: matchingBaseline ? baseline : null,
-      ).any(_unchangedFrom.hasMatch)) {
+        document,
+        markdown.footnoteLabels,
+      );
+      if (_releaseTextUnits(
+            section,
+            _ReleaseHtmlText(includeTitles: true),
+            verifiedBridge: bridgeUnchanged && matchingBridge
+                ? bridgeClaim
+                : null,
+            verifiedBaseline: matchingBaseline ? baseline : null,
+          ).any(_unchangedFrom.hasMatch) ||
+          _releaseTextUnits(
+            footnotes,
+            _ReleaseHtmlText(includeTitles: true),
+          ).any(_unchangedFrom.hasMatch)) {
         problems.add(
           '$path contains an (unchanged from ...) claim that does not match the previous release.',
         );
