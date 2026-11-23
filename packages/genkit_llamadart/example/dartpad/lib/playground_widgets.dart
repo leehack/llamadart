@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:genkit/genkit.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'playground_controller.dart';
 
@@ -216,9 +216,11 @@ const _presets = {
   'Summarize':
       'Summarize how WebGPU speeds up browser AI in 3 short bullet points.',
   'Translate':
-      'Translate to Spanish and French: "Local AI runs privately in your browser."',
+      'Translate to Spanish and French: '
+      '"Local AI runs privately in your browser."',
   'Explain code':
-      'Explain what this Dart line does: final nums = [1, 2, 3].map((n) => n * 2).toList();',
+      'Explain what this Dart line does: '
+      'final nums = [1, 2, 3].map((n) => n * 2).toList();',
   'Brainstorm': 'Give 3 concise app ideas that use an offline LLM on a phone.',
 };
 

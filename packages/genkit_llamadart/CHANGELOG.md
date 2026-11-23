@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Add multi-turn chat, generation settings, live stats, and prompt presets to the DartPad playground, and use the automatic single-thread GGUF bridge default.
+- Migrate the DartPad playground from deprecated `package:flutter/material.dart` to `package:material_ui` and `package:flutter/widgets.dart`.
 
 ## 3.10.0 - 2026-11-22
 
