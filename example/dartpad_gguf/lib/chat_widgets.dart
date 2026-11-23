@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -8,11 +9,13 @@ class ModelPicker extends StatelessWidget {
     super.key,
     required this.selected,
     required this.enabled,
+    required this.showWarning,
     required this.onSelected,
   });
 
   final GgufModelOption selected;
   final bool enabled;
+  final bool showWarning;
   final ValueChanged<GgufModelOption> onSelected;
 
   @override
@@ -38,7 +41,11 @@ class ModelPicker extends StatelessWidget {
                 for (final model in ggufModels)
                   DropdownMenuItem(
                     value: model,
-                    child: Text('${model.label} (${model.sizeLabel})'),
+                    child: Text(
+                      '${model.label} (${model.sizeLabel})',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
               ],
               onChanged: enabled
@@ -51,11 +58,11 @@ class ModelPicker extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(selected.note, style: theme.textTheme.bodySmall),
-        if (warning != null) ...[
-          const SizedBox(height: 6),
+        if (showWarning && warning != null) ...[
+          const SizedBox(height: 8),
           DecoratedBox(
             decoration: BoxDecoration(
-              color: theme.colorScheme.errorContainer,
+              color: theme.colorScheme.tertiaryContainer,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Padding(
@@ -66,14 +73,14 @@ class ModelPicker extends StatelessWidget {
                   Icon(
                     Icons.warning_amber_rounded,
                     size: 18,
-                    color: theme.colorScheme.onErrorContainer,
+                    color: theme.colorScheme.onTertiaryContainer,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       warning,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onErrorContainer,
+                        color: theme.colorScheme.onTertiaryContainer,
                       ),
                     ),
                   ),
@@ -90,33 +97,39 @@ class ModelPicker extends StatelessWidget {
 class StatsBar extends StatelessWidget {
   const StatsBar({super.key, required this.stats, required this.generating});
 
-  final ChatStats stats;
+  final ValueListenable<ChatStats> stats;
   final bool generating;
 
   @override
   Widget build(BuildContext context) {
-    final backend = stats.backendName;
-    if (backend == null) return const SizedBox.shrink();
+    return ValueListenableBuilder<ChatStats>(
+      valueListenable: stats,
+      builder: (context, value, _) {
+        final backend = value.backendName;
+        if (backend == null) return const SizedBox.shrink();
 
-    final elapsed = stats.elapsed;
-    final tokens = stats.outputTokens;
-    final rate = stats.tokensPerSecond;
-    final text = [
-      if (generating) 'Streaming…',
-      if (tokens != null) '$tokens tok',
-      if (rate != null) '${rate.toStringAsFixed(1)} tok/s',
-      if (tokens == null && elapsed != null)
-        '${(elapsed.inMilliseconds / 1000).toStringAsFixed(1)}s',
-      backend,
-    ].join(' · ');
-    return Text(text, style: Theme.of(context).textTheme.bodySmall);
+        final elapsed = value.elapsed;
+        final tokens = value.outputTokens;
+        final rate = value.tokensPerSecond;
+        final text = [
+          if (generating) 'Streaming…',
+          if (tokens != null) '$tokens tok',
+          if (rate != null) '${rate.toStringAsFixed(1)} tok/s',
+          if (tokens == null && elapsed != null)
+            '${(elapsed.inMilliseconds / 1000).toStringAsFixed(1)}s',
+          backend,
+        ].join(' · ');
+        return Text(text, style: Theme.of(context).textTheme.bodySmall);
+      },
+    );
   }
 }
 
 class SettingsPanel extends StatelessWidget {
-  const SettingsPanel({super.key, required this.chat});
+  const SettingsPanel({super.key, required this.chat, required this.enabled});
 
   final ChatController chat;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -130,25 +143,42 @@ class SettingsPanel extends StatelessWidget {
       expandedCrossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Temperature: $temperature'),
-        Slider(
-          value: settings.temperature,
-          min: 0,
-          max: 1.5,
-          divisions: 15,
-          label: temperature,
-          onChanged: (value) => chat.updateSettings(temperature: value),
+        MergeSemantics(
+          child: Semantics(
+            label: 'Temperature',
+            child: Slider(
+              value: settings.temperature,
+              min: 0,
+              max: 1.5,
+              divisions: 15,
+              label: temperature,
+              semanticFormatterCallback: (value) => value.toStringAsFixed(1),
+              onChanged: enabled
+                  ? (value) => chat.updateSettings(temperature: value)
+                  : null,
+            ),
+          ),
         ),
         Text('Max tokens: $maxTokens'),
-        Slider(
-          value: maxTokens.toDouble(),
-          min: 64,
-          max: 512,
-          divisions: 7,
-          label: '$maxTokens',
-          onChanged: (value) => chat.updateSettings(maxTokens: value.round()),
+        MergeSemantics(
+          child: Semantics(
+            label: 'Max tokens',
+            child: Slider(
+              value: maxTokens.toDouble(),
+              min: 64,
+              max: 512,
+              divisions: 7,
+              label: '$maxTokens',
+              semanticFormatterCallback: (value) => '${value.round()} tokens',
+              onChanged: enabled
+                  ? (value) => chat.updateSettings(maxTokens: value.round())
+                  : null,
+            ),
+          ),
         ),
         TextFormField(
           initialValue: settings.systemPrompt,
+          enabled: enabled,
           maxLines: 2,
           decoration: const InputDecoration(
             labelText: 'System prompt',
@@ -183,40 +213,73 @@ class PresetChips extends StatelessWidget {
 }
 
 class TranscriptList extends StatelessWidget {
-  const TranscriptList({super.key, required this.messages});
+  const TranscriptList({
+    super.key,
+    required this.messages,
+    required this.streamingText,
+  });
 
   final List<ChatMessage> messages;
+  final ValueListenable<String?> streamingText;
+
+  @override
+  Widget build(BuildContext context) {
+    return SelectionArea(
+      child: Column(
+        children: [
+          for (final message in messages) _MessageBubble(message: message),
+          ValueListenableBuilder<String?>(
+            valueListenable: streamingText,
+            builder: (context, text, _) {
+              if (text == null) return const SizedBox.shrink();
+              return _MessageBubble(
+                message: ChatMessage(LlamaChatRole.assistant, text),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MessageBubble extends StatelessWidget {
+  const _MessageBubble({required this.message});
+
+  final ChatMessage message;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Column(
-      children: [
-        for (final message in messages)
-          Align(
-            alignment: message.role == LlamaChatRole.user
-                ? AlignmentDirectional.centerEnd
-                : AlignmentDirectional.centerStart,
-            child: Card(
-              color: message.role == LlamaChatRole.user
-                  ? theme.colorScheme.primaryContainer
-                  : theme.colorScheme.surfaceContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      message.role == LlamaChatRole.user ? 'You' : 'Assistant',
-                      style: theme.textTheme.labelMedium,
-                    ),
-                    SelectableText(message.text),
-                  ],
-                ),
+    final isUser = message.role == LlamaChatRole.user;
+    final foreground = isUser
+        ? theme.colorScheme.onPrimaryContainer
+        : theme.colorScheme.onSurface;
+    return Align(
+      alignment: isUser
+          ? AlignmentDirectional.centerEnd
+          : AlignmentDirectional.centerStart,
+      child: Card(
+        color: isUser
+            ? theme.colorScheme.primaryContainer
+            : theme.colorScheme.surfaceContainer,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isUser ? 'You' : 'Assistant',
+                style: theme.textTheme.labelMedium?.copyWith(color: foreground),
               ),
-            ),
+              Text(
+                message.text,
+                style: theme.textTheme.bodyMedium?.copyWith(color: foreground),
+              ),
+            ],
           ),
-      ],
+        ),
+      ),
     );
   }
 }
@@ -272,7 +335,11 @@ class ComposerBar extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-          Semantics(liveRegion: true, child: Text(chat.status)),
+          ValueListenableBuilder<String>(
+            valueListenable: chat.status,
+            builder: (context, status, _) =>
+                Semantics(liveRegion: true, child: Text(status)),
+          ),
         ],
       ),
     );

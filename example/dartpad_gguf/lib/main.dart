@@ -45,9 +45,17 @@ class _GgufScreenState extends State<_GgufScreen> {
   final _prompt = TextEditingController();
   final _promptFocus = FocusNode();
   final _scroll = ScrollController();
+  bool _scrollScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _chat.streamingText.addListener(_onStreamingText);
+  }
 
   @override
   void dispose() {
+    _chat.streamingText.removeListener(_onStreamingText);
     _chat.dispose();
     _prompt.dispose();
     _promptFocus.dispose();
@@ -55,12 +63,23 @@ class _GgufScreenState extends State<_GgufScreen> {
     super.dispose();
   }
 
+  void _onStreamingText() {
+    if (_chat.streamingText.value != null) {
+      _followTranscript();
+    }
+  }
+
   void _followTranscript({bool force = false}) {
+    if (_scrollScheduled) return;
     if (!force && (!_scroll.hasClients || _scroll.position.extentAfter > 48)) {
       return;
     }
+    _scrollScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      _scrollScheduled = false;
+      if (mounted && _scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      }
     });
   }
 
@@ -69,8 +88,8 @@ class _GgufScreenState extends State<_GgufScreen> {
     return ListenableBuilder(
       listenable: _chat,
       builder: (context, _) {
-        if (_chat.generating) _followTranscript();
         final messages = _chat.messages;
+        final busy = _chat.loading || _chat.generating;
         return Scaffold(
           appBar: AppBar(
             title: const Text('GGUF in DartPad'),
@@ -84,65 +103,85 @@ class _GgufScreenState extends State<_GgufScreen> {
             ],
           ),
           body: SafeArea(
-            child: Column(
-              children: [
-                Expanded(
-                  child: SingleChildScrollView(
-                    controller: _scroll,
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 8),
-                        ModelPicker(
-                          selected: _chat.selectedModel,
-                          enabled: !_chat.loading && !_chat.generating,
-                          onSelected: _chat.selectModel,
-                        ),
-                        const SizedBox(height: 8),
-                        FilledButton(
-                          onPressed: _chat.loading || _chat.ready
-                              ? null
-                              : _chat.load,
-                          child: const Text('Load'),
-                        ),
-                        if (_chat.loading)
-                          LinearProgressIndicator(
-                            value: _chat.progress,
-                            semanticsLabel: 'Loading model',
-                          ),
-                        StatsBar(
-                          stats: _chat.stats,
-                          generating: _chat.generating,
-                        ),
-                        SettingsPanel(chat: _chat),
-                        PresetChips(
-                          onSelect: (text) {
-                            _prompt.value = TextEditingValue(
-                              text: text,
-                              selection: TextSelection.collapsed(
-                                offset: text.length,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 640),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        controller: _scroll,
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ModelPicker(
+                              selected: _chat.selectedModel,
+                              enabled: !busy,
+                              showWarning: !_chat.ready,
+                              onSelected: _chat.selectModel,
+                            ),
+                            const SizedBox(height: 8),
+                            FilledButton(
+                              onPressed: _chat.loading || _chat.ready
+                                  ? null
+                                  : _chat.load,
+                              child: const Text('Load'),
+                            ),
+                            if (_chat.loading) ...[
+                              const SizedBox(height: 8),
+                              ValueListenableBuilder<double?>(
+                                valueListenable: _chat.progress,
+                                builder: (context, progress, _) =>
+                                    LinearProgressIndicator(
+                                      value: progress,
+                                      semanticsLabel: 'Loading model',
+                                    ),
                               ),
-                            );
-                            _promptFocus.requestFocus();
-                          },
+                            ],
+                            if (_chat.ready) ...[
+                              const SizedBox(height: 8),
+                              StatsBar(
+                                stats: _chat.stats,
+                                generating: _chat.generating,
+                              ),
+                            ],
+                            const SizedBox(height: 8),
+                            SettingsPanel(chat: _chat, enabled: !busy),
+                            const SizedBox(height: 8),
+                            PresetChips(
+                              onSelect: (text) {
+                                _prompt.value = TextEditingValue(
+                                  text: text,
+                                  selection: TextSelection.collapsed(
+                                    offset: text.length,
+                                  ),
+                                );
+                                _promptFocus.requestFocus();
+                              },
+                            ),
+                            const Divider(height: 24),
+                            TranscriptList(
+                              messages: messages,
+                              streamingText: _chat.streamingText,
+                            ),
+                          ],
                         ),
-                        TranscriptList(messages: messages),
-                      ],
+                      ),
                     ),
-                  ),
+                    ComposerBar(
+                      chat: _chat,
+                      prompt: _prompt,
+                      promptFocus: _promptFocus,
+                      onSend: () {
+                        _chat.send(_prompt.text);
+                        _prompt.clear();
+                        _followTranscript(force: true);
+                      },
+                    ),
+                  ],
                 ),
-                ComposerBar(
-                  chat: _chat,
-                  prompt: _prompt,
-                  promptFocus: _promptFocus,
-                  onSend: () {
-                    _chat.send(_prompt.text);
-                    _prompt.clear();
-                    _followTranscript(force: true);
-                  },
-                ),
-              ],
+              ),
             ),
           ),
         );
