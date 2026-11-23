@@ -204,7 +204,7 @@ class SelectionTest(unittest.TestCase):
         narrow = {'chat_app', 'dartpad_gguf'}
         full = {'basic_app', 'laya_command_bar', 'laya_tetris', 'llamadart_cli',
                 'llamadart_server', 'training_notebook', 'tui_coding_agent'}
-        directories = {path.name for path in (ROOT / 'example').iterdir() if path.is_dir()}
+        directories = {path.name for path in (ROOT / 'example').glob('*') if path.is_dir()}
         self.assertEqual(directories, narrow | full)
         for name in sorted(directories):
             with self.subTest(example=name):
