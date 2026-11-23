@@ -14,7 +14,7 @@ dependencies:
   genkit_llamadart:
     path: ../..
   http: ^1.6.0
-  llamadart: ^0.20.6
+  llamadart: ^0.20.7
 
 dev_dependencies:
   flutter_test:

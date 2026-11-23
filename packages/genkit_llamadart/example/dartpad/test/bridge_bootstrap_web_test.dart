@@ -46,10 +46,11 @@ void main() {
         'https://cdn.jsdelivr.net/npm/llama-web-bridge@'
         '${defaultBridgeAssetsTag.substring(1)}/dist/';
 
+    expect(globalContext[_optIn], isNull);
     await bootstrapBridge(
       importBridge: (url) async {
         expect(url, '${base}llama_webgpu_bridge.js');
-        expect((globalContext[_optIn] as JSBoolean).toDart, isTrue);
+        expect(globalContext[_optIn], isNull);
         for (final MapEntry(:key, :value) in _assets.entries) {
           expect((globalContext[key] as JSString).toDart, '$base$value');
         }

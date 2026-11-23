@@ -42,9 +42,9 @@ llamadart supports Android, iOS, macOS, Linux, Windows and Web. Backend features
 and setup differ by platform.
 
 Try the [DartPad Preview example](https://preview.dartpad.dev/?package=genkit_llamadart&root=example/dartpad&file=example/dartpad/lib/main.dart), available starting in genkit_llamadart 3.10.0.
-In Chrome, LiteRT-LM runs locally on llamadart 0.20.6 with WebGPU. GGUF in
-DartPad requires llamadart 0.20.7 or newer. Gemini sends prompts to Google's
-API using the key you enter for the session. See the
+The playground uses llamadart 0.20.7 or newer. GGUF and Gemini support
+multi-turn chat, and LiteRT-LM runs single-turn in Chrome with WebGPU. Gemini
+sends prompts to Google's API using the key you enter for the session. See the
 [example instructions](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/dartpad/README.md).
 
 ## Quickstart
