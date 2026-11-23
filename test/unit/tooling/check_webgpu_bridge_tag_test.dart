@@ -529,6 +529,216 @@ void main() {
   }
 
   for (final path in _preparedChangelogs) {
+    const badClaim = 'Native audio (unchanged from 1.2.1).';
+    for (final (shape, notes) in [
+      (
+        'ordinary bullet continuation',
+        '- Native audio\n  (unchanged from 1.2.1).',
+      ),
+      ('nested sub-bullet', '- Runtime notes\n  - $badClaim'),
+      ('blockquote', '> $badClaim'),
+      ('wrapped quote', '> Native audio unchanged from\n> 1.2.1.'),
+      ('lazy quote continuation', '> Runtime notes:\n$badClaim'),
+      ('trailing inline comment', '- $badClaim <!-- editorial -->'),
+      (
+        'split inline comment',
+        '- Native audio (unchanged <!-- x --> from 1.2.1).',
+      ),
+      (
+        'double hyphen in a comment',
+        '- Native audio (unchanged <!-- a -- b --> from 1.2.1).',
+      ),
+      (
+        'empty inline comment',
+        '- Native audio (unchanged <!----> from 1.2.1).',
+      ),
+      ('bare claim with a code span', '- Native audio unchanged from `1.2.1`.'),
+      ('bare since claim', '- Native audio unchanged since 1.2.1.'),
+      ('parenthesized since claim', '- Native audio (unchanged since 1.2.1).'),
+      ('HTML div', '<div>\n$badClaim\n</div>'),
+      (
+        'HTML attribute with a comment opener',
+        '<span title="<!--">$badClaim</span>',
+      ),
+      ('HTML entity', '- Native audio &#40;unchanged from 1.2.1).'),
+      (
+        'GFM table cell',
+        '| Runtime | Notes |\n| --- | --- |\n| Audio | $badClaim |',
+      ),
+      ('indented code before prose', '    <!--\n\n$badClaim'),
+      (
+        'quoted indented code before quoted prose',
+        '>     <!--\n>\n> $badClaim',
+      ),
+      ('quoted indented code before outside prose', '>     <!--\n\n$badClaim'),
+      ('list item fence before prose', '- ```html\n  <!--\n  ```\n\n$badClaim'),
+      (
+        'fence on a list continuation',
+        '- Example\n\n  ```html\n  <!--\n  ```\n\n$badClaim',
+      ),
+      (
+        'list fence ending at an outdent',
+        '- Example\n\n  ```html\n  <!--\n\n$badClaim',
+      ),
+      (
+        'quoted list fence before quoted prose',
+        '> - ```html\n>   <!--\n>   ```\n>\n> $badClaim',
+      ),
+      (
+        'inline code with a comment opener',
+        'Use `<!--` in the sample.\n\n$badClaim',
+      ),
+      (
+        'quoted inline code with a comment opener',
+        '> Use `<!--` in the sample.\n>\n> $badClaim',
+      ),
+      (
+        'multiline code span',
+        'Use `the literal\nmarker <!--` in the sample.\n\n$badClaim',
+      ),
+      (
+        'shorter closing fence',
+        '> ````text\n> ```\n> <!--\n> ````\n\n$badClaim',
+      ),
+      (
+        'wrong closing fence marker',
+        '> ~~~~text\n> ````\n> <!--\n> ~~~~\n>\n> $badClaim',
+      ),
+      ('comment around a fence marker', '<!--\n```text\n-->\n\n$badClaim'),
+      (
+        'quoted comment around a fence marker',
+        '> <!--\n> ```text\n> -->\n>\n> $badClaim',
+      ),
+      (
+        'quoted HTML pre with a fence marker',
+        '> <pre>\n> ```\n> </pre>\n>\n> $badClaim',
+      ),
+      (
+        'quoted list fence ending at an outdent',
+        '> - Sample\n>\n>   ```html\n>   <!--\n> - $badClaim',
+      ),
+      (
+        'outer quote after a nested unclosed comment',
+        '> > <!--\n>\n> $badClaim',
+      ),
+    ]) {
+      test('strict prep rejects retention in $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        changelog.writeAsStringSync('\n$notes\n', mode: FileMode.append);
+        expect(_verifyPreparedRelease(root), [
+          startsWith('$path contains an (unchanged from ...) claim'),
+        ]);
+      });
+    }
+
+    for (final (shape, notes) in [
+      ('top-level indented code', '    $badClaim'),
+      ('list-item fenced code', '- ```text\n  $badClaim\n  ```'),
+      ('indented code in a list', '- Example\n\n      $badClaim'),
+      ('HTML preformatted code', '<pre><code>$badClaim</code></pre>'),
+      (
+        'shorter marker inside fenced code',
+        '> ````text\n> ```\n> $badClaim\n> ````',
+      ),
+      (
+        'separate list item and quote',
+        '- Native audio (unchanged\n> from 1.2.1).',
+      ),
+      ('separate list items', '- Native audio is unchanged\n- from 1.2.1.'),
+      (
+        'separate HTML paragraphs',
+        '<p>Native audio is unchanged</p>\n<p>from 1.2.1.</p>',
+      ),
+      (
+        'separate GFM table cells',
+        '| State | Version |\n| --- | --- |\n| unchanged | from 1.2.1 |',
+      ),
+      (
+        'line-start comment interrupting a code span',
+        'Use `the token\n<!--` in the sample.\n\n$badClaim',
+      ),
+    ]) {
+      test('strict prep accepts notes with $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        changelog.writeAsStringSync('\n$notes\n', mode: FileMode.append);
+        expect(_verifyPreparedRelease(root), isEmpty);
+      });
+    }
+
+    test(
+      'strict prep accepts a loose bridge item before a list fence in $path',
+      () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        changelog.writeAsStringSync(
+          changelog.readAsStringSync().replaceFirst(
+            _preparedBaseline,
+            '- ```html\n  <!--\n  ```\n\n$_preparedBaseline',
+          ),
+        );
+        expect(_verifyPreparedRelease(root), isEmpty);
+      },
+    );
+
+    for (final (shape, bridgeChanged, extra) in [
+      ('changed bridge continuation', true, '  $badClaim\n'),
+      ('Keep continuation', false, '  $badClaim\n'),
+      ('Keep sub-bullet', false, '  - $badClaim\n'),
+    ]) {
+      test('strict prep scans $shape in $path', () {
+        final root = bridgeChanged
+            ? _preparedReleaseRepo(
+                '- Aligned the default WebGPU bridge assets to `v9.9.9`.',
+              )
+            : _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        changelog.writeAsStringSync(
+          changelog.readAsStringSync().replaceFirst(
+            '.\n\nRuntime',
+            '.\n$extra\nRuntime',
+          ),
+        );
+        expect(
+          _verifyPreparedRelease(
+            root,
+            previousBridge: bridgeChanged ? 'v9.9.8' : 'v9.9.9',
+          ),
+          contains(startsWith('$path contains an (unchanged from ...) claim')),
+        );
+      });
+    }
+
+    test('strict prep rejects duplicate bridge claims in $path', () {
+      const claim = '- Aligned the default WebGPU bridge assets to `v9.9.9`.';
+      final root = _preparedReleaseRepo(claim);
+      final changelog = File('${root.path}/$path');
+      changelog.writeAsStringSync(
+        changelog.readAsStringSync().replaceFirstMapped(
+          RegExp(r'^- Aligned.*$', multiLine: true),
+          (match) => '${match[0]}\n${match[0]}',
+        ),
+      );
+      expect(_verifyPreparedRelease(root, previousBridge: 'v9.9.8'), [
+        startsWith(
+          '$path must contain exactly one matching WebGPU bridge claim',
+        ),
+      ]);
+    });
+
+    test('strict prep rejects duplicate baselines in $path', () {
+      final root = _preparedReleaseRepo();
+      File(
+        '${root.path}/$path',
+      ).writeAsStringSync('\n$_preparedBaseline\n', mode: FileMode.append);
+      expect(_verifyPreparedRelease(root), [
+        startsWith('$path must contain one complete Runtime baseline'),
+      ]);
+    });
+  }
+
+  for (final path in _preparedChangelogs) {
     for (final (runtime, pin, previousPin) in [
       ('native llama.cpp', 'v1.0.0-3', 'v1.0.0-2'),
       ('LiteRT-LM', 'v0.19.1-5', 'v0.19.1-4'),
@@ -1195,10 +1405,9 @@ void main() {
       String liteRt = 'v0.19.1-5',
       String sd = 'v0.3.0-3',
       String upstream = '$bridgeLlamaCppTag@$commit',
-      String liteRtVerb = 'uses',
     }) =>
         'Runtime baseline: native llama.cpp `$llama` and Web use upstream '
-        '`$upstream`; native LiteRT-LM $liteRtVerb `$liteRt` and '
+        '`$upstream`; native LiteRT-LM uses `$liteRt` and '
         'stable-diffusion uses `$sd`. Web LiteRT-LM uses '
         '`@litert-lm/core@0.19.0`.\n';
 
@@ -1220,12 +1429,27 @@ void main() {
     );
 
     test('accepts a paragraph that matches the pins', () {
-      final root = baselineRepo(
-        changelog: paragraph(),
-        docs: paragraph(liteRtVerb: 'stays'),
-      );
+      final root = baselineRepo(changelog: paragraph(), docs: paragraph());
       expect(findRuntimeBaselineDrift(root), isEmpty);
     });
+
+    for (final runtime in ['native LiteRT-LM', 'stable-diffusion']) {
+      for (final (index, path) in _preparedChangelogs.indexed) {
+        test('rejects stays for $runtime in $path', () {
+          final valid = paragraph();
+          final invalid = valid.replaceFirst('$runtime uses', '$runtime stays');
+          final root = baselineRepo(
+            changelog: index == 0 ? invalid : valid,
+            docs: index == 0 ? valid : invalid,
+          );
+          expect(findRuntimeBaselineDrift(root), [
+            startsWith(
+              '$path: the Runtime baseline paragraph no longer states the $runtime tag',
+            ),
+          ]);
+        });
+      }
+    }
 
     test('a section without the paragraph is skipped', () {
       expect(findRuntimeBaselineDrift(baselineRepo()), isEmpty);

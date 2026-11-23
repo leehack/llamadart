@@ -11,8 +11,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:html/dom.dart' as html;
+import 'package:html/parser.dart' as html_parser;
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:llamadart/src/web_setup/web_bridge_setup.dart';
+import 'package:markdown/markdown.dart' as md;
 
 /// The file whose default decides what a fresh vendoring run downloads.
 import '../release/pr_changelog.dart';
@@ -489,21 +492,20 @@ final RegExp _runtimeBaselineParagraph = RegExp(
 /// The runtime tags a `Runtime baseline:` paragraph states, each read from the
 /// source that pins it. A missing group fails, so a reworded paragraph cannot
 /// disable the check.
-final List<({String label, RegExp claim, RegExp source})>
-_runtimeBaselineClaims = <({String label, RegExp claim, RegExp source})>[
+final _runtimeBaselineClaims = [
   (
     label: 'native llama.cpp',
-    claim: RegExp(r'native llama\.cpp `([^`]+)`'),
+    wording: 'native llama.cpp',
     source: _nativeLlamaCppTag,
   ),
   (
     label: 'native LiteRT-LM',
-    claim: RegExp(r'native LiteRT-LM (?:uses|stays) `([^`]+)`'),
+    wording: 'native LiteRT-LM uses',
     source: RegExp(r"const liteRtLmReleaseTag = '([^']+)';"),
   ),
   (
     label: 'stable-diffusion',
-    claim: RegExp(r'stable-diffusion (?:uses|stays) `([^`]+)`'),
+    wording: 'stable-diffusion uses',
     source: RegExp(r"const stableDiffusionReleaseTag = '([^']+)';"),
   ),
 ];
@@ -573,7 +575,9 @@ List<String> findRuntimeBaselineDrift(Directory repoRoot) {
     }
     final paragraph = paragraphs.single.group(0)!;
     for (final claim in _runtimeBaselineClaims) {
-      final found = claim.claim.firstMatch(paragraph)?.group(1);
+      final found = RegExp(
+        '${RegExp.escape(claim.wording)} `([^`]+)`',
+      ).firstMatch(paragraph)?[1];
       if (found == null) {
         problems.add(
           '$path: the Runtime baseline paragraph no longer states the '
@@ -1332,15 +1336,165 @@ Future<List<String>> findBridgeProblems(
     ),
 ];
 
-final _unchangedFrom = RegExp(r'\(\s*unchanged\s+from\b', caseSensitive: false);
+final _unchangedFrom = RegExp(
+  r'\(\s*unchanged\s+(?:from|since)\b|'
+  r'\bunchanged\s+(?:from|since)\s+v?\d+\.\d+\.\d+\b',
+  caseSensitive: false,
+);
+final _preparedBridgeWording = RegExp('WebGPU bridge assets|default WebGPU');
+final _releaseWhitespace = RegExp(r'\s+');
 
-String _stripVerifiedRuntimeRetention(
+const _markdownProseTags = {
+  'p',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'th',
+  'td',
+};
+const _markdownBlockTags = {
+  ..._markdownProseTags,
+  'blockquote',
+  'pre',
+  'hr',
+  'ol',
+  'ul',
+  'li',
+  'table',
+  'thead',
+  'tbody',
+  'tr',
+  'div',
+};
+const _htmlBlockTags = {
+  ..._markdownBlockTags,
+  'address',
+  'article',
+  'aside',
+  'caption',
+  'center',
+  'dd',
+  'details',
+  'dialog',
+  'dir',
+  'dl',
+  'dt',
+  'fieldset',
+  'figcaption',
+  'figure',
+  'footer',
+  'form',
+  'header',
+  'hgroup',
+  'main',
+  'menu',
+  'nav',
+  'search',
+  'section',
+  'summary',
+  'tfoot',
+};
+const _nonProseHtmlTags = {'pre', 'script', 'style', 'textarea'};
+
+List<String> _htmlTextUnits(String fragment) {
+  final units = <String>[];
+  final text = StringBuffer();
+
+  void flush() {
+    final unit = text.toString().replaceAll(_releaseWhitespace, ' ').trim();
+    if (unit.isNotEmpty) units.add(unit);
+    text.clear();
+  }
+
+  void visit(html.Node node) {
+    if (node is html.Text) {
+      text.write(node.data);
+    } else if (node is html.Element) {
+      final tag = node.localName;
+      if (tag == 'br') {
+        text.write(' ');
+        return;
+      }
+      final block = _htmlBlockTags.contains(tag);
+      if (block) flush();
+      if (!_nonProseHtmlTags.contains(tag)) {
+        node.nodes.forEach(visit);
+      }
+      if (block) flush();
+    }
+  }
+
+  html_parser.parseFragment(fragment).nodes.forEach(visit);
+  flush();
+  return units;
+}
+
+bool _isMarkdownBlock(md.Node node) =>
+    node is md.Element && _markdownBlockTags.contains(node.tag);
+
+Iterable<String> _releaseTextUnits(
+  Iterable<md.Node> nodes, {
+  md.Element? verifiedBridge,
+  md.Element? verifiedBaseline,
+  bool inListItem = false,
+}) sync* {
+  // A raw HTML comment in one Markdown block must not consume a later block.
+  final inlineRun = <md.Node>[];
+  for (final node in nodes) {
+    if (inListItem && !_isMarkdownBlock(node)) {
+      inlineRun.add(node);
+      continue;
+    }
+    if (inlineRun.isNotEmpty) {
+      yield* _htmlTextUnits(md.renderToHtml(inlineRun));
+      inlineRun.clear();
+    }
+    if (identical(node, verifiedBridge) || identical(node, verifiedBaseline)) {
+      continue;
+    }
+    if (node is md.Text) {
+      yield* _htmlTextUnits(node.textContent);
+    } else if (node is md.Element && node.tag != 'pre') {
+      final children = node.children ?? const [];
+      if (_markdownProseTags.contains(node.tag)) {
+        yield* _htmlTextUnits(md.renderToHtml(children));
+      } else {
+        yield* _releaseTextUnits(
+          children,
+          verifiedBridge: verifiedBridge,
+          verifiedBaseline: verifiedBaseline,
+          inListItem: node.tag == 'li',
+        );
+      }
+    }
+  }
+  if (inlineRun.isNotEmpty) {
+    yield* _htmlTextUnits(md.renderToHtml(inlineRun));
+  }
+}
+
+String _bridgeClaimHtml(md.Element item) {
+  final children = item.children!;
+  final first = children.firstOrNull;
+  return md.renderToHtml(
+    first is md.Element && first.tag == 'p'
+        ? [...first.children!, ...children.skip(1)]
+        : children,
+  );
+}
+
+String _stripVerifiedRuntimeRetentionHtml(
   String baseline,
   String previousNativePins,
   String suffix,
 ) {
   for (final claim in _runtimeBaselineClaims) {
-    final shown = claim.claim.firstMatch(baseline);
+    final shown = RegExp(
+      '${RegExp.escape(claim.wording)} <code>([^<]+)</code>',
+    ).firstMatch(baseline);
     if (shown == null || !baseline.startsWith(suffix, shown.end)) continue;
     final previous = claim.source.allMatches(previousNativePins).singleOrNull;
     if (previous?[1] == shown[1]) {
@@ -1400,6 +1554,7 @@ List<String> findPreparedReleaseNotesDrift(
       manifest: bridgeManifestSha256,
     );
     final unchangedSuffix = ' (unchanged from $previousVersion)';
+    final bridgeUnchanged = bridge == previousBridge;
     for (final (index, file) in files.indexed) {
       final path = releasedChangelogs[index];
       final sections = ChangelogHistory.parse(file.readAsStringSync()).sections;
@@ -1407,50 +1562,73 @@ List<String> findPreparedReleaseNotesDrift(
         problems.add('$path must begin with the exact release $version.');
         continue;
       }
-      final visibleLines = visibleReleaseLines(sections.values.first).toList();
-      final section = visibleLines.join('\n');
+      final markdown = md.Document(
+        extensionSet: md.ExtensionSet.gitHubFlavored,
+        encodeHtml: true,
+        inlineSyntaxes: [
+          // markdown 7.3.1's inline HTML syntax misses these legal comments.
+          md.TextSyntax(r'<!--(?:>|->|[\s\S]*?-->)', startCharacter: 0x3c),
+        ],
+      );
+      final section = markdown.parse(sections.values.first);
       final article = index == 0 ? 'the ' : '';
-      final claims = _bridgePinBullet
-          .allMatches(section)
-          .map((match) => match[0]!.trimRight())
-          .toList();
-      final expected = bridge == previousBridge
-          ? '- Keep ${article}default WebGPU bridge assets at `$bridge`$unchangedSuffix.'
-          : '- Aligned ${article}default WebGPU bridge assets to `$bridge`';
-      if (claims.length != 1 ||
-          (bridge == previousBridge
-              ? claims.single != expected
-              : !RegExp(
-                  '^${RegExp.escape(expected)}(?:[ .,:].*)?\$',
-                ).hasMatch(claims.single))) {
+      final bridgeClaim = [
+        for (final list in section.whereType<md.Element>())
+          if (list.tag == 'ul')
+            for (final item in list.children!.whereType<md.Element>())
+              if (item.tag == 'li' &&
+                  _preparedBridgeWording.hasMatch(
+                    _releaseTextUnits([item]).join(' '),
+                  ))
+                item,
+      ].singleOrNull;
+      final expectedBridgeHtml = md.renderToHtml(
+        markdown.parseInline(
+          bridgeUnchanged
+              ? 'Keep ${article}default WebGPU bridge assets at `$bridge`$unchangedSuffix.'
+              : 'Aligned ${article}default WebGPU bridge assets to `$bridge`',
+        ),
+      );
+      final actualBridgeHtml = bridgeClaim == null
+          ? null
+          : _bridgeClaimHtml(bridgeClaim);
+      final matchingBridge =
+          actualBridgeHtml != null &&
+          (bridgeUnchanged
+              ? actualBridgeHtml == expectedBridgeHtml
+              : RegExp(
+                  '^${RegExp.escape(expectedBridgeHtml)}(?:[ .,:].*)?\$',
+                  dotAll: true,
+                ).hasMatch(actualBridgeHtml));
+      if (!matchingBridge) {
         problems.add(
           '$path must contain exactly one matching WebGPU bridge claim for this release.',
         );
       }
-      final baseline = _runtimeBaselineParagraph
-          .allMatches(section)
-          .singleOrNull?[0];
+      final baseline = section.whereType<md.Element>().where((node) {
+        return node.tag == 'p' &&
+            _htmlTextUnits(
+              md.renderToHtml(node.children!),
+            ).join(' ').startsWith('Runtime baseline');
+      }).singleOrNull;
       final matchingBaseline =
           baseline != null &&
-          _stripVerifiedRuntimeRetention(
-                baseline,
+          _stripVerifiedRuntimeRetentionHtml(
+                md.renderToHtml(baseline.children!),
                 previousNativePins,
                 unchangedSuffix,
               ) ==
-              expectedBaseline;
+              md.renderToHtml(markdown.parseInline(expectedBaseline));
       if (!matchingBaseline) {
         problems.add(
           '$path must contain one complete Runtime baseline matching the candidate pins.',
         );
       }
-      final unverified = visibleLines
-          .where(
-            (line) =>
-                (!matchingBaseline || line != baseline) &&
-                (bridge != previousBridge || line.trimRight() != expected),
-          )
-          .join('\n');
-      if (_unchangedFrom.hasMatch(unverified)) {
+      if (_releaseTextUnits(
+        section,
+        verifiedBridge: bridgeUnchanged && matchingBridge ? bridgeClaim : null,
+        verifiedBaseline: matchingBaseline ? baseline : null,
+      ).any(_unchangedFrom.hasMatch)) {
         problems.add(
           '$path contains an (unchanged from ...) claim that does not match the previous release.',
         );
