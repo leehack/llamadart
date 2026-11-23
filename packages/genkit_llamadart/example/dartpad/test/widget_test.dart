@@ -9,6 +9,7 @@ import 'package:genkit/plugin.dart';
 import 'package:genkit_llamadart/genkit_llamadart.dart';
 import 'package:genkit_llamadart_dartpad_example/main.dart';
 import 'package:genkit_llamadart_dartpad_example/playground_controller.dart';
+import 'package:genkit_llamadart_dartpad_example/playground_widgets.dart';
 import 'package:llamadart/llamadart.dart' as llama;
 import 'package:material_ui/material_ui.dart' hide Action;
 
@@ -302,7 +303,7 @@ void main() {
     expect(find.text('Stopped.'), findsOneWidget);
     expect(find.text('A cloud fox'), findsOneWidget);
 
-    await _tap(tester, 'Send');
+    await _send(tester, 'Follow up');
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
     expect(plugin.cancellations, 2);
@@ -323,6 +324,11 @@ void main() {
     expect(plugin.cancellations, 1);
     expect(find.text('Stopped.'), findsOneWidget);
     expect(find.text('A cloud fox'), findsOneWidget);
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Prompt'),
+      'Follow up',
+    );
+    await tester.pump();
     expect(
       tester
           .widget<FilledButton>(find.widgetWithText(FilledButton, 'Send'))
@@ -354,7 +360,7 @@ void main() {
 
     await _tap(tester, 'Stop');
     await _tap(tester, 'GGUF');
-    expect(find.text('Load the GGUF model to begin.'), findsOneWidget);
+    expect(find.text('Load SmolLM2 135M to begin.'), findsOneWidget);
   });
 
   testWidgets('Gemini errors never surface provider data or the API key', (
@@ -468,8 +474,10 @@ void main() {
       expect(find.text('Load Gemma 4 E2B to begin.'), findsOneWidget);
       expect(
         find.text(
-          'Large download (~3 GB). Requires desktop Chrome with WebAssembly '
-          'memory64 and 8+ GB RAM. Not supported on Safari or mobile browsers.',
+          'Large download (~3 GB; can take several minutes). Measured ~11 GB '
+          'peak browser memory — requires desktop Chrome with WebAssembly '
+          'memory64 and 16+ GB RAM recommended; not supported on Safari or '
+          'mobile browsers.',
         ),
         findsOneWidget,
       );
@@ -587,6 +595,348 @@ void main() {
     await _reply(tester, runtime, 'A fox');
     expect(picker().onChanged, isNotNull);
   });
+
+  testWidgets(
+    'Send clears prompt and auto-scrolls while streaming without yanking scrolled-up readers',
+    (tester) async {
+      tester.view.physicalSize = const Size(400, 420);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final runtime = _LocalRuntime(supportsMultiTurn: true);
+      await _openLocal(tester, 'GGUF', runtime);
+      final scroll = tester.widget<ListView>(find.byType(ListView)).controller!;
+
+      await _send(tester, 'First question');
+      expect(
+        tester
+            .widget<TextField>(find.widgetWithText(TextField, 'Prompt'))
+            .controller!
+            .text,
+        isEmpty,
+      );
+
+      for (var i = 0; i < 16; i++) {
+        runtime.chunks.add(_chunk('Line $i: ${'word ' * 10}\n'));
+        await tester.pump();
+      }
+      expect(scroll.position.maxScrollExtent, greaterThan(0));
+      expect(scroll.position.extentAfter, 0);
+      await runtime.chunks.close();
+      await tester.pumpAndSettle();
+
+      await _send(tester, 'Second question');
+      scroll.jumpTo(0);
+      await tester.pump();
+      expect(scroll.position.extentAfter, greaterThan(48));
+
+      runtime.chunks.add(_chunk('Scrolled up output\n' * 12));
+      await tester.pump();
+      expect(scroll.position.pixels, 0);
+
+      await runtime.chunks.close();
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'local GGUF trims oldest history pairs above budget with a visible note while Gemini stays untrimmed',
+    (tester) async {
+      final runtime = _LocalRuntime(supportsMultiTurn: true);
+      await _openLocal(tester, 'GGUF', runtime);
+
+      String block(String tag, int length) => '$tag ${'x' * length}';
+      final u0 = block('U0', 900);
+      final a0 = block('A0', 900);
+      final u1 = block('U1', 900);
+      final a1 = block('A1', 900);
+      final u2 = block('U2', 900);
+      final a2 = block('A2', 900);
+
+      await _send(tester, u0);
+      await _reply(tester, runtime, a0);
+      await _send(tester, u1);
+      await _reply(tester, runtime, a1);
+      await _send(tester, u2);
+      expect(runtime.history.last.map((m) => m.content).toList(), [
+        'You are a concise, helpful assistant.',
+        u0,
+        a0,
+        u1,
+        a1,
+        u2,
+      ]);
+      expect(
+        find.textContaining('Older turns remain visible here'),
+        findsNothing,
+      );
+      await _reply(tester, runtime, a2);
+
+      await _send(tester, 'U3 latest');
+      final forwarded = runtime.history.last.map((m) => m.content).toList();
+      expect(forwarded, [
+        'You are a concise, helpful assistant.',
+        u1,
+        a1,
+        u2,
+        a2,
+        'U3 latest',
+      ]);
+      expect(forwarded, isNot(contains(u0)));
+      expect(forwarded, isNot(contains(a0)));
+      expect(
+        find.text(
+          'Older turns remain visible here, while only recent turns are sent '
+          'to fit the local context window.',
+        ),
+        findsOneWidget,
+      );
+      await _reply(tester, runtime, 'A3 latest');
+
+      final scroll = tester.widget<ListView>(find.byType(ListView)).controller!;
+      scroll.jumpTo(0);
+      await tester.pump();
+      expect(find.text(u0), findsOneWidget);
+
+      await _tap(tester, 'Clear');
+      expect(
+        find.textContaining('Older turns remain visible here'),
+        findsNothing,
+      );
+
+      await tester.pumpWidget(const SizedBox());
+      final plugin = _GeminiPlugin();
+      await _connectGemini(tester, plugin);
+      // Exceed localHistoryCharBudget (4,500 chars) to confirm Gemini stays untrimmed.
+      for (final u in [
+        block('GU0', 2000),
+        block('GU1', 2000),
+        block('GU2', 2000),
+      ]) {
+        await _send(tester, u);
+        expect(plugin.requests.last, isNotNull);
+        await _tap(tester, 'Stop');
+      }
+      await _send(tester, 'U3 gemini');
+      expect(plugin.requests.last.messages.map((m) => m.role).toList(), [
+        Role.system,
+        Role.user,
+        Role.model,
+        Role.user,
+        Role.model,
+        Role.user,
+        Role.model,
+        Role.user,
+      ]);
+      await _tap(tester, 'Stop');
+
+      await tester.pumpWidget(const SizedBox());
+      final failingRuntime = _LocalRuntime(supportsMultiTurn: true);
+      await _openLocal(tester, 'GGUF', failingRuntime);
+      await _send(tester, 'First');
+      await _reply(tester, failingRuntime, 'First reply');
+      await _send(tester, 'Second');
+      failingRuntime.chunks.addError(
+        llama.LlamaStateException('Context full.'),
+      );
+      await failingRuntime.chunks.close();
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Context full.'), findsOneWidget);
+      expect(
+        find.textContaining('Try Clear or a shorter prompt.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'narrow 320x480 viewport fits Gemma 4 warning, dropdown ellipsis, progress semantics, and user bubble contrast',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 480);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final loading = Completer<void>();
+      final runtime = _LocalRuntime(supportsMultiTurn: true)
+        ..loading = loading.future;
+      await tester.pumpWidget(_localApp(runtime));
+
+      final dropdown = tester.widget<DropdownButton<GgufModelOption>>(
+        find.byType(DropdownButton<GgufModelOption>),
+      );
+      for (final item in dropdown.items!) {
+        final label = item.child as Text;
+        expect(label.maxLines, 1);
+        expect(label.overflow, TextOverflow.ellipsis);
+      }
+
+      await _selectGgufModel(tester, 'Gemma 4 E2B (desktop Chrome, ~3 GB)');
+      expect(tester.takeException(), isNull);
+      expect(
+        find.textContaining('Measured ~11 GB peak browser memory'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('16+ GB RAM recommended'), findsOneWidget);
+      expect(
+        tester.getSize(find.byType(ListView)).height,
+        greaterThanOrEqualTo(200),
+      );
+
+      await tester.scrollUntilVisible(
+        find.text('Load'),
+        100,
+        scrollable: find.descendant(
+          of: find.byType(ListView),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      await tester.ensureVisible(find.text('Load'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Load'));
+      await tester.pump();
+      expect(
+        tester
+            .widget<LinearProgressIndicator>(
+              find.byType(LinearProgressIndicator),
+            )
+            .semanticsLabel,
+        'Loading model',
+      );
+      loading.complete();
+      await tester.pumpAndSettle();
+
+      await _send(tester, 'Hello');
+      await _reply(tester, runtime, 'Hi');
+      final scheme = Theme.of(tester.element(find.text('Hello'))).colorScheme;
+      expect(
+        tester.widget<Text>(find.text('You')).style?.color,
+        scheme.onPrimaryContainer,
+      );
+      expect(
+        tester.widget<Text>(find.text('Hello')).style?.color,
+        scheme.onPrimaryContainer,
+      );
+    },
+  );
+
+  testWidgets(
+    'unloaded provider switch does not flash progress, restores selected GGUF label, and sliders expose semantics',
+    (tester) async {
+      await tester.pumpWidget(_localApp(_LocalRuntime()));
+      await _selectGgufModel(tester, 'Qwen3.5 0.8B (~533 MB)');
+
+      await tester.tap(find.text('LiteRT-LM'));
+      await tester.pump();
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('GGUF'));
+      await tester.pump();
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.text('Load Qwen3.5 0.8B to begin.'), findsOneWidget);
+
+      await _tap(tester, 'Settings');
+      final sliders = tester.widgetList<Slider>(find.byType(Slider)).toList();
+      expect(sliders, hasLength(2));
+      expect(sliders[0].semanticFormatterCallback, isNotNull);
+      expect(sliders[1].semanticFormatterCallback, isNotNull);
+      expect(
+        find.ancestor(
+          of: find.byType(Slider).first,
+          matching: find.byType(MergeSemantics),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.ancestor(
+          of: find.byType(Slider).last,
+          matching: find.byType(MergeSemantics),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'elapsed load time ticks on status line while local model loads',
+    (tester) async {
+      final loading = Completer<void>();
+      final runtime = _LocalRuntime()..loading = loading.future;
+      await tester.pumpWidget(_localApp(runtime));
+
+      await tester.tap(find.text('Load'));
+      await tester.pump();
+      expect(find.text('Loading SmolLM2 135M…'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 5));
+      expect(find.text('Loading SmolLM2 135M… 5s'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 60));
+      expect(find.text('Loading SmolLM2 135M… 1m 05s'), findsOneWidget);
+
+      loading.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Model ready (CPU).'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'streaming chunks, stats ticks, and load ticks isolate rebuilds from PlaygroundController listeners',
+    (tester) async {
+      final loading = Completer<void>();
+      final runtime = _LocalRuntime()..loading = loading.future;
+      final controller = PlaygroundController(
+        bootstrapGguf: () async {},
+        bootstrapLiteRt: () async {},
+        runtimeFactory: () => runtime,
+        googlePlugin: (key) => _GeminiPlugin(),
+      );
+      addTearDown(controller.dispose);
+
+      var rootBuilds = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ListenableBuilder(
+            listenable: controller,
+            builder: (_, _) {
+              rootBuilds++;
+              return PlaygroundView(controller: controller);
+            },
+          ),
+        ),
+      );
+      expect(rootBuilds, 1);
+
+      await tester.tap(find.text('Load'));
+      await tester.pump();
+      expect(rootBuilds, 2);
+      await tester.pump(const Duration(seconds: 3));
+      expect(find.text('Loading SmolLM2 135M… 3s'), findsOneWidget);
+      expect(rootBuilds, 2);
+
+      loading.complete();
+      await tester.pumpAndSettle();
+      expect(rootBuilds, 3);
+
+      await tester.tap(find.text('Send'));
+      await tester.pump();
+      expect(rootBuilds, 4);
+
+      await tester.pump(const Duration(milliseconds: 250));
+      for (var i = 0; i < 4; i++) {
+        runtime.chunks.add(_chunk('w$i '));
+        await tester.pump();
+      }
+      expect(find.text('w0 w1 w2 w3 '), findsOneWidget);
+      expect(find.textContaining(RegExp(r'CPU · \d+\.\ds$')), findsOneWidget);
+      expect(rootBuilds, 4);
+
+      await runtime.chunks.close();
+      await tester.pumpAndSettle();
+      expect(rootBuilds, 5);
+    },
+  );
 }
 
 const _fakeKey = 'widget-test-credential';

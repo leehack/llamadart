@@ -99,6 +99,15 @@ Dispose the prepared handle before shutting down Genkit; disposal is terminal.
 
 Try local inference in Chrome with the
 [Genkit DartPad Preview example](https://preview.dartpad.dev/?package=genkit_llamadart&root=example/dartpad&file=example/dartpad/lib/main.dart).
+It offers selectable GGUF models (**SmolLM2 135M** default, **Qwen3.5 0.8B**,
+and desktop-Chrome **Gemma 4 E2B** with measured ~11 GB peak browser memory and
+16+ GB RAM recommended), single-turn **LiteRT-LM**, and **Gemini**. Running the
+DartPad example locally requires Flutter 3.47+ / Dart 3.13+ (`material_ui`),
+while the `genkit_llamadart` package itself keeps a Dart 3.12+ floor. In
+DartPad's non-isolated preview iframe, the one-time browser console warning about
+using the single-thread GGUF core is expected; standalone deployments can serve
+COOP/COEP headers as shown in
+[single-threaded GGUF setup](../platforms/webgpu-bridge#single-threaded-gguf-without-isolation).
 
 The native filesystem quickstart above is not a complete browser deployment.
 The adapter has browser capability guards, but Genkit/browser integration and
