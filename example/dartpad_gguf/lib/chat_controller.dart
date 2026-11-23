@@ -13,6 +13,7 @@ class GgufModelOption {
     required this.contextSize,
     required this.note,
     this.warning,
+    this.useLowMemoryWebLoad = false,
   });
 
   final String id;
@@ -23,6 +24,7 @@ class GgufModelOption {
   final int contextSize;
   final String note;
   final String? warning;
+  final bool useLowMemoryWebLoad;
 }
 
 const ggufModels = <GgufModelOption>[
@@ -48,7 +50,9 @@ const ggufModels = <GgufModelOption>[
     sizeLabel: '~533 MB',
     sizeBytes: 532517120,
     contextSize: 2048,
-    note: 'Stronger responses; thinking disabled for quick replies.',
+    note:
+        'Stronger responses with thinking disabled. Measured about 4 GiB '
+        'peak Chrome memory.',
   ),
   GgufModelOption(
     id: 'gemma-4-e2b',
@@ -60,19 +64,24 @@ const ggufModels = <GgufModelOption>[
     sizeLabel: 'desktop Chrome, ~3 GB',
     sizeBytes: 3043934304,
     contextSize: 2048,
-    note: 'Higher quality; thinking disabled for quick replies.',
+    note: 'Higher quality with thinking disabled.',
     warning:
-        'Large download (~3 GB) — can take several minutes. Measured ~11 GB '
-        'peak browser memory; requires desktop Chrome with WebAssembly '
-        'memory64 and 16+ GB RAM recommended. Not supported on Safari or '
-        'mobile browsers.',
+        'Large download (~3 GB) can take several minutes. Measured about '
+        '7 GiB peak memory in desktop Chrome. Most layers run on the CPU, '
+        'so replies can take longer. 16+ GB RAM recommended.',
+    useLowMemoryWebLoad: true,
   ),
 ];
 
 ModelParams buildGgufModelParams(GgufModelOption model, {bool isWeb = kIsWeb}) {
+  final useLowMemoryLoad = isWeb && model.useLowMemoryWebLoad;
   return ModelParams(
     contextSize: model.contextSize,
     modelBytesHint: isWeb ? model.sizeBytes : null,
+    preferMemory64: useLowMemoryLoad ? false : null,
+    jsBackedModelStaging: useLowMemoryLoad ? true : null,
+    // At most one GPU layer lets the bridge memory-map the staged GGUF.
+    gpuLayers: useLowMemoryLoad ? 1 : ModelParams.maxGpuLayers,
   );
 }
 

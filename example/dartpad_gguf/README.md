@@ -7,11 +7,14 @@ The example is available starting in 0.20.7.
 Choose a model from the **Model** selector and select **Load** to download it:
 
 - **SmolLM2 135M** (~105 MB, default) — fastest download for quick tests.
-- **Qwen3.5 0.8B** (~533 MB) — stronger replies, with thinking disabled.
+- **Qwen3.5 0.8B** (~533 MB) — stronger replies with thinking disabled.
+  Measured about 4 GiB peak Chrome memory.
 - **Gemma 4 E2B** (~3 GB, flagged in the UI with a pre-download warning) —
-  higher quality; the download can take several minutes. Measured ~11 GB peak
-  browser memory; requires desktop Chrome with WebAssembly `memory64` and
-  16+ GB RAM recommended. Not supported on Safari or mobile browsers.
+  higher quality. The download can take several minutes. The example uses
+  JS-backed staging on the single-thread wasm32 core and offloads at most one
+  layer to WebGPU. Most layers run on the CPU, so replies can take longer.
+  Tested on desktop Chrome at about 7 GiB peak browser memory, down from about
+  11 GiB with the earlier settings. We recommend 16+ GB RAM.
 
 Switching models disposes the active engine, clears the conversation, and
 requires choosing **Load** again. Enter a prompt or pick a preset, then choose
@@ -48,6 +51,6 @@ with multi-threaded workers, configure COOP/COEP headers per
 It can offload layers when a compatible WebGPU adapter is available.
 
 The first load needs access to jsDelivr and Hugging Face. Inference runs in the
-browser. Browser Cache Storage can reuse a model download when available;
-Chromium Incognito and off-the-record profiles cap Cache Storage entries at
-256 MiB, so larger models re-download on each load there.
+browser. Browser Cache Storage can reuse a model download when available.
+In an off-the-record Chrome profile, both Qwen3.5 0.8B and Gemma 4 E2B
+downloaded again on each load because Cache Storage could not store the files.

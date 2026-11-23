@@ -107,7 +107,7 @@ void main() {
         'SmolLM2-135M-Instruct-Q4_K_M.gguf',
       ),
     );
-    expect(engine.contextSize, 2048);
+    expect(engine.modelParams?.contextSize, 2048);
     engine.progress?.call(const ModelDownloadProgress.fraction(0.5));
     await tester.pump();
     expect(
@@ -372,8 +372,11 @@ void main() {
     await tester.tap(find.text('Load'));
     await tester.pump();
     expect(engine.source?.url, Uri.parse(_smolLmUrl));
-    expect(engine.contextSize, 2048);
-    expect(engine.modelBytesHint, kIsWeb ? 105454144 : null);
+    expect(engine.modelParams?.contextSize, 2048);
+    expect(engine.modelParams?.modelBytesHint, kIsWeb ? 105454144 : null);
+    expect(engine.modelParams?.jsBackedModelStaging, isNull);
+    expect(engine.modelParams?.preferMemory64, isNull);
+    expect(engine.modelParams?.gpuLayers, ModelParams.maxGpuLayers);
 
     engine.loaded.complete();
     await tester.pump();
@@ -398,8 +401,11 @@ void main() {
     await tester.pump();
 
     expect(engine.source?.url, Uri.parse(_qwen35Url));
-    expect(engine.contextSize, 2048);
-    expect(engine.modelBytesHint, kIsWeb ? 532517120 : null);
+    expect(engine.modelParams?.contextSize, 2048);
+    expect(engine.modelParams?.modelBytesHint, kIsWeb ? 532517120 : null);
+    expect(engine.modelParams?.jsBackedModelStaging, isNull);
+    expect(engine.modelParams?.preferMemory64, isNull);
+    expect(engine.modelParams?.gpuLayers, ModelParams.maxGpuLayers);
 
     engine.loaded.complete();
     await tester.pump();
@@ -418,15 +424,25 @@ void main() {
 
       expect(find.text(_gemma4Item), findsOneWidget);
       expect(find.textContaining('Large download (~3 GB)'), findsOneWidget);
-      expect(find.textContaining('memory64'), findsOneWidget);
-      expect(find.textContaining('Safari'), findsOneWidget);
+      expect(find.textContaining('7 GiB'), findsOneWidget);
+      expect(find.textContaining('Most layers run on the CPU'), findsOneWidget);
       expect(engine.source, isNull);
 
       await tester.tap(find.text('Load'));
       await tester.pump();
       expect(engine.source?.url, Uri.parse(_gemma4Url));
-      expect(engine.contextSize, 2048);
-      expect(engine.modelBytesHint, kIsWeb ? 3043934304 : null);
+      expect(engine.modelParams?.contextSize, 2048);
+      expect(engine.modelParams?.modelBytesHint, kIsWeb ? 3043934304 : null);
+      expect(
+        engine.modelParams?.jsBackedModelStaging,
+        kIsWeb ? isTrue : isNull,
+      );
+      expect(engine.modelParams?.preferMemory64, kIsWeb ? isFalse : isNull);
+      expect(
+        engine.modelParams?.gpuLayers,
+        kIsWeb ? 1 : ModelParams.maxGpuLayers,
+      );
+      expect(engine.modelParams?.device, ComputeDevice.auto);
 
       engine.loaded.complete();
       await tester.pump();
@@ -504,19 +520,35 @@ void main() {
     },
   );
 
-  test('buildGgufModelParams passes modelBytesHint only on web', () {
-    for (final model in ggufModels) {
-      final webParams = buildGgufModelParams(model, isWeb: true);
-      expect(webParams.contextSize, model.contextSize);
-      expect(webParams.modelBytesHint, model.sizeBytes);
-      expect(webParams.preferMemory64, isNull);
+  test(
+    'buildGgufModelParams uses low-memory loading only for Gemma on web',
+    () {
+      for (final model in ggufModels) {
+        final useLowMemoryLoad = model.id == 'gemma-4-e2b';
+        final webParams = buildGgufModelParams(model, isWeb: true);
+        expect(webParams.contextSize, model.contextSize);
+        expect(webParams.modelBytesHint, model.sizeBytes);
+        expect(webParams.preferMemory64, useLowMemoryLoad ? isFalse : isNull);
+        expect(
+          webParams.jsBackedModelStaging,
+          useLowMemoryLoad ? isTrue : isNull,
+        );
+        expect(
+          webParams.gpuLayers,
+          useLowMemoryLoad ? 1 : ModelParams.maxGpuLayers,
+        );
+        expect(webParams.device, ComputeDevice.auto);
 
-      final nativeParams = buildGgufModelParams(model, isWeb: false);
-      expect(nativeParams.contextSize, model.contextSize);
-      expect(nativeParams.modelBytesHint, isNull);
-      expect(nativeParams.preferMemory64, isNull);
-    }
-  });
+        final nativeParams = buildGgufModelParams(model, isWeb: false);
+        expect(nativeParams.contextSize, model.contextSize);
+        expect(nativeParams.modelBytesHint, isNull);
+        expect(nativeParams.preferMemory64, isNull);
+        expect(nativeParams.jsBackedModelStaging, isNull);
+        expect(nativeParams.gpuLayers, ModelParams.maxGpuLayers);
+        expect(nativeParams.device, ComputeDevice.auto);
+      }
+    },
+  );
 
   testWidgets('picker is disabled during load and generation', (tester) async {
     createFakeEngine();
@@ -671,7 +703,7 @@ void main() {
   );
 
   testWidgets(
-    'renders narrow viewport cleanly with updated Gemma warning hidden after Load',
+    'renders the Gemma warning on a narrow viewport and hides it after Load',
     (tester) async {
       tester.view.physicalSize = const Size(320, 480);
       tester.view.devicePixelRatio = 1.0;
@@ -703,7 +735,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.textContaining('Large download (~3 GB)'), findsOneWidget);
-      expect(find.textContaining('~11 GB'), findsOneWidget);
+      expect(find.textContaining('7 GiB'), findsOneWidget);
       expect(find.textContaining('16+ GB RAM'), findsOneWidget);
       expect(find.textContaining('8+ GB RAM'), findsNothing);
 
@@ -725,7 +757,7 @@ void main() {
       engine.loaded.complete();
       await tester.pump();
 
-      expect(find.textContaining('~11 GB'), findsNothing);
+      expect(find.textContaining('7 GiB'), findsNothing);
 
       await tester.ensureVisible(_prompt);
       await send(tester, 'Hi');
@@ -988,8 +1020,7 @@ class _FakeEngine extends LlamaEngine {
   Completer<void> loaded = Completer<void>();
   ModelDownloadProgressCallback? progress;
   ModelSource? source;
-  int? contextSize;
-  int? modelBytesHint;
+  ModelParams? modelParams;
   StreamController<LlamaCompletionChunk>? output;
   List<(LlamaChatRole, String)>? lastMessages;
   GenerationParams? lastParams;
@@ -1026,8 +1057,7 @@ class _FakeEngine extends LlamaEngine {
     ModelDownloadProgressCallback? onProgress,
   }) {
     source = model.source;
-    contextSize = params.contextSize;
-    modelBytesHint = params.modelBytesHint;
+    modelParams = params;
     progress = onProgress;
     return loaded.future;
   }
