@@ -12,29 +12,32 @@ external void _defineProperty(
 external JSObject? _getOwnPropertyDescriptor(JSObject object, String name);
 
 /// Overrides browser isolation and returns a function that restores it.
-void Function() fakeCrossOriginIsolation({bool isolated = true}) {
-  const property = 'crossOriginIsolated';
-  final original = _getOwnPropertyDescriptor(globalContext, property);
-  _defineProperty(
-    globalContext,
-    property,
-    JSObject()
-      ..['value'] = isolated.toJS
-      ..['configurable'] = true.toJS,
-  );
+void Function() fakeCrossOriginIsolation({bool? isolated = true}) =>
+    overrideBrowserProperty(
+      globalContext,
+      'crossOriginIsolated',
+      isolated?.toJS,
+    );
+
+/// Overrides a browser property and returns a function that restores it.
+void Function() overrideBrowserProperty(
+  JSObject object,
+  String property,
+  JSAny? value,
+) {
+  final original = _getOwnPropertyDescriptor(object, property);
+  final descriptor = JSObject()..['configurable'] = true.toJS;
+  if (value == null) {
+    descriptor['get'] = (() {}).toJS;
+  } else {
+    descriptor['value'] = value;
+  }
+  _defineProperty(object, property, descriptor);
   return () {
     if (original == null) {
-      globalContext.delete(property.toJS);
+      object.delete(property.toJS);
     } else {
-      _defineProperty(globalContext, property, original);
+      _defineProperty(object, property, original);
     }
   };
-}
-
-/// Keeps threaded fixtures on that core when Dart's test server serves pages
-/// without COOP/COEP and the Chrome test flags enable shared memory.
-void useDartTestThreadedCore() {
-  if (globalContext['SharedArrayBuffer'].isA<JSFunction>()) {
-    fakeCrossOriginIsolation();
-  }
 }

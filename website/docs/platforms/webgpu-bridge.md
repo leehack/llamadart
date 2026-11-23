@@ -49,7 +49,7 @@ after load. The bridge ignores negative `mainGpu` values, including with
   credentialless` isolates the page in Chromium-based browsers only: Safari 27
   reports `crossOriginIsolated === false` with it and `true` with
   `require-corp` ([#1025](https://github.com/leehack/llamadart/issues/1025)).
-  Non-isolated pages automatically use the
+  Pages with neither cross-origin isolation nor usable `SharedArrayBuffer` use the
   [single-thread GGUF core](#single-threaded-gguf-without-isolation)
   with matching bridge assets v0.1.93+.
 
@@ -110,15 +110,16 @@ then fails to load in the browser, the generated bootstrap sets
 ### Single-threaded GGUF without isolation
 
 Run `dart run llamadart:web_setup` to install the matching wasm32 and memory64
-single-thread assets (v0.1.93+). When
-`window.crossOriginIsolated === false`, GGUF loads automatically use the
-single-thread core and warn once in the console about lower performance.
-Isolated pages use the threaded core.
+single-thread assets (v0.1.93+). When a non-isolated page cannot post shared
+Wasm memory to workers, GGUF loads automatically use the single-thread core
+and warn once in the console about lower performance. A non-isolated page
+with usable `SharedArrayBuffer` uses the threaded core.
 
 Set `window.__llamadartBridgeAllowSingleThreadCore = true` before the first
 model load to accept the single-thread core without a warning. Set it to
-`false` to require cross-origin isolation. A non-isolated page then throws
-`LlamaUnsupportedException` with the COOP/COEP headers to serve.
+`false` to require the threaded core. If threads are unavailable, the load
+throws `LlamaUnsupportedException` with the COOP/COEP headers to serve.
+The flag also accepts boolean aliases such as `'false'`, `'0'`, and `0`.
 
 The bridge initializes the selected core before fetching the GGUF. Missing
 core assets or an older bridge or worker produce `LlamaUnsupportedException`
@@ -161,8 +162,9 @@ This loop does not verify checksums. In a llamadart checkout,
 `WEBGPU_BRIDGE_OUT_DIR=<app>/web/webgpu_bridge` does the same and verifies
 them.
 
-For non-isolated pages, also download `llama_webgpu_core_st.js/.wasm` and
-`llama_webgpu_core_mem64_st.js/.wasm` from the same tag. Set
+For pages without usable shared memory, also download
+`llama_webgpu_core_st.js/.wasm` and `llama_webgpu_core_mem64_st.js/.wasm` from
+the same tag. Set
 `__llamadartBridgeCoreModuleUrlSt` to the wasm32 loader URL. Configure the
 matching Wasm and memory64 URLs as needed.
 
@@ -174,7 +176,7 @@ Then load the bridge in `web/index.html`, before `flutter_bootstrap.js`:
     const base = new URL('webgpu_bridge/', document.baseURI);
     window.__llamadartBridgeCoreModuleUrlMem64 =
       new URL('llama_webgpu_core_mem64.js', base).href;
-    // Supply these URLs for non-isolated pages.
+    // Supply these URLs for pages without usable shared memory.
     window.__llamadartBridgeCoreModuleUrlSt =
       new URL('llama_webgpu_core_st.js', base).href;
     window.__llamadartBridgeWasmUrlSt =
@@ -469,7 +471,7 @@ When retries run out, the load throws an error with runtime hints such as
 | `MODEL_STAGING_ALLOCATION_FAILED` | JavaScript staging allocation failed | Close other memory-intensive pages or use a smaller model. |
 | `MODEL_STAGING_MOUNT_FAILED` | The staging filesystem could not be mounted or retained | Reload the page and check that the bridge, worker and core assets match. |
 | `MODEL_TRANSFER_LENGTH_ERROR` | The response body length differs from its declared size | Check the model or projector origin and its range responses. |
-| `CrossOriginIsolationError` or "needs cross-origin isolation" | Page is not isolated | Send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`; `credentialless` does not isolate Safari. See the [single-thread setup](#single-threaded-gguf-without-isolation) for hosts that cannot set the headers. |
+| `CrossOriginIsolationError` or "needs cross-origin isolation" | The threaded core cannot share memory with workers | Send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`; `credentialless` does not isolate Safari. See the [single-thread setup](#single-threaded-gguf-without-isolation) for hosts that cannot set the headers. |
 | `ComputeDevice.gpu` fails with "without GPU layers" and `gpu_unavailable:adapter_missing_shader_f16` | Adapter lacks `shader-f16` | WebGPU needs `shader-f16`. On Linux with an NVIDIA GPU, Chrome exposes it only with driver 615.71 or newer; older drivers run on the CPU. |
 | GPU output unstable, CPU fine | Adapter, feature or driver | Check adapter features such as `shader-f16`; lower GPU layers. |
 
@@ -484,7 +486,7 @@ first model load, for diagnosis or controlled deployments:
 | --- | --- |
 | `__llamadartBridgeCoreModuleUrl`, `__llamadartBridgeWasmUrl` | wasm32 core module and `.wasm` URLs; default next to the bridge module |
 | `__llamadartBridgeCoreModuleUrlMem64`, `__llamadartBridgeWasmUrlMem64` | memory64 core module and `.wasm` URLs |
-| `__llamadartBridgeAllowSingleThreadCore` | Unset selects the single-thread core on non-isolated pages and warns once. Literal `true` skips the warning. Literal `false` requires isolation. |
+| `__llamadartBridgeAllowSingleThreadCore` | Unset selects the single-thread core when threads are unavailable and warns once. `true` skips the warning. `false` requires the threaded core. |
 | `__llamadartBridgeCoreModuleUrlSt`, `__llamadartBridgeWasmUrlSt` | Single-thread wasm32 core and binary |
 | `__llamadartBridgeCoreModuleUrlMem64St`, `__llamadartBridgeWasmUrlMem64St` | Single-thread memory64 core and binary |
 | `__llamadartBridgeWorkerUrl` | Dedicated worker module URL |

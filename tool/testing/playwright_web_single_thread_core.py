@@ -19,6 +19,7 @@ LEGACY_BRIDGE_DIGESTS = {
 
 
 def run_case(browser, origin, model_url, *, worker, isolated=False,
+             shared_memory_override=False,
              opt_in=None, mem64=False, legacy=False, forced_fetch=False, gpu=False,
              allow_wasm64_retry=False):
     legacy_assets_url = (
@@ -38,7 +39,8 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
             offload_logs.append(message.text)
 
     page.on("console", track_console)
-    repeat = opt_in is None and not (isolated or legacy or forced_fetch or allow_wasm64_retry)
+    threaded = isolated or shared_memory_override
+    repeat = opt_in is None and not (threaded or legacy or forced_fetch or allow_wasm64_retry)
 
     def track_wasm(request):
         if request.url.startswith(f"{origin}/build/web_single_thread_core/bridge/"):
@@ -64,7 +66,7 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
     try:
         page.goto(f"{fixture}probe.html")
         assert page.evaluate("crossOriginIsolated") == isolated
-        assert page.evaluate("typeof SharedArrayBuffer === 'function'") == isolated
+        assert page.evaluate("typeof SharedArrayBuffer === 'function'") == threaded
         results = page.evaluate(
             """async ({ worker, optIn, mem64, legacyAssetsUrl, forcedFetch, gpu, modelUrl, repeat }) => {
               const base = legacyAssetsUrl ?? new URL('bridge/', location.href).href;
@@ -100,10 +102,11 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
         result = results[0]
         print(json.dumps(dict(
             worker=worker, isolated=isolated, opt_in=opt_in, mem64=mem64,
+            shared_memory_override=shared_memory_override,
             legacy=legacy, forced_fetch=forced_fetch, gpu=gpu, wasm_files=wasm_files, result=result,
             repeat_result=results[1] if repeat else None, warnings=warnings, offload_logs=offload_logs,
         )), flush=True)
-        if legacy or opt_in is False or (forced_fetch and not isolated):
+        if legacy or ((opt_in is False or forced_fetch) and not threaded):
             assert not warnings, warnings
             assert "unsupported" in result, result
             detail = result["unsupported"]
@@ -114,7 +117,7 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
             return
 
         assert result.get("output", "").strip(), result
-        automatic = opt_in is None and not isolated
+        automatic = opt_in is None and not threaded
         assert len(warnings) == (1 if automatic else 0), warnings
         if automatic:
             assert all(text in warnings[0] for text in (
@@ -138,9 +141,10 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
         else:
             assert result["core_variant"] == expected_core, result
         notes = result["runtime_notes"].split(";")
-        if isolated:
+        if threaded:
             assert "core_pthreads:1" in notes, result
             assert "core_single_thread" not in notes, result
+            assert wasm_files == ["llama_webgpu_core.wasm"], wasm_files
             if forced_fetch:
                 assert "model_fetch_backend_attempt" in notes, result
                 assert result["model_source"] == "network-fetch", result
@@ -310,6 +314,17 @@ def main():
                 for mem64 in [False, True]:
                     run_case(browser, origin, args.model_url, worker=True, mem64=mem64,
                              allow_wasm64_retry=True)
+        finally:
+            browser.close()
+
+        browser = playwright.chromium.launch(
+            channel="chromium", args=[*launch_args, "--enable-features=SharedArrayBuffer"]
+        )
+        try:
+            for worker in [False, True]:
+                for opt_in in [None, False]:
+                    run_case(browser, origin, fixture_url, worker=worker,
+                             shared_memory_override=True, opt_in=opt_in)
         finally:
             browser.close()
 

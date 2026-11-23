@@ -67,11 +67,13 @@ Pairing rules, the SwiftPM bootstrap and the privacy manifest are in
 [Apple setup](https://llamadart.leehack.com/docs/platforms/apple-setup).
 Web apps run `dart run llamadart:web_setup` once; see the
 [WebGPU bridge](https://llamadart.leehack.com/docs/platforms/webgpu-bridge).
-Pages without cross-origin isolation automatically use the single-threaded
-GGUF core with bridge assets v0.1.93+. It uses one CPU thread and supports
-WebGPU offload. Serve COOP/COEP headers for the threaded core and fetch-backed
-model loading. Set `window.__llamadartBridgeAllowSingleThreadCore = false`
-before the first model load to require isolation. Lazy tool-call grammars and
+Pages with neither cross-origin isolation nor usable `SharedArrayBuffer`
+automatically use the single-threaded GGUF core with bridge assets v0.1.93+.
+It uses one CPU
+thread and supports WebGPU offload. Serve COOP/COEP headers to enable shared
+memory for the threaded core and fetch-backed model loading. Set
+`window.__llamadartBridgeAllowSingleThreadCore = false` before the first model
+load to require the threaded core. Lazy tool-call grammars and
 custom grammar roots follow the loaded core's `lazyGrammar` capability.
 Set `ModelParams.jsBackedModelStaging` to opt into or out of JavaScript-backed
 GGUF and projector staging. Explicit opt-in requires bridge assets v0.1.92+

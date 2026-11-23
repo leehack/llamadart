@@ -2250,6 +2250,16 @@ void main() {
       late JSObject preflightResult;
       late List<String> calls;
 
+      void useSharedMemoryConstructor(String body) {
+        addTearDown(
+          overrideBrowserProperty(
+            globalContext['WebAssembly'] as JSObject,
+            'Memory',
+            _jsFunction('descriptor', body),
+          ),
+        );
+      }
+
       final unsupported = throwsA(
         isA<LlamaUnsupportedException>().having(
           (error) => error.message,
@@ -2280,6 +2290,7 @@ void main() {
 
       setUp(() {
         addTearDown(fakeCrossOriginIsolation(isolated: false));
+        useSharedMemoryConstructor('return function uncloneable() {};');
         calls = [];
         const warningFlag = '__llamadartBridgeWarnedSingleThreadCore';
         globalContext.delete(warningFlag.toJS);
@@ -2395,10 +2406,13 @@ void main() {
         },
       );
 
-      test(
-        'explicit false refuses a non-isolated page before model loading',
-        () async {
-          globalContext[selectionFlag] = false.toJS;
+      for (final (label, flag) in [
+        ('boolean false', false.toJS),
+        ('string false', 'false'.toJS),
+        ('number zero', 0.toJS),
+      ]) {
+        test('$label refuses loading when threads are unavailable', () async {
+          globalContext[selectionFlag] = flag;
           final warnings = captureConsoleWarnings();
 
           await expectLater(
@@ -2414,8 +2428,107 @@ void main() {
           expect(calls, isEmpty);
           expect(warnings, isEmpty);
           expect(backend.isReady, isFalse);
-        },
-      );
+        });
+      }
+
+      for (final flag in [null, false]) {
+        test(
+          'keeps threaded loading with usable shared memory ($flag)',
+          () async {
+            // The test server blocks sharing real Wasm memory.
+            useSharedMemoryConstructor(
+              'if (descriptor.shared) return new ArrayBuffer(1);'
+              'throw new TypeError("expected shared memory");',
+            );
+            if (flag == null) {
+              globalContext.delete(selectionFlag.toJS);
+            } else {
+              globalContext[selectionFlag] = flag.toJS;
+            }
+            final warnings = captureConsoleWarnings();
+
+            expect(await backend.modelLoadFromUrl(modelUrl, params), 1);
+            expect(calls, ['model']);
+            expect(lastBridgeConfig!['allowSingleThreadCore'], isNull);
+            expect(warnings, isEmpty);
+          },
+        );
+      }
+
+      for (final (label, constructorBody) in [
+        ('cannot be constructed', 'throw new TypeError("not constructible");'),
+        ('cannot be posted', 'return function uncloneable() {};'),
+      ]) {
+        test('selects single-thread if shared memory $label', () async {
+          useSharedMemoryConstructor(constructorBody);
+          globalContext.delete(selectionFlag.toJS);
+          final warnings = captureConsoleWarnings();
+
+          expect(await backend.modelLoadFromUrl(modelUrl, params), 1);
+          expect(calls, ['preflight', 'model']);
+          expect(warnings, hasLength(1));
+        });
+      }
+
+      test('keeps threaded loading if isolation is undefined', () async {
+        addTearDown(fakeCrossOriginIsolation(isolated: null));
+        globalContext.delete(selectionFlag.toJS);
+        final warnings = captureConsoleWarnings();
+
+        expect(await backend.modelLoadFromUrl(modelUrl, params), 1);
+        expect(calls, ['model']);
+        expect(lastBridgeConfig!['allowSingleThreadCore'], isNull);
+        expect(warnings, isEmpty);
+      });
+
+      for (final (mode, importScript, hasBootstrapError) in [
+        ('preloaded bridge', false, true),
+        ('failed script import with bootstrap detail', true, true),
+        ('failed script import without bootstrap detail', true, false),
+      ]) {
+        test('preserves redacted bridge diagnostics for $mode', () async {
+          const signature = 'bootstrap-test-signature';
+          const signedModule = 'https://example.com/bridge.js?sig=$signature';
+          globalContext['__llamadartBridgeModuleUrl'] = signedModule.toJS;
+          if (hasBootstrapError) {
+            globalContext['__llamadartBridgeLoadError'] =
+                'bridge module fetch failed: HTTP 404 ($signedModule; $signature)'
+                    .toJS;
+          }
+          globalContext.delete('LlamaWebGpuBridge'.toJS);
+
+          String? scriptUrl;
+          if (importScript) {
+            scriptUrl = URL.createObjectURL(
+              Blob(<JSAny>[].toJS, BlobPropertyBag(type: 'text/javascript')),
+            );
+            URL.revokeObjectURL(scriptUrl);
+          }
+          backend = WebGpuLlamaBackend(bridgeScriptUrl: scriptUrl);
+
+          await expectLater(
+            backend.modelLoadFromUrl(modelUrl, params),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                allOf(
+                  contains('Web bridge is unavailable'),
+                  contains(
+                    hasBootstrapError
+                        ? 'bridge module fetch failed: HTTP 404'
+                        : 'WebGPU bridge init failed',
+                  ),
+                  isNot(contains(signature)),
+                  isNot(contains('v0.1.93+')),
+                  isNot(contains('llamadart:web_setup')),
+                ),
+              ),
+            ),
+          );
+          expect(backend.isReady, isFalse);
+        });
+      }
 
       test('refuses missing single-thread loader configuration', () async {
         globalContext.delete(selectionFlag.toJS);
@@ -2565,6 +2678,7 @@ void main() {
             () async {
               globalContext.delete(selectionFlag.toJS);
               addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
+              final warnings = captureConsoleWarnings();
               preflightResult['execution'] = execution.toJS;
               bridge['preflightCore'] = (() {
                 calls.add('preflight');
@@ -2584,6 +2698,7 @@ void main() {
                 unsupported,
               );
               expect(calls, ['preflight']);
+              expect(warnings, isEmpty);
               expect(backend.isReady, isFalse);
             },
           );
@@ -2902,6 +3017,33 @@ void main() {
           );
         }
       }
+
+      test(
+        'redacts detached signatures from single-thread asset metadata',
+        () async {
+          const signature = 'single-thread-metadata-signature';
+          globalContext['__llamadartBridgeWasmUrlMem64St'] =
+              'https://example.com/core_mem64_st.wasm?sig=$signature'.toJS;
+          bridgeRuntimeHints[notesKey] = 'asset_failure:$signature';
+          bridgeRuntimeHints['llamadart.webgpu.asset_diagnostic'] =
+              'loader:$signature';
+
+          expect(await backend.modelLoadFromUrl(modelUrl, params), 1);
+          final metadata = await backend.modelMetadata(1);
+          expect(
+            metadata[notesKey],
+            allOf(
+              contains('asset_failure:'),
+              contains('core_preflight_variant:wasm32'),
+              isNot(contains(signature)),
+            ),
+          );
+          expect(
+            metadata['llamadart.webgpu.asset_diagnostic'],
+            allOf(startsWith('loader:'), isNot(contains(signature))),
+          );
+        },
+      );
 
       test(
         'redacts opaque bridge URLs from runtime logs and metadata',

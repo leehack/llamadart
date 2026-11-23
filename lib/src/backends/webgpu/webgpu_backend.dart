@@ -38,6 +38,11 @@ import 'webgpu_speculative.dart';
 @JS('Object.keys')
 external JSArray _objectKeys(JSObject obj);
 
+@JS('WebAssembly.Memory')
+extension type _WasmMemory._(JSObject _) implements JSObject {
+  external _WasmMemory(JSObject descriptor);
+}
+
 /// Optional `createCompletion` options the loaded bridge core applies, as its
 /// `getCompletionCapabilities()` reports them.
 typedef _WebGpuCompletionCapabilities = ({
@@ -466,6 +471,7 @@ class WebGpuLlamaBackend
   Future<bool> _ensureBridge({
     required bool allowSingleThreadCore,
     required bool? jsBackedModelStaging,
+    required Iterable<String> sourceUrls,
   }) async {
     if (_bridge != null) {
       return true;
@@ -491,9 +497,12 @@ class WebGpuLlamaBackend
       if (scriptUrl != null && scriptUrl.isNotEmpty) {
         try {
           await _loadBridgeScript();
-        } on Exception {
+        } on Exception catch (error) {
           if (allowSingleThreadCore) {
-            throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
+            throw _singleThreadBridgeUnavailable(
+              sourceUrls,
+              importError: error,
+            );
           }
           if (jsBackedModelStaging == true) {
             throw LlamaUnsupportedException(
@@ -569,6 +578,7 @@ class WebGpuLlamaBackend
   Future<void> _activateBridge({
     required bool allowSingleThreadCore,
     required bool? jsBackedModelStaging,
+    required Iterable<String> sourceUrls,
   }) async {
     if (_bridge != null &&
         _activeJsBackedModelStaging != jsBackedModelStaging) {
@@ -579,10 +589,11 @@ class WebGpuLlamaBackend
     final ready = await _ensureBridge(
       allowSingleThreadCore: allowSingleThreadCore,
       jsBackedModelStaging: jsBackedModelStaging,
+      sourceUrls: sourceUrls,
     );
     if (!ready || _bridge == null) {
       if (allowSingleThreadCore) {
-        throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
+        throw _singleThreadBridgeUnavailable(sourceUrls);
       }
       if (jsBackedModelStaging == true) {
         throw LlamaUnsupportedException(webGpuJsBackedStagingRequired);
@@ -672,6 +683,19 @@ class WebGpuLlamaBackend
         : 'Web bridge is unavailable: $loadError';
 
     return '$base$safariHint$locationSuffix';
+  }
+
+  LlamaUnsupportedException _singleThreadBridgeUnavailable(
+    Iterable<String> sourceUrls, {
+    Object? importError,
+  }) {
+    final loadError = _getBridgeLoadError() ?? importError?.toString();
+    return LlamaUnsupportedException(
+      webGpuBridgeErrorText(
+        _buildBridgeUnavailableMessage(loadError),
+        sourceUrls: sourceUrls,
+      ),
+    );
   }
 
   String? _getGlobalString(String propertyName) {
@@ -771,14 +795,36 @@ class WebGpuLlamaBackend
     return isolated.isA<JSBoolean>() && !(isolated as JSBoolean).toDart;
   }
 
+  bool _canPostSharedMemory() {
+    // Pthread startup posts a shared WebAssembly.Memory to a worker.
+    MessageChannel? channel;
+    try {
+      final memory = _WasmMemory(
+        JSObject()
+          ..['initial'] = 1.toJS
+          ..['maximum'] = 1.toJS
+          ..['shared'] = true.toJS,
+      );
+      channel = MessageChannel();
+      channel.port1.postMessage(memory);
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      channel?.port1.close();
+      channel?.port2.close();
+    }
+  }
+
   void _warnAboutSingleThreadCore() {
     if (globalContext.has(_singleThreadCoreWarningFlag)) return;
     globalContext[_singleThreadCoreWarningFlag] = true.toJS;
     console.warn(
       'llamadart is using the single-thread GGUF core with lower performance '
-              'because this page has no cross-origin isolation (COOP/COEP). Serve '
+              'because this page cannot share Wasm memory with workers. Serve '
               'Cross-Origin-Opener-Policy: same-origin and '
-              'Cross-Origin-Embedder-Policy: require-corp for the threaded core. '
+              'Cross-Origin-Embedder-Policy: require-corp (COOP/COEP) for the '
+              'threaded core. '
               'Set window.$_singleThreadCoreFlag = false to opt out.'
           .toJS,
     );
@@ -1483,11 +1529,8 @@ class WebGpuLlamaBackend
     url = webGpuDocumentUrl(url);
     final cacheUrl = webGpuPersistentCacheUrl(url);
     final setup = _prepareUrlLoad(url, params, onProgress);
-    final allowSingleThreadCore = _isNonIsolatedPage;
-    final selection = globalContext[_singleThreadCoreFlag];
-    final explicitSelection = selection.isA<JSBoolean>()
-        ? (selection as JSBoolean).toDart
-        : null;
+    final allowSingleThreadCore = _isNonIsolatedPage && !_canPostSharedMemory();
+    final explicitSelection = _getGlobalOptionalBool(_singleThreadCoreFlag);
     if (allowSingleThreadCore && explicitSelection == false) {
       throw webGpuCrossOriginIsolationRequired();
     }
@@ -1558,6 +1601,7 @@ class WebGpuLlamaBackend
         await _activateBridge(
           allowSingleThreadCore: allowSingleThreadCore,
           jsBackedModelStaging: jsBackedModelStaging,
+          sourceUrls: sourceUrls,
         );
         final bridge = _requireBridge();
         bridgeForAttempt = bridge;

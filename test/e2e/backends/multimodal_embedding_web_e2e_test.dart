@@ -17,14 +17,12 @@ import 'package:test/test.dart';
 import 'package:web/web.dart' show window;
 
 import '../../support/embedding_contract.dart';
-import '../../support/fake_cross_origin_isolation.dart';
 
 // Local assets/reference only; setup and recorded qualification are documented in
 // doc/multimodal_embeddings_web.md. No default model or network download.
 // config.json may set `coreVariant` ("wasm64" by default or "wasm32") and
 // `gpuLayers` (above 0 loads on WebGPU and requires a WebGPU backend).
 void main() {
-  setUpAll(useDartTestThreadedCore);
   test('scenario contract compares vector elements in reverse order', () {
     _expectOrderedVectors(
       [

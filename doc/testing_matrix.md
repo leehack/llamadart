@@ -1630,8 +1630,10 @@ compares automatic selection and repeated generation in direct and worker
 execution for both Wasm widths. The console warns once per page when the flag
 is unset and stays quiet with explicit `true`. The scenario also exercises the
 explicit `false` COOP/COEP refusal, a forced-fetch refusal and an isolated threaded
-worker that successfully loads through the fetch backend. The shipped chat
-bootstrap refuses legacy v0.1.92 before core or worker requests, and reports
+worker that successfully loads through the fetch backend. Non-isolated Chromium
+pages launched with `--enable-features=SharedArrayBuffer` use the threaded core
+without a warning in both modes, with the flag unset or set to `false`. The
+shipped chat bootstrap refuses legacy v0.1.92 before core or worker requests, and reports
 typed unsupported errors for missing loaders and explicit or adjacent Wasm
 files. In both execution modes a GGUF download 404 or invalid GGUF retains
 its model error. Invalid GGUF on memory64 leaves the unused wasm32 binary

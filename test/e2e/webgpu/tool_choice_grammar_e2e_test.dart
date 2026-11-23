@@ -25,8 +25,6 @@ import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart' show window;
 
-import '../../support/fake_cross_origin_isolation.dart';
-
 const _pinnedModelSha256 =
     'b1b3de114215d9507409a662a501a631095a479a419584e8a2ded6304b19b4f5';
 const _legacyAssetsTag = 'v0.1.81';
@@ -190,7 +188,6 @@ class _Route {
 }
 
 void main() {
-  setUpAll(useDartTestThreadedCore);
   final configUrl = Uri.base.resolve(
     '../../../build/web_tool_choice_grammar/config.json',
   );

@@ -685,10 +685,11 @@ await prefs.setInt('preferred_backend', backendIndex);
   fetch-backed loading to reduce contiguous allocation pressure; this path may
   bypass prefetch cache reuse.
 - If optional `llama_webgpu_core_mem64` bridge assets are present and supported by the browser, chat app bridge bootstrapping can prefer wasm64 core and transparently fall back to wasm32.
-- Isolated pages use the threaded GGUF core. Other pages automatically
-  initialize the local `_st` core with bridge assets v0.1.93+ before fetching the
-  model. Set `window.__llamadartBridgeAllowSingleThreadCore = false` before the
-  bootstrap to require COOP/COEP. Verify `core_preflight_threading:single-thread` in
+- Pages with neither cross-origin isolation nor usable `SharedArrayBuffer`
+  automatically initialize the local `_st` GGUF core with bridge assets
+  v0.1.93+ before fetching the model. Set
+  `window.__llamadartBridgeAllowSingleThreadCore = false` before the bootstrap
+  to require the threaded core. Verify `core_preflight_threading:single-thread` in
   `llamadart.webgpu.runtime_notes`. This core uses one
   CPU thread, can offload GPU layers, and uses streamed staging. Fetch-backed
   loading requires the threaded runtime.

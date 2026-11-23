@@ -60,8 +60,6 @@ import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart' show window;
 
-import '../../support/fake_cross_origin_isolation.dart';
-
 const String _configPath = '../../../build/webgpu_features_e2e/config.json';
 
 const String _storiesPrompt = 'Once upon a time';
@@ -137,7 +135,6 @@ final class _UsageEnd extends LlamaOperationObserver {
 }
 
 void main() {
-  setUpAll(useDartTestThreadedCore);
   final configUrl = Uri.base.resolve(_configPath);
   late Map<String, Object?> config;
   late LlamaEngine engine;
