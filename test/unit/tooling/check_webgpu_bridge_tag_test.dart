@@ -532,6 +532,36 @@ void main() {
     const badClaim = 'Native audio (unchanged from 1.2.1).';
     for (final (shape, notes) in [
       (
+        'prose after an opening textarea',
+        '- Support <textarea> controls. $badClaim',
+      ),
+      (
+        'formatted prose after an opening textarea',
+        '- Support <textarea> controls. Native audio (unchanged <em>from</em> 1.2.1).',
+      ),
+      for (final tag in [
+        'textarea',
+        'script',
+        'style',
+        'title',
+        'xmp',
+        'iframe',
+        'noembed',
+        'noframes',
+        'plaintext',
+      ])
+        ('prose within filtered HTML tag $tag', '- <$tag>$badClaim</$tag>'),
+      ('image alt text', '- Add a status graphic: ![$badClaim](missing.png)'),
+      (
+        'a footnote referenced from an older release',
+        '[^rt]: $badClaim\n\n## 1.2.2\n\nSee details[^rt].',
+      ),
+      (
+        'prose after a multiblock HTML pre',
+        '> <div><pre>\n>\n> Literal example.\n>\n'
+            '> </pre></div>\n>\n> $badClaim',
+      ),
+      (
         'ordinary bullet continuation',
         '- Native audio\n  (unchanged from 1.2.1).',
       ),
@@ -633,10 +663,28 @@ void main() {
     }
 
     for (final (shape, notes) in [
+      (
+        'an inline-code search query',
+        '- Document the literal search query `unchanged since 1.2.1`.',
+      ),
+      (
+        'a quoted inline-code example',
+        '> The old checker matched the literal string `(unchanged from 1.2.1)`.',
+      ),
+      (
+        'a multiblock HTML pre inside a quote',
+        '> <div><pre>\n>\n> Literal sample (unchanged from 1.2.1).\n>\n'
+            '> </pre></div>',
+      ),
       ('top-level indented code', '    $badClaim'),
       ('list-item fenced code', '- ```text\n  $badClaim\n  ```'),
       ('indented code in a list', '- Example\n\n      $badClaim'),
       ('HTML preformatted code', '<pre><code>$badClaim</code></pre>'),
+      ('HTML preformatted text', '<pre>$badClaim</pre>'),
+      (
+        'a footnote defined in an older release',
+        'See details[^rt].\n\n## 1.2.2\n\n[^rt]: $badClaim',
+      ),
       (
         'shorter marker inside fenced code',
         '> ````text\n> ```\n> $badClaim\n> ````',
@@ -681,6 +729,23 @@ void main() {
         expect(_verifyPreparedRelease(root), isEmpty);
       },
     );
+
+    for (final (shape, child) in [
+      ('nested bullet', '  - The download instructions now include checksums.'),
+      ('fenced example', '\n  ```text\n  $badClaim\n  ```'),
+    ]) {
+      test('strict prep accepts a Keep claim with a $shape in $path', () {
+        final root = _preparedReleaseRepo();
+        final changelog = File('${root.path}/$path');
+        changelog.writeAsStringSync(
+          changelog.readAsStringSync().replaceFirst(
+            '.\n\nRuntime',
+            '.\n$child\n\nRuntime',
+          ),
+        );
+        expect(_verifyPreparedRelease(root), isEmpty);
+      });
+    }
 
     for (final (shape, bridgeChanged, extra) in [
       ('changed bridge continuation', true, '  $badClaim\n'),

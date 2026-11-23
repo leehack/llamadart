@@ -1397,51 +1397,109 @@ const _htmlBlockTags = {
   'summary',
   'tfoot',
 };
-const _nonProseHtmlTags = {'pre', 'script', 'style', 'textarea'};
+// GFM escapes these tags before they can change HTML tokenization.
+final _gfmFilteredTag = RegExp(
+  r'<(?=/?(?:title|textarea|style|xmp|iframe|noembed|noframes|script|plaintext)'
+  r'(?:[ \t\r\n\f/>]))',
+  caseSensitive: false,
+);
+final _versionCodeSpan = RegExp(
+  r'^v?\d+\.\d+\.\d+(?:[-+][\w.+-]+)?$',
+  caseSensitive: false,
+);
 
-List<String> _htmlTextUnits(String fragment) {
-  final units = <String>[];
-  final text = StringBuffer();
+class _ReleaseFootnoteSyntax extends md.FootnoteDefSyntax {
+  const _ReleaseFootnoteSyntax();
 
-  void flush() {
-    final unit = text.toString().replaceAll(_releaseWhitespace, ' ').trim();
-    if (unit.isNotEmpty) units.add(unit);
-    text.clear();
+  @override
+  md.Node? parse(md.BlockParser parser) {
+    final definition = super.parse(parser) as md.Element;
+    // References can live in older sections. Keep definitions in the section
+    // that owns them before Markdown drops or relocates them.
+    return md.Element('li', definition.children);
   }
+}
 
-  void visit(html.Node node) {
-    if (node is html.Text) {
-      text.write(node.data);
-    } else if (node is html.Element) {
-      final tag = node.localName;
-      if (tag == 'br') {
-        text.write(' ');
-        return;
-      }
-      final block = _htmlBlockTags.contains(tag);
-      if (block) flush();
-      if (!_nonProseHtmlTags.contains(tag)) {
-        node.nodes.forEach(visit);
-      }
-      if (block) flush();
+class _ReleaseHtmlText {
+  _ReleaseHtmlText([this.openPre = '']);
+
+  String openPre;
+
+  List<String> read(String fragment) {
+    final units = <String>[];
+    final text = StringBuffer();
+
+    void flush() {
+      final unit = text.toString().replaceAll(_releaseWhitespace, ' ').trim();
+      if (unit.isNotEmpty) units.add(unit);
+      text.clear();
     }
-  }
 
-  html_parser.parseFragment(fragment).nodes.forEach(visit);
-  flush();
-  return units;
+    void visit(html.Node node) {
+      if (node is html.Text) {
+        text.write(node.data);
+      } else if (node is html.Element) {
+        final tag = node.localName;
+        if (tag == 'br') {
+          text.write(' ');
+          return;
+        }
+        if (tag == 'img') {
+          text.write(node.attributes['alt'] ?? '');
+          return;
+        }
+        if (tag == 'code' && !_versionCodeSpan.hasMatch(node.text)) {
+          flush();
+          return;
+        }
+        final block = _htmlBlockTags.contains(tag);
+        if (block) flush();
+        if (tag != 'pre') node.nodes.forEach(visit);
+        if (block) flush();
+      }
+    }
+
+    final parser = html_parser.HtmlParser(
+      openPre + fragment.replaceAll(_gfmFilteredTag, '&lt;'),
+    );
+    parser.parseFragment().nodes.forEach(visit);
+    // A raw pre can span Markdown blocks. Carry only its HTML context so a
+    // comment in one fragment still cannot consume the next fragment.
+    final openTags = parser.tree.openElements
+        .map((node) => node.localName)
+        .toList();
+    final pre = openTags.lastIndexOf('pre');
+    openPre = pre < 0
+        ? ''
+        : openTags.skip(1).take(pre).map((tag) => '<$tag>').join();
+    flush();
+    return units;
+  }
 }
 
 bool _isMarkdownBlock(md.Node node) =>
     node is md.Element && _markdownBlockTags.contains(node.tag);
+
+({List<md.Node> claim, Iterable<md.Node> rest}) _bridgeItemParts(
+  md.Element item,
+) {
+  final children = item.children!;
+  final first = children.firstOrNull;
+  if (first is md.Element && first.tag == 'p') {
+    return (claim: first.children!, rest: children.skip(1));
+  }
+  final claim = children.takeWhile((node) => !_isMarkdownBlock(node)).toList();
+  return (claim: claim, rest: children.skip(claim.length));
+}
 
 Iterable<String> _releaseTextUnits(
   Iterable<md.Node> nodes, {
   md.Element? verifiedBridge,
   md.Element? verifiedBaseline,
   bool inListItem = false,
+  String openPre = '',
 }) sync* {
-  // A raw HTML comment in one Markdown block must not consume a later block.
+  final htmlText = _ReleaseHtmlText(openPre);
   final inlineRun = <md.Node>[];
   for (final node in nodes) {
     if (inListItem && !_isMarkdownBlock(node)) {
@@ -1449,41 +1507,32 @@ Iterable<String> _releaseTextUnits(
       continue;
     }
     if (inlineRun.isNotEmpty) {
-      yield* _htmlTextUnits(md.renderToHtml(inlineRun));
+      yield* htmlText.read(md.renderToHtml(inlineRun));
       inlineRun.clear();
     }
-    if (identical(node, verifiedBridge) || identical(node, verifiedBaseline)) {
-      continue;
-    }
+    if (identical(node, verifiedBaseline)) continue;
     if (node is md.Text) {
-      yield* _htmlTextUnits(node.textContent);
+      yield* htmlText.read(node.textContent);
     } else if (node is md.Element && node.tag != 'pre') {
-      final children = node.children ?? const [];
+      final children = identical(node, verifiedBridge)
+          ? _bridgeItemParts(node).rest
+          : node.children ?? const <md.Node>[];
       if (_markdownProseTags.contains(node.tag)) {
-        yield* _htmlTextUnits(md.renderToHtml(children));
+        yield* htmlText.read(md.renderToHtml(children.toList()));
       } else {
         yield* _releaseTextUnits(
           children,
           verifiedBridge: verifiedBridge,
           verifiedBaseline: verifiedBaseline,
           inListItem: node.tag == 'li',
+          openPre: htmlText.openPre,
         );
       }
     }
   }
   if (inlineRun.isNotEmpty) {
-    yield* _htmlTextUnits(md.renderToHtml(inlineRun));
+    yield* htmlText.read(md.renderToHtml(inlineRun));
   }
-}
-
-String _bridgeClaimHtml(md.Element item) {
-  final children = item.children!;
-  final first = children.firstOrNull;
-  return md.renderToHtml(
-    first is md.Element && first.tag == 'p'
-        ? [...first.children!, ...children.skip(1)]
-        : children,
-  );
 }
 
 String _stripVerifiedRuntimeRetentionHtml(
@@ -1564,6 +1613,7 @@ List<String> findPreparedReleaseNotesDrift(
       }
       final markdown = md.Document(
         extensionSet: md.ExtensionSet.gitHubFlavored,
+        blockSyntaxes: const [_ReleaseFootnoteSyntax()],
         encodeHtml: true,
         inlineSyntaxes: [
           // markdown 7.3.1's inline HTML syntax misses these legal comments.
@@ -1578,7 +1628,9 @@ List<String> findPreparedReleaseNotesDrift(
             for (final item in list.children!.whereType<md.Element>())
               if (item.tag == 'li' &&
                   _preparedBridgeWording.hasMatch(
-                    _releaseTextUnits([item]).join(' '),
+                    _ReleaseHtmlText()
+                        .read(md.renderToHtml(_bridgeItemParts(item).claim))
+                        .join(' '),
                   ))
                 item,
       ].singleOrNull;
@@ -1591,7 +1643,7 @@ List<String> findPreparedReleaseNotesDrift(
       );
       final actualBridgeHtml = bridgeClaim == null
           ? null
-          : _bridgeClaimHtml(bridgeClaim);
+          : md.renderToHtml(_bridgeItemParts(bridgeClaim).claim);
       final matchingBridge =
           actualBridgeHtml != null &&
           (bridgeUnchanged
@@ -1607,9 +1659,10 @@ List<String> findPreparedReleaseNotesDrift(
       }
       final baseline = section.whereType<md.Element>().where((node) {
         return node.tag == 'p' &&
-            _htmlTextUnits(
-              md.renderToHtml(node.children!),
-            ).join(' ').startsWith('Runtime baseline');
+            _ReleaseHtmlText()
+                .read(md.renderToHtml(node.children!))
+                .join(' ')
+                .startsWith('Runtime baseline');
       }).singleOrNull;
       final matchingBaseline =
           baseline != null &&
