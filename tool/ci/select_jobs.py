@@ -212,6 +212,8 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
                 jobs.update(('web-chat-contract', 'validation-harness'))
                 apps.update(APPS)
                 apple_cache = True
+        elif path.startswith('example/dartpad_gguf/'):
+            jobs.update(('analyze', 'example-packages'))
         elif path.startswith('test/'):
             # Preserve all root test inventories, including Linux/Chrome/Windows.
             jobs.update(('analyze', 'test-linux-coverage', 'test-web', 'test-other-os'))

@@ -257,10 +257,11 @@ Chrome, validates the final Flutter Web artifact, exercises deterministic UI
 behavior, and loads a tiny real GGUF through the packaged worker and WASM core.
 Large Gemma 4 GGUF and LiteRT-LM downloads remain targeted rows so transient
 model-host availability does not make every pull request flaky.
-`Example Package Tests` runs the other example packages' model-free tests on
-full-graph changes, which include any non-Markdown change under `example/`
-outside `example/chat_app`. Chat app changes and Markdown under `example/`
-do not select it.
+`Example Package Tests` runs model-free VM tests for example packages outside
+`example/chat_app`, plus Chrome tests for the DartPad GGUF example. Non-Markdown
+changes in `example/dartpad_gguf/` select this job alongside root static checks
+and Markdown Tests. See [CI impact selection](ci_selection.md) for the full
+selection rules.
 
 ## Coverage Map
 

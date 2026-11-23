@@ -79,7 +79,7 @@ class SelectionTest(unittest.TestCase):
                      'website/versioned_docs/version-0.15.2/intro.md',
                      'packages/llamadart_validation/README.md',
                      'packages/llamadart_stable_diffusion_flutter/README.md',
-                     'example/chat_app/README.md'):
+                     'example/chat_app/README.md', 'example/dartpad_gguf/README.md'):
             with self.subTest(path=path):
                 plan = ci.select([path])
                 self.assertEqual({j for j, v in plan['jobs'].items() if v},
@@ -110,6 +110,7 @@ class SelectionTest(unittest.TestCase):
                      'tool/docs/build_site.sh', 'packages/llamadart_litert_lm_flutter/lib/a.dart',
                      'packages/llamadart_validation/schemas/a.json', 'tool/testing/validation.dart',
                      'example/chat_app/android/a', 'example/chat_app/lib/main.dart',
+                     'example/dartpad_gguf/lib/main.dart',
                      'test/unit/a_test.dart', 'new/unknown.file'):
             for pull_request in (True, False):
                 with self.subTest(path=path, pull_request=pull_request):
@@ -146,16 +147,70 @@ class SelectionTest(unittest.TestCase):
 
     def test_example_package_tests_follow_core_and_example_changes_only(self):
         for path in ('lib/llamadart.dart', 'pubspec.yaml', 'example/basic_app/lib/main.dart',
-                     'example/laya_tetris/test/tetris_test.dart',
+                     'example/dartpad_gguf/lib/main.dart', 'example/laya_tetris/test/tetris_test.dart',
                      'example/tui_coding_agent/pubspec.yaml'):
             with self.subTest(path=path):
                 self.assertTrue(ci.select([path])['jobs']['example-packages'])
         for path in ('example/chat_app/lib/main.dart', 'example/chat_app/test/unit_test.dart',
-                     'example/basic_app/README.md', 'test/unit/core/engine_test.dart',
+                     'example/basic_app/README.md', 'example/dartpad_gguf/README.md',
+                     'test/unit/core/engine_test.dart',
                      'packages/genkit_llamadart/lib/genkit_llamadart.dart',
                      'packages/llamadart_validation/lib/src/runner.dart'):
             with self.subTest(path=path):
                 self.assertFalse(ci.select([path])['jobs']['example-packages'])
+
+    def test_dartpad_gguf_selects_static_example_and_markdown_guards_only(self):
+        base = 'example/dartpad_gguf/'
+        source_jobs = {'analyze', 'example-packages', 'markdown-tests'}
+        pr_2200_files = [
+            'example/README.md',
+            base + 'README.md',
+            'website/docs/examples/dartpad-gguf.md',
+            base + 'lib/chat_controller.dart',
+            base + 'lib/chat_widgets.dart',
+            base + 'lib/main.dart',
+            base + 'test/widget_test.dart',
+        ]
+        cases = [
+            *[([base + path], source_jobs) for path in (
+                'lib/main.dart', 'lib/bridge_bootstrap_web.dart', 'test/widget_test.dart',
+                'pubspec.yaml', 'analysis_options.yaml',
+            )],
+            ([base + 'README.md'], {'docs-check', 'docs-versions', 'markdown-tests'}),
+            ([base + 'README.md', base + 'lib/main.dart'], source_jobs | {'docs-check'}),
+            (pr_2200_files, source_jobs | {'docs-check'}),
+        ]
+        for paths, expected_jobs in cases:
+            for pull_request in (True, False):
+                with self.subTest(paths=paths, pull_request=pull_request):
+                    plan = ci.select(paths, pull_request=pull_request)
+                    self.assertEqual({j for j, selected in plan['jobs'].items() if selected},
+                                     expected_jobs)
+                    for field in ('desktops', 'apps', 'companions', 'test-other-os-matrix', 'reasons'):
+                        self.assertEqual(plan[field], [], field)
+                    for field in ('studio-macos', 'macos-native', 'windows-native',
+                                  'macos-validation-memory', 'apple-cache'):
+                        self.assertFalse(plan[field], field)
+
+    def test_dartpad_gguf_plus_core_keeps_the_full_runtime_plan(self):
+        for pull_request in (True, False):
+            with self.subTest(pull_request=pull_request):
+                runtime = ci.select(['lib/llamadart.dart'], pull_request=pull_request)
+                mixed = ci.select(['example/dartpad_gguf/lib/main.dart', 'lib/llamadart.dart'],
+                                  pull_request=pull_request)
+                self.assertEqual(mixed, runtime)
+
+    def test_every_example_directory_is_explicitly_classified(self):
+        narrow = {'chat_app', 'dartpad_gguf'}
+        full = {'basic_app', 'laya_command_bar', 'laya_tetris', 'llamadart_cli',
+                'llamadart_server', 'training_notebook', 'tui_coding_agent'}
+        directories = {path.name for path in (ROOT / 'example').iterdir() if path.is_dir()}
+        self.assertEqual(directories, narrow | full)
+        for name in sorted(directories):
+            with self.subTest(example=name):
+                plan = ci.select([f'example/{name}/lib/probe.dart'], pull_request=True)
+                self.assertEqual(bool(plan['reasons']), name in full)
+                self.assertEqual(plan['macos-native'], name in full)
 
     def test_genkit_gateway_runs_package_snippet_compilation_with_docs(self):
         plan = ci.select(['website/docs/integrations/genkit.md'])
@@ -312,6 +367,14 @@ class SelectionTest(unittest.TestCase):
                 self.assertTrue(plan['jobs']['native-prompt-reuse-parity'])
                 self.assertEqual(plan['desktops'], list(ci.DESKTOPS))
                 self.assertEqual(plan['apps'], list(ci.APPS))
+
+    def test_unknown_example_keeps_the_full_runtime_plan(self):
+        path = 'example/foo/lib/main.dart'
+        for pull_request in (True, False):
+            with self.subTest(pull_request=pull_request):
+                expected = ci.select(['lib/llamadart.dart'], pull_request=pull_request)
+                expected['reasons'] = ['shared/runtime or example path: ' + path]
+                self.assertEqual(ci.select([path], pull_request=pull_request), expected)
 
     def test_companions_name_every_checked_out_flutter_apple_companion(self):
         checked_out = sorted(
@@ -525,6 +588,7 @@ class SelectionTest(unittest.TestCase):
             'packages/llamadart_validation/assets/profiles/chat-gguf-cpu.json',
             'test/unit/tooling/validation_remote_test.dart',
             'example/chat_app/android/config', 'example/chat_app/web/config',
+            'example/dartpad_gguf/lib/main.dart',
         ]
         for left in paths:
             for right in paths:
@@ -636,6 +700,30 @@ class SelectionTest(unittest.TestCase):
 
 
 class AggregateTest(unittest.TestCase):
+    def test_dartpad_core_result_requires_both_selected_example_guards(self):
+        plan = ci.select(['example/dartpad_gguf/lib/main.dart'], pull_request=True)
+        selected_jobs = {'changes', 'analyze', 'example-packages', 'markdown-tests'}
+        needs = {job: {'result': 'success' if job in selected_jobs else 'skipped'}
+                 for job in {'changes', *ci.expected_jobs(plan)}}
+        self.assertEqual(ci.aggregate(plan, needs), [])
+        for job in ('analyze', 'example-packages'):
+            with self.subTest(job=job):
+                needs[job]['result'] = 'skipped'
+                self.assertEqual(ci.aggregate(plan, needs), [f'{job}: selected=True, result=skipped'])
+                needs[job]['result'] = 'success'
+
+    def test_dartpad_bundle_result_skips_builds_and_rejects_a_failed_selected_build(self):
+        example = 'example/dartpad_gguf/lib/main.dart'
+        needs = {'changes': {'result': 'success'}, 'desktop': {'result': 'skipped'},
+                 'app': {'result': 'skipped'}}
+        plan = ci.select([example], pull_request=True)
+        self.assertEqual(ci.aggregate(plan, needs, bundle=True), [])
+
+        mixed = ci.select([example, 'example/chat_app/web/index.html'], pull_request=True)
+        needs['app']['result'] = 'failure'
+        self.assertEqual(ci.aggregate(mixed, needs, bundle=True),
+                         ['app: selected=True, result=failure'])
+
     def test_each_selected_job_must_succeed_and_each_unselected_job_must_skip(self):
         for bundle, pull_request in ((False, False), (True, False), (False, True), (True, True)):
             for paths in (['README.md'], ['lib/llamadart.dart'], ['example/chat_app/android/a'],
