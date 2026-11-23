@@ -1,6 +1,14 @@
 Releases before 0.10.0 are in the
 [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).
 
+## 0.20.7
+
+- Bundle the Visual C++ runtime DLLs with Windows image generation.
+- Aligned the default WebGPU bridge assets to `v0.1.93` on jsDelivr's npm route. Web pages without cross-origin isolation or usable SharedArrayBuffer now select the single-thread GGUF core automatically. Set `window.__llamadartBridgeAllowSingleThreadCore = false` to opt out.
+- Stream text from Stories15M GGUF in the new DartPad Preview example.
+
+Runtime baseline: native llama.cpp `v1.0.0-4` and Web use upstream `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`; native LiteRT-LM uses `v0.19.1-7` and stable-diffusion uses `v0.4.0-1`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `d6200d9f467b20a942f4a77ff7041d98815ecb16acecd5176040b503f3544f95`.
+
 ## 0.20.6
 
 - Aligned the default WebGPU bridge assets to `v0.1.92` and added `ModelParams.jsBackedModelStaging` to control JS-backed Web GGUF and projector staging when the bridge supports it.
