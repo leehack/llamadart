@@ -1355,16 +1355,22 @@ const _markdownProseTags = {
   'th',
   'td',
 };
-const _markdownContainers = {'blockquote', 'ol', 'ul', 'li'};
+const _markdownContainers = {
+  'blockquote',
+  'ol',
+  'ul',
+  'li',
+  'table',
+  'thead',
+  'tbody',
+  'tr',
+};
+const _htmlContextTags = {'pre', ..._markdownContainers, 'th', 'td'};
 const _markdownBlockTags = {
   ..._markdownProseTags,
   ..._markdownContainers,
   'pre',
   'hr',
-  'table',
-  'thead',
-  'tbody',
-  'tr',
   'div',
 };
 const _htmlBlockTags = {
@@ -1531,9 +1537,7 @@ class _ReleaseHtmlText {
     final openTags = parser.tree.openElements
         .map((node) => node.localName)
         .toList();
-    final context = openTags.lastIndexWhere(
-      (tag) => tag == 'pre' || _markdownContainers.contains(tag),
-    );
+    final context = openTags.lastIndexWhere(_htmlContextTags.contains);
     _openContext = context < 0
         ? ''
         : openTags.skip(1).take(context).map((tag) => '<$tag>').join();
@@ -1582,11 +1586,11 @@ Iterable<String> _releaseTextUnits(
       final children = identical(node, verifiedBridge)
           ? _bridgeItemParts(node).rest
           : node.children ?? const <md.Node>[];
+      final container = _htmlContextTags.contains(node.tag);
+      if (container) htmlText.read('<${node.tag}>');
       if (_markdownProseTags.contains(node.tag)) {
         yield* htmlText.read(md.renderToHtml(children.toList()));
       } else {
-        final container = _markdownContainers.contains(node.tag);
-        if (container) htmlText.read('<${node.tag}>');
         yield* _releaseTextUnits(
           children,
           htmlText,
@@ -1594,8 +1598,8 @@ Iterable<String> _releaseTextUnits(
           verifiedBaseline: verifiedBaseline,
           inListItem: node.tag == 'li',
         );
-        if (container) htmlText.read('</${node.tag}>');
       }
+      if (container) htmlText.read('</${node.tag}>');
     }
   }
   if (inlineRun.isNotEmpty) {

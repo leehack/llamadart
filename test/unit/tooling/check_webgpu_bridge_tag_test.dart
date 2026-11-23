@@ -564,6 +564,12 @@ void main() {
         'GitHub renders the blockquote inside the still-open pre.',
       ),
       (
+        'an HTML pre with a closing tag inside a table cell',
+        '<div><pre>\n\n| Sample |\n| --- |\n| End. </pre></div> |\n\n$badClaim',
+        false,
+        'GitHub keeps the table and the final paragraph inside the pre.',
+      ),
+      (
         'a Markdown link title',
         '- [Reference](notes.md "$badClaim")',
         true,
