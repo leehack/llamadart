@@ -1,4 +1,4 @@
-## Unreleased
+## 3.10.0 - 2026-11-22
 
 - Require llamadart 0.20.6 and matching 0.20.x Apple companions.
 - Add a DartPad example that streams from GGUF, LiteRT-LM and Gemini models through Genkit.
