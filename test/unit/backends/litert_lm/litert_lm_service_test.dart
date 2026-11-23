@@ -8916,6 +8916,21 @@ void main() {
         service.generate(
           contextHandle,
           'hello',
+          const GenerationParams(ignoreEos: true),
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('ignoreEos'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        service.generate(
+          contextHandle,
+          'hello',
           const GenerationParams(
             speculativeDecodingConfig: SpeculativeDecodingConfig.draftDspark(
               draftModelPath: 'draft.gguf',

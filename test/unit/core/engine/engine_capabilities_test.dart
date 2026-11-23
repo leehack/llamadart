@@ -12,6 +12,7 @@ const _llamaCppGeneration = BackendGenerationCapabilities(
   minP: true,
   thinkingBudget: true,
   streamBatching: true,
+  ignoreEos: true,
   speculativeDecodingStrategies: <SpeculativeDecodingStrategy>{
     SpeculativeDecodingStrategy.ngramMod,
     SpeculativeDecodingStrategy.mtp,
@@ -195,6 +196,7 @@ void main() {
     expect(textOnly.supportsMinP, isTrue);
     expect(textOnly.supportsThinkingBudget, isTrue);
     expect(textOnly.supportsStreamBatching, isTrue);
+    expect(textOnly.supportsIgnoreEos, isTrue);
     expect(
       textOnly.speculativeDecodingStrategies,
       _llamaCppGeneration.speculativeDecodingStrategies,
@@ -256,6 +258,7 @@ void main() {
     expect(capabilities.supportsMinP, isFalse);
     expect(capabilities.supportsThinkingBudget, isFalse);
     expect(capabilities.supportsStreamBatching, isTrue);
+    expect(capabilities.supportsIgnoreEos, isFalse);
     expect(
       capabilities.speculativeDecodingStrategies,
       _liteRtLmNativeGeneration.speculativeDecodingStrategies,
@@ -329,6 +332,7 @@ void main() {
     expect(capabilities.supportsEmbeddings, isFalse);
     expect(capabilities.supportsPenalty, isFalse);
     expect(capabilities.supportsMinP, isFalse);
+    expect(capabilities.supportsIgnoreEos, isFalse);
     expect(capabilities.speculativeDecodingStrategies, isEmpty);
   });
 

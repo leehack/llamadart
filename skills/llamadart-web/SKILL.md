@@ -127,6 +127,8 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
     unless `withTextHistory()` is used and the loaded runtime supports them. Unreported
     controls throw `LlamaUnsupportedException`; `engine.runtime` names the
     runtime, so never sniff the `.litertlm` extension after loading.
+    `supportsIgnoreEos` is false on every Web runtime, and
+    `GenerationParams(ignoreEos: true)` throws there.
   - A `ThinkingBudget` with an eager `think-body` or `seed-thought` root needs
     assets that report `thinkingBudgetPauseGrammar`. This includes Granite
     required calls with a forced-open thought. Ling 3 required calls and all
@@ -195,7 +197,7 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   ending exactly at `maxTokens` also counts as cut off. `ToolChoice.required`
   and `parallelToolCalls` still throw.
   It rejects media parts, grammar, `penalty`, `minP`, `presencePenalty`,
-  `thinkingBudget` and speculative decoding; generation honors only
+  `thinkingBudget`, `ignoreEos` and speculative decoding; generation honors only
   `maxTokens`, `temp`, `topK`, `topP`, `seed` and `stopSequences`. It has no
   embeddings, tokenizer, LoRA, state or usage. Use GGUF for anything more.
 - `flutter build web` only copies what is in `web/`: run the setup tool (or

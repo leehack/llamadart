@@ -179,6 +179,7 @@ void main() {
           expect(caps.presencePenalty, isTrue);
           expect(caps.minP, isTrue);
           expect(caps.streamBatching, isTrue);
+          expect(caps.ignoreEos, isTrue);
           // MTP can use an external draft even when this model has no MTP head.
           expect(
             caps.speculativeDecodingStrategies,

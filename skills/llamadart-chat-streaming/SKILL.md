@@ -194,6 +194,10 @@ modalities and speculative strategies before offering them.
   This requires llamadart-native `v1.0.0-4` or WebGPU assets `v0.1.87+` with `thinkingBudgetMultiEnd`. `supportsThinkingBudget` describes
   basic support. An explicit `endTag`, including `</think>`, selects a
   single delimiter.
+- `GenerationParams(ignoreEos: true)` keeps generating past end-of-generation
+  tokens, so a benchmark gets exactly `maxTokens` (`finishReason` `length`).
+  Only native llama.cpp applies it (`supportsIgnoreEos`); any grammar,
+  including tools and `responseFormat`, throws `LlamaUnsupportedException`.
 - Token usage (`chunk.usage`) is only on the final chunk and may be null (for
   example on LiteRT-LM or a cancelled request). Never assume it is present.
 - `chunk.model` is the last path segment of the model source (`qwen.gguf`),

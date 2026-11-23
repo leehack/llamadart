@@ -953,6 +953,20 @@ class GenerationParams {
   /// to the native chat parser instead of acting as text stops.
   final List<String> stopSequences;
 
+  /// Whether to keep generating past the model's end-of-generation tokens, as
+  /// llama.cpp's `--ignore-eos` does.
+  ///
+  /// Native llama.cpp gives every end-of-generation token a bias of negative
+  /// infinity, so generation runs until [maxTokens], a stop sequence or
+  /// cancellation. Speculative decoding verifies drafts with the same
+  /// sampler, so a drafted end-of-generation token is never accepted. Useful
+  /// for benchmarks that need an exact number of generated tokens.
+  ///
+  /// It cannot be combined with a grammar, whether set through [grammar] or
+  /// derived from tools or a response format: native llama.cpp throws
+  /// `LlamaUnsupportedException`. LiteRT-LM and WebGPU reject it.
+  final bool ignoreEos;
+
   /// GBNF grammar string for structured output (e.g., "root ::= \"hello\" | \"world\"").
   final String? grammar;
 
@@ -1047,6 +1061,7 @@ class GenerationParams {
     this.presencePenalty = 0.0,
     this.seed,
     this.stopSequences = const [],
+    this.ignoreEos = false,
     this.grammar,
     this.grammarLazy = false,
     this.thinkingBudget,
@@ -1085,6 +1100,7 @@ class GenerationParams {
     double? presencePenalty,
     int? seed,
     List<String>? stopSequences,
+    bool? ignoreEos,
     String? grammar,
     bool? grammarLazy,
     ThinkingBudget? thinkingBudget,
@@ -1109,6 +1125,7 @@ class GenerationParams {
       presencePenalty: presencePenalty ?? this.presencePenalty,
       seed: seed ?? this.seed,
       stopSequences: stopSequences ?? this.stopSequences,
+      ignoreEos: ignoreEos ?? this.ignoreEos,
       grammar: grammar ?? this.grammar,
       grammarLazy: grammarLazy ?? this.grammarLazy,
       thinkingBudget: clearThinkingBudget

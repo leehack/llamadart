@@ -107,6 +107,11 @@ LlamaArgumentException _draftMicroBatchTooSmall(
   );
 }
 
+const String _ignoreEosWithGrammar =
+    'GenerationParams.ignoreEos is not supported with a grammar, including '
+    'one derived from tools or a response format, as llama.cpp rejects '
+    '--ignore-eos with --grammar or --json-schema.';
+
 const String _draftBlockRequirement =
     'for llama.cpp draft-dflash and draft-dspark, which decode a whole draft '
     'block in one micro-batch.';
@@ -3890,6 +3895,7 @@ class LlamaCppService {
       minP: true,
       thinkingBudget: _supportsThinkingBudget(),
       streamBatching: true,
+      ignoreEos: true,
       speculativeDecodingStrategies:
           _requiresQwen35VulkanRestriction(modelHandle)
           ? const <SpeculativeDecodingStrategy>{}
@@ -5594,6 +5600,9 @@ class LlamaCppService {
           projectorLoaded: _modelToMtmd[modelHandle] != null,
         );
       }
+      if (params.ignoreEos && params.grammar != null) {
+        throw LlamaUnsupportedException(_ignoreEosWithGrammar);
+      }
       final thinkingBudgetConfig = _resolveLlamaCppThinkingBudgetConfig(
         params,
         hasMediaParts: hasMediaParts,
@@ -5742,7 +5751,12 @@ class LlamaCppService {
         params,
         vocab,
         model.vocabSize,
-        model.suppressedTokens,
+        params.ignoreEos
+            ? model.suppressedTokensIgnoringEos ??= List<int>.unmodifiable({
+                ...model.suppressedTokens,
+                ...readModelEndOfGenerationTokens(vocab, model.vocabSize),
+              })
+            : model.suppressedTokens,
         grammarPtr,
         rootPtr,
         lazyGrammarConfig,
@@ -11610,6 +11624,10 @@ class _LlamaModelWrapper {
   final String? sourcePath;
   final int vocabSize;
   final List<int> suppressedTokens;
+
+  /// [suppressedTokens] plus every end-of-generation token, read on the first
+  /// `ignoreEos` generation.
+  List<int>? suppressedTokensIgnoringEos;
   final LlamaCppObjectCalls _calls;
   _LlamaModelWrapper(
     this.pointer,

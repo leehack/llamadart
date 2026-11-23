@@ -416,6 +416,17 @@
     },
     {
       "surfaces": [
+        "capability:LlamaEngineCapabilities.supportsIgnoreEos",
+        "matrix:ignoreEos"
+      ],
+      "exemption": {
+        "id": "ignore-eos",
+        "reason": "Native llama.cpp ignoreEos has no sampler_controls case: Stories15M, the pack's model, never emits an end-of-generation token. The local-only Qwen3.5 test test/integration/core/engine/qwen35_ignore_eos_test.dart checks a reply that stops early without it and runs to maxTokens with it, under n-gram speculation too, and the rejection of response-format and tool grammars; Stories15M CI tests check the capability report and the grammar refusal, and VM/Chrome unit tests the WebGPU and LiteRT-LM refusals. No device or Web qualification is implied.",
+        "issue": "https://github.com/leehack/llamadart/issues/2154"
+      }
+    },
+    {
+      "surfaces": [
         "matrix:Web model/projector browser cache and post-abort reload"
       ],
       "exemption": {

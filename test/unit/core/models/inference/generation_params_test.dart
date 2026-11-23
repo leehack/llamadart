@@ -11,6 +11,7 @@ void main() {
       topK: 12,
       minP: 0.05,
       presencePenalty: 1.5,
+      ignoreEos: true,
       grammarRoot: 'main',
       grammarLazy: true,
       thinkingBudget: const ThinkingBudget(
@@ -40,6 +41,9 @@ void main() {
     expect(updated.topK, 12);
     expect(updated.minP, 0.05);
     expect(updated.presencePenalty, 1.5);
+    expect(updated.ignoreEos, isTrue);
+    expect(const GenerationParams().ignoreEos, isFalse);
+    expect(updated.copyWith(temp: 1).ignoreEos, isTrue);
     expect(updated.grammarRoot, 'main');
     expect(updated.grammarLazy, isTrue);
     expect(updated.thinkingBudget?.maxTokens, 64);

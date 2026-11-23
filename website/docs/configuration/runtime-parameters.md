@@ -489,6 +489,13 @@ Important fields:
   See [Speculative decoding](../guides/performance-tuning#speculative-decoding).
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.
+- `ignoreEos`: native llama.cpp gives every end-of-generation token a bias of
+  negative infinity, as `--ignore-eos` does, so generation runs to
+  `maxTokens`, a stop sequence or cancellation, for benchmarks that need an
+  exact token count. Speculative decoding verifies drafts with the same
+  sampler, so a drafted end-of-generation token is never accepted. Any
+  grammar, including tool-call and `responseFormat` grammars, throws
+  `LlamaUnsupportedException`. WebGPU and LiteRT-LM reject it.
 
 After a model loads, `engine.capabilities` reports which of these options the
 runtime applies. A request that sets one it reports `false` to a value other
@@ -502,6 +509,7 @@ than the default throws `LlamaUnsupportedException`:
 | `thinkingBudget` | `supportsThinkingBudget` | Runtime export resolves | Bridge reports | Runtime export resolves and the bundle declares a thinking channel | No |
 | `grammar`, `grammarTriggers`, `preservedTokens` | `supportsGrammar` | Yes | Yes | No | No |
 | `grammarLazy` | `supportsLazyGrammar` | Yes | With the `lazyGrammar` runtime probe | No | No |
+| `ignoreEos` | `supportsIgnoreEos` | Yes, without a grammar | No | No | No |
 | Stream batching thresholds | `supportsStreamBatching` | Yes | Ignored | Yes | No |
 | Speculative strategies | `speculativeDecodingStrategies` | All, subject to draft/model requirements | Bridge reports | `backendDefault`, `mtp` unless the bundle declares no drafter | None |
 

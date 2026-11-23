@@ -324,6 +324,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       supportsMinP: generation.minP,
       supportsThinkingBudget: generation.thinkingBudget,
       supportsStreamBatching: generation.streamBatching,
+      supportsIgnoreEos: generation.ignoreEos,
       speculativeDecodingStrategies: Set.unmodifiable(
         generation.speculativeDecodingStrategies,
       ),

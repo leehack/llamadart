@@ -2400,6 +2400,7 @@ void main() {
         expect(capabilities.minP, isFalse);
         expect(capabilities.thinkingBudget, isFalse);
         expect(capabilities.streamBatching, isTrue);
+        expect(capabilities.ignoreEos, isFalse);
         expect(
           capabilities.speculativeDecodingStrategies,
           bundle?.speculativeDecoding == false
