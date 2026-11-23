@@ -1522,8 +1522,7 @@ class HighRiskReadinessEvaluator {
         }
       }
       if (!await refsExist(refs) ||
-          (changedProduction.isNotEmpty &&
-              referenced.intersection(changedProduction).isEmpty)) {
+          referenced.intersection(changedProduction).isEmpty) {
         return 'Test evidence is disconnected from the changed production path: ${entry.key}.';
       }
       coveredProduction.addAll(referenced);

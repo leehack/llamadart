@@ -171,8 +171,11 @@ Python files are rejected regardless of name or extension. Everything under
 `tool/native/fixtures/` must list each of them in `production_refs`; otherwise
 it fails with "Some changed production paths lack reviewed test reachability".
 
-The evaluator verifies named cases/snippets against exact Git blobs and rejects
-missing or disconnected references. A literal match does **not** establish a
+The evaluator verifies named cases/snippets against exact Git blobs and requires
+each ordinary test record to cite at least one changed production path.
+Metadata-only releases can supply evidence through the
+[bounded core-patch route](#core-patch-release-metadata-evidence) when eligible.
+A literal match does **not** establish a
 callgraph, execute tests, authenticate logs, or prove independence. The existing
 independent audit must inspect those semantics and results; do not invent a
 record for tests that were not run. Unknown or unproven reachability blocks the
@@ -234,9 +237,8 @@ matrix rows, the exact-pair independent audit and the zero-P1 and
 zero-thread gates are unchanged. A comment-only structured-output path keeps
 its minimum impacts, coverage axes and family evidence, and impact review must
 still cite it. Other changed production paths in the same PR still need
-coverage. A cited test may still reference only comment-only paths and must
-pass every existing check. A PR with no changed production path at all still
-cites a relevant test.
+coverage. A cited test may still reference only changed comment-only paths and
+must pass every existing check.
 
 ### Schema migration
 

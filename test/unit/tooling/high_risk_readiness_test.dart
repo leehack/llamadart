@@ -3032,6 +3032,50 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
   );
 
   group('bounded metadata-only release evidence', () {
+    test('ordinary evidence rejects an unchanged verifier reference', () async {
+      final files = metadataFiles();
+      for (final tree in files.values) {
+        tree[releaseMetadataVerifier] = (
+          mode: '100644',
+          contents: 'void verifyRelease() {}',
+        );
+        tree[releaseMetadataTest] = (
+          mode: '100644',
+          contents: "test('regression case', () { verifyRelease(); });",
+        );
+      }
+      final evidence = backendEvidence()
+        ..['surfaces'] = ['artifactConsumer']
+        ..['affected_test_paths'] = [releaseMetadataTest]
+        ..['test_evidence'] = {
+          releaseMetadataTest: testProof(releaseMetadataVerifier)
+            ..['test_snippet'] = 'verifyRelease();'
+            ..['production_refs'] = [
+              {
+                'path': releaseMetadataVerifier,
+                'snippet': 'void verifyRelease()',
+              },
+            ],
+        };
+
+      final result = await HighRiskReadinessEvaluator(
+        repositoryState: FakeRepositoryState(
+          changes: [
+            for (final path in releaseMetadataPaths)
+              RepositoryChange(path: path, kind: RepositoryChangeKind.modified),
+          ],
+          existingPaths: files[headSha]!.keys.toSet(),
+          files: files,
+        ),
+      ).evaluate(evidence: evidence, context: context);
+
+      expectFailure(
+        result,
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+      expect(result.message, contains('disconnected'));
+    });
+
     test(
       'the next patch must preserve the previous runtime baseline',
       () async {
