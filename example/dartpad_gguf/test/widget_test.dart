@@ -294,7 +294,10 @@ void main() {
     await finishStream(tester);
     expect(find.text('First turn'), findsOneWidget);
     expect(find.text('Assistant'), findsOneWidget);
-    expect(find.widgetWithText(SelectableText, ''), findsOneWidget);
+    expect(
+      find.descendant(of: find.byType(SelectionArea), matching: find.text('')),
+      findsOneWidget,
+    );
     expect(find.text('Stopped.'), findsOneWidget);
     expect(engine.countedText, isNull);
 
@@ -460,6 +463,8 @@ void main() {
       expect(find.text('Hello'), findsOneWidget);
       expect(find.text('Hi there'), findsOneWidget);
 
+      await tester.ensureVisible(find.text(_smolLmItem));
+      await tester.pump();
       await tester.tap(find.text(_smolLmItem));
       await tester.pumpAndSettle();
       await tester.tap(find.text(_qwen35Item).last);
@@ -537,6 +542,8 @@ void main() {
 
     await send(tester, 'Hello');
     expect(pickerWidget().onChanged, isNull);
+    await tester.ensureVisible(find.text(_smolLmItem));
+    await tester.pump();
     await tester.tap(find.text(_smolLmItem));
     await tester.pump();
     expect(find.text(_qwen35Item), findsNothing);
@@ -544,6 +551,429 @@ void main() {
     await finishTurn(tester, 'Done');
     expect(pickerWidget().onChanged, isNotNull);
   });
+
+  testWidgets(
+    'recovers from non-LlamaException errors in load, send, token count, and dispose',
+    (tester) async {
+      await openApp(tester);
+      engine.loaded.completeError(StateError('Wasm OOM'));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Could not load SmolLM2 135M.'), findsOneWidget);
+      expect(find.textContaining('Wasm OOM'), findsNothing);
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Load'))
+            .onPressed,
+        isNotNull,
+      );
+      expect(
+        tester
+            .widget<DropdownButton<GgufModelOption>>(
+              find.byType(DropdownButton<GgufModelOption>),
+            )
+            .onChanged,
+        isNotNull,
+      );
+
+      engine.loaded = Completer<void>();
+      await tester.tap(find.text('Load'));
+      await tester.pump();
+      engine.loaded.complete();
+      await tester.pump();
+
+      await send(tester, 'First');
+      await finishTurn(tester, 'First reply');
+
+      await send(tester, 'Boom');
+      engine.output!.addError(StateError('Bridge panic'));
+      unawaited(engine.output!.close());
+      await finishStream(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Generation failed.'), findsOneWidget);
+      expect(find.textContaining('Bridge panic'), findsNothing);
+      expect(_stop, findsNothing);
+      expect(_send, findsOneWidget);
+      expect(
+        tester
+            .widget<DropdownButton<GgufModelOption>>(
+              find.byType(DropdownButton<GgufModelOption>),
+            )
+            .onChanged,
+        isNotNull,
+      );
+      expect(
+        tester
+            .widget<TextButton>(find.widgetWithText(TextButton, 'Clear'))
+            .onPressed,
+        isNotNull,
+      );
+      expect(find.text('Boom'), findsNothing);
+      expect(find.text('First reply'), findsOneWidget);
+
+      engine.tokenCountError = StateError('tokenizer failed');
+      await send(tester, 'Partial');
+      engine.emit('Halfway');
+      await tester.pump();
+      await tester.tap(_stop);
+      await finishStream(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Stopped.'), findsOneWidget);
+      expect(find.text('Halfway'), findsOneWidget);
+      expect(_send, findsOneWidget);
+      expect(
+        tester
+            .widget<DropdownButton<GgufModelOption>>(
+              find.byType(DropdownButton<GgufModelOption>),
+            )
+            .onChanged,
+        isNotNull,
+      );
+      expect(
+        tester
+            .widget<TextButton>(find.widgetWithText(TextButton, 'Clear'))
+            .onPressed,
+        isNotNull,
+      );
+
+      engine.disposeError = StateError('dispose failed');
+      await tester.ensureVisible(find.text(_smolLmItem));
+      await tester.pump();
+      await tester.tap(find.text(_smolLmItem));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(_qwen35Item).last);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        tester
+            .widget<DropdownButton<GgufModelOption>>(
+              find.byType(DropdownButton<GgufModelOption>),
+            )
+            .onChanged,
+        isNotNull,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Load'))
+            .onPressed,
+        isNotNull,
+      );
+      expect(
+        find.textContaining('Load Qwen3.5 0.8B to begin.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'renders narrow viewport cleanly with updated Gemma warning hidden after Load',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 480);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      createFakeEngine();
+      await tester.pumpWidget(GgufApp(createEngine: () async => engine));
+
+      expect(
+        tester
+            .widgetList<ConstrainedBox>(find.byType(ConstrainedBox))
+            .any((box) => box.constraints.maxWidth == 640),
+        isTrue,
+      );
+
+      final dropdown = tester.widget<DropdownButton<GgufModelOption>>(
+        find.byType(DropdownButton<GgufModelOption>),
+      );
+      for (final item in dropdown.items!) {
+        final label = item.child as Text;
+        expect(label.maxLines, 1);
+        expect(label.overflow, TextOverflow.ellipsis);
+      }
+
+      await tester.tap(find.text(_smolLmItem));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(_gemma4Item).last);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('Large download (~3 GB)'), findsOneWidget);
+      expect(find.textContaining('~11 GB'), findsOneWidget);
+      expect(find.textContaining('16+ GB RAM'), findsOneWidget);
+      expect(find.textContaining('8+ GB RAM'), findsNothing);
+
+      final warningText = find.textContaining('Large download (~3 GB)');
+      final warningContext = tester.element(warningText);
+      final warningBox = tester.widget<DecoratedBox>(
+        find
+            .ancestor(of: warningText, matching: find.byType(DecoratedBox))
+            .first,
+      );
+      expect(
+        (warningBox.decoration as BoxDecoration).color,
+        Theme.of(warningContext).colorScheme.tertiaryContainer,
+      );
+
+      await tester.ensureVisible(find.text('Load'));
+      await tester.tap(find.text('Load'));
+      await tester.pump();
+      engine.loaded.complete();
+      await tester.pump();
+
+      expect(find.textContaining('~11 GB'), findsNothing);
+
+      await tester.ensureVisible(_prompt);
+      await send(tester, 'Hi');
+      await finishTurn(tester, 'Hello');
+
+      final expectedUserColor = Theme.of(tester.element(find.text('Hi')))
+          .colorScheme
+          .onPrimaryContainer;
+      expect(
+        tester.widget<Text>(find.text('You')).style?.color,
+        expectedUserColor,
+      );
+      expect(
+        tester.widget<Text>(find.text('Hi')).style?.color,
+        expectedUserColor,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'formats download progress with percent and MB/GB then switches to Initializing',
+    (tester) async {
+      final engines = <_FakeEngine>[];
+      await tester.pumpWidget(
+        GgufApp(
+          createEngine: () async {
+            final created = _FakeEngine();
+            engines.add(created);
+            addTearDown(created.dispose);
+            return created;
+          },
+        ),
+      );
+
+      await tester.tap(find.text('Load'));
+      await tester.pump();
+
+      engines[0].progress?.call(const ModelDownloadProgress.fraction(0.5));
+      await tester.pump();
+      expect(
+        find.text('Downloading SmolLM2 135M… 50% (~53 / 105 MB)'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<LinearProgressIndicator>(
+              find.byType(LinearProgressIndicator),
+            )
+            .value,
+        0.5,
+      );
+
+      engines[0].progress?.call(const ModelDownloadProgress.fraction(0.504));
+      await tester.pump();
+      expect(
+        tester
+            .widget<LinearProgressIndicator>(
+              find.byType(LinearProgressIndicator),
+            )
+            .value,
+        0.5,
+      );
+
+      engines[0].progress?.call(const ModelDownloadProgress.fraction(1.0));
+      await tester.pump();
+      expect(find.text('Initializing SmolLM2 135M…'), findsOneWidget);
+      expect(
+        tester
+            .widget<LinearProgressIndicator>(
+              find.byType(LinearProgressIndicator),
+            )
+            .value,
+        1.0,
+      );
+
+      engines[0].loaded.complete();
+      await tester.pump();
+      expect(find.text('Model ready.'), findsOneWidget);
+
+      await tester.tap(find.text(_smolLmItem));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(_gemma4Item).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Load'));
+      await tester.pump();
+
+      engines[1].progress?.call(const ModelDownloadProgress.fraction(0.42));
+      await tester.pump();
+      expect(
+        find.text('Downloading Gemma 4 E2B… 42% (~1.3 / 3.0 GB)'),
+        findsOneWidget,
+      );
+
+      engines[1].progress?.call(
+        const ModelDownloadProgress(
+          receivedBytes: 1500000000,
+          totalBytes: 3000000000,
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.text('Downloading Gemma 4 E2B… 50% (1.5 / 3.0 GB)'),
+        findsOneWidget,
+      );
+
+      engines[1].loaded.complete();
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'streaming does not rebuild completed bubbles and disables settings while busy',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        createFakeEngine();
+        await tester.pumpWidget(GgufApp(createEngine: () async => engine));
+        await tester.tap(find.text('Settings'));
+        await tester.pumpAndSettle();
+
+        expect(
+          tester.getSemantics(find.byType(Slider).at(0)).label,
+          contains('Temperature'),
+        );
+        expect(
+          tester.getSemantics(find.byType(Slider).at(1)).label,
+          contains('Max tokens'),
+        );
+
+        await tester.tap(find.text('Load'));
+        await tester.pump();
+        expect(
+          tester.widget<Slider>(find.byType(Slider).at(0)).onChanged,
+          isNull,
+        );
+        expect(
+          tester.widget<Slider>(find.byType(Slider).at(1)).onChanged,
+          isNull,
+        );
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.widgetWithText(TextFormField, 'System prompt'),
+              )
+              .enabled,
+          isFalse,
+        );
+
+        engine.loaded.complete();
+        await tester.pump();
+        expect(
+          tester.widget<Slider>(find.byType(Slider).at(0)).onChanged,
+          isNotNull,
+        );
+        expect(
+          tester.widget<Slider>(find.byType(Slider).at(1)).onChanged,
+          isNotNull,
+        );
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.widgetWithText(TextFormField, 'System prompt'),
+              )
+              .enabled,
+          isTrue,
+        );
+
+        await send(tester, 'First');
+        await finishTurn(tester, 'First answer');
+        expect(find.byType(SelectionArea), findsOneWidget);
+        expect(find.byType(SelectableText), findsNothing);
+
+        final completedBeforePrompt = tester.widget<Text>(
+          find.text('First answer'),
+        );
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'System prompt'),
+          'Be brief.',
+        );
+        await tester.pump();
+        expect(
+          identical(
+            completedBeforePrompt,
+            tester.widget<Text>(find.text('First answer')),
+          ),
+          isTrue,
+        );
+
+        await send(tester, 'Second');
+        expect(
+          tester.widget<Slider>(find.byType(Slider).at(0)).onChanged,
+          isNull,
+        );
+        expect(
+          tester.widget<Slider>(find.byType(Slider).at(1)).onChanged,
+          isNull,
+        );
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.widgetWithText(TextFormField, 'System prompt'),
+              )
+              .enabled,
+          isFalse,
+        );
+
+        final completedDuringStream = tester.widget<Text>(
+          find.text('First answer'),
+        );
+        engine.emit('Part 1');
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
+        engine.emit(' Part 2');
+        await tester.pump();
+
+        expect(find.text('Part 1 Part 2'), findsOneWidget);
+        expect(
+          identical(
+            completedDuringStream,
+            tester.widget<Text>(find.text('First answer')),
+          ),
+          isTrue,
+        );
+
+        unawaited(engine.output!.close());
+        await finishStream(tester);
+        expect(
+          tester.widget<Slider>(find.byType(Slider).at(0)).onChanged,
+          isNotNull,
+        );
+        expect(
+          tester.widget<Slider>(find.byType(Slider).at(1)).onChanged,
+          isNotNull,
+        );
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.widgetWithText(TextFormField, 'System prompt'),
+              )
+              .enabled,
+          isTrue,
+        );
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
 }
 
 class _FakeBackend extends Fake implements LlamaBackend {
@@ -567,6 +997,8 @@ class _FakeEngine extends LlamaEngine {
   String? flushOnCancel;
   bool holdAfterCancel = false;
   String? countedText;
+  Object? disposeError;
+  Object? tokenCountError;
 
   void emit(String text, {String? thinking, LlamaGenerationUsage? usage}) {
     output!.add(
@@ -645,6 +1077,7 @@ class _FakeEngine extends LlamaEngine {
   @override
   Future<int> getTokenCount(String text) async {
     countedText = text;
+    if (tokenCountError != null) throw tokenCountError!;
     return 4;
   }
 
@@ -665,5 +1098,6 @@ class _FakeEngine extends LlamaEngine {
     if (events.contains('dispose')) return;
     events.add('dispose');
     unawaited(output?.close());
+    if (disposeError != null) throw disposeError!;
   }
 }

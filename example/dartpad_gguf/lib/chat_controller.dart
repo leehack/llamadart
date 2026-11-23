@@ -25,16 +25,14 @@ class GgufModelOption {
   final String? warning;
 }
 
-const smolLmModelUrl =
-    'https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/'
-    '9e6855bc4be717fca1ef21360a1db4b29d5c559a/'
-    'SmolLM2-135M-Instruct-Q4_K_M.gguf';
-
 const ggufModels = <GgufModelOption>[
   GgufModelOption(
     id: 'smollm2-135m',
     label: 'SmolLM2 135M',
-    url: smolLmModelUrl,
+    url:
+        'https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/'
+        '9e6855bc4be717fca1ef21360a1db4b29d5c559a/'
+        'SmolLM2-135M-Instruct-Q4_K_M.gguf',
     sizeLabel: '~105 MB',
     sizeBytes: 105454144,
     contextSize: 2048,
@@ -64,8 +62,10 @@ const ggufModels = <GgufModelOption>[
     contextSize: 2048,
     note: 'Higher quality; thinking disabled for quick replies.',
     warning:
-        'Large download (~3 GB). Requires desktop Chrome with WebAssembly '
-        'memory64 and 8+ GB RAM; not supported on Safari or mobile browsers.',
+        'Large download (~3 GB) — can take several minutes. Measured ~11 GB '
+        'peak browser memory; requires desktop Chrome with WebAssembly '
+        'memory64 and 16+ GB RAM recommended. Not supported on Safari or '
+        'mobile browsers.',
   ),
 ];
 
@@ -74,6 +74,33 @@ ModelParams buildGgufModelParams(GgufModelOption model, {bool isWeb = kIsWeb}) {
     contextSize: model.contextSize,
     modelBytesHint: isWeb ? model.sizeBytes : null,
   );
+}
+
+String formatLoadStatus(GgufModelOption model, ModelDownloadProgress progress) {
+  final fraction = progress.fraction;
+  if (fraction == null) return 'Loading ${model.label}…';
+  if (fraction >= 0.999) return 'Initializing ${model.label}…';
+  final percent = (fraction * 100).round();
+  final totalBytes = progress.totalBytes ?? model.sizeBytes;
+  final receivedBytes = progress.totalBytes != null
+      ? progress.receivedBytes
+      : (fraction * totalBytes).round();
+  final prefix = progress.totalBytes != null ? '' : '~';
+  return 'Downloading ${model.label}… $percent% '
+      '($prefix${_formatBytePair(receivedBytes, totalBytes)})';
+}
+
+String _formatBytePair(int receivedBytes, int totalBytes) {
+  if (totalBytes >= 1000 * 1000 * 1000) {
+    final receivedGb = (receivedBytes / (1000 * 1000 * 1000)).toStringAsFixed(
+      1,
+    );
+    final totalGb = (totalBytes / (1000 * 1000 * 1000)).toStringAsFixed(1);
+    return '$receivedGb / $totalGb GB';
+  }
+  final receivedMb = (receivedBytes / (1000 * 1000)).round();
+  final totalMb = (totalBytes / (1000 * 1000)).round();
+  return '$receivedMb / $totalMb MB';
 }
 
 class ChatMessage {
@@ -142,51 +169,68 @@ class ChatController extends ChangeNotifier {
   final Future<LlamaEngine> Function() createEngine;
   final _messages = <ChatMessage>[];
   final _clock = Stopwatch();
+  final ValueNotifier<double?> progress = ValueNotifier<double?>(null);
+  final ValueNotifier<ChatStats> stats = ValueNotifier<ChatStats>(
+    const ChatStats(),
+  );
+  final ValueNotifier<String?> streamingText = ValueNotifier<String?>(null);
+  final ValueNotifier<String> status = ValueNotifier<String>(
+    'Load ${ggufModels.first.label} to begin.',
+  );
+
   LlamaEngine? _engine;
   ChatSession? _session;
   GgufModelOption _selectedModel = ggufModels.first;
   ChatSettings _settings = const ChatSettings();
-  ChatStats _stats = const ChatStats();
+  String? _backendName;
   Timer? _ticker;
-  double? _progress;
   bool _loading = false;
   bool _generating = false;
   bool _stopRequested = false;
   bool _disposed = false;
-  String _status = 'Load ${ggufModels.first.label} to begin.';
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
   GgufModelOption get selectedModel => _selectedModel;
   ChatSettings get settings => _settings;
-  ChatStats get stats => _generating
-      ? ChatStats(backendName: _stats.backendName, elapsed: _clock.elapsed)
-      : _stats;
-  double? get progress => _progress;
   bool get loading => _loading;
   bool get ready => _session != null;
   bool get generating => _generating;
-  String get status => _status;
+
+  Future<void> _disposeQuietly(LlamaEngine? engine) async {
+    if (engine == null) return;
+    try {
+      await engine.dispose();
+    } catch (_) {}
+  }
 
   Future<void> selectModel(GgufModelOption model) async {
     if (_loading || _generating || model.id == _selectedModel.id) return;
     final engine = _engine;
     _engine = null;
     _session = null;
+    _backendName = null;
     _selectedModel = model;
     _messages.clear();
-    _stats = const ChatStats();
-    _progress = null;
-    _status = 'Load ${model.label} to begin.';
-    notifyListeners();
-    if (engine != null) {
-      _loading = true;
+    streamingText.value = null;
+    stats.value = const ChatStats();
+    progress.value = null;
+    status.value = 'Load ${model.label} to begin.';
+    if (engine == null) {
       notifyListeners();
-      try {
-        await engine.dispose();
-      } finally {
-        _loading = false;
-        if (!_disposed) notifyListeners();
+      return;
+    }
+    _loading = true;
+    notifyListeners();
+    try {
+      await engine.dispose();
+    } catch (_) {
+      if (!_disposed) {
+        status.value =
+            'Previous model did not unload cleanly. Load ${model.label} to begin.';
       }
+    } finally {
+      _loading = false;
+      if (!_disposed) notifyListeners();
     }
   }
 
@@ -194,36 +238,50 @@ class ChatController extends ChangeNotifier {
     if (_loading || ready) return;
     final model = _selectedModel;
     _loading = true;
-    _progress = null;
-    _status = 'Loading ${model.label}…';
+    progress.value = null;
+    status.value = 'Loading ${model.label}…';
     notifyListeners();
     try {
       final engine = _engine ?? await createEngine();
       if (_disposed) {
-        await engine.dispose();
+        await _disposeQuietly(engine);
         return;
       }
       _engine = engine;
       await engine.setModel(
         LlamaModel(ModelSource.url(Uri.parse(model.url))),
         params: buildGgufModelParams(model),
-        onProgress: (progress) {
+        onProgress: (downloadProgress) {
           if (_disposed) return;
-          _progress = progress.fraction;
-          notifyListeners();
+          final fraction = downloadProgress.fraction;
+          final previous = progress.value;
+          if (fraction != null &&
+              previous != null &&
+              fraction < 0.999 &&
+              (fraction - previous).abs() < 0.01 - 1e-9) {
+            return;
+          }
+          progress.value = fraction;
+          status.value = formatLoadStatus(model, downloadProgress);
         },
       );
       if (_disposed) return;
       final backendName = await engine.getBackendName();
       if (_disposed) return;
-      _stats = ChatStats(backendName: backendName);
+      _backendName = backendName;
+      stats.value = ChatStats(backendName: backendName);
       _session = ChatSession(engine, maxContextTokens: model.contextSize);
-      _status = 'Model ready.';
+      status.value = 'Model ready.';
     } on LlamaException catch (error) {
-      _status = error.message;
+      if (!_disposed) status.value = error.message;
+    } catch (_) {
+      if (!_disposed) status.value = 'Could not load ${model.label}.';
     } finally {
       _loading = false;
-      if (!_disposed) notifyListeners();
+      if (!_disposed) {
+        progress.value = null;
+        notifyListeners();
+      }
     }
   }
 
@@ -237,7 +295,9 @@ class ChatController extends ChangeNotifier {
       maxTokens: maxTokens ?? _settings.maxTokens,
       systemPrompt: systemPrompt ?? _settings.systemPrompt,
     );
-    notifyListeners();
+    if (temperature != null || maxTokens != null) {
+      notifyListeners();
+    }
   }
 
   Future<void> send(String text) async {
@@ -247,104 +307,120 @@ class ChatController extends ChangeNotifier {
 
     final systemPrompt = _settings.systemPrompt.trim();
     session.systemPrompt = systemPrompt.isEmpty ? null : systemPrompt;
-    _messages.addAll([
-      ChatMessage(LlamaChatRole.user, prompt),
-      const ChatMessage(LlamaChatRole.assistant, ''),
-    ]);
+    _messages.add(ChatMessage(LlamaChatRole.user, prompt));
     _generating = true;
     _stopRequested = false;
-    _status = 'Generating…';
+    streamingText.value = '';
+    status.value = 'Generating…';
     _clock
       ..reset()
       ..start();
-    _ticker = Timer.periodic(
-      const Duration(milliseconds: 100),
-      (_) => notifyListeners(),
-    );
+    stats.value = ChatStats(backendName: _backendName, elapsed: Duration.zero);
+    _ticker = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      if (_disposed) return;
+      stats.value = ChatStats(
+        backendName: _backendName,
+        elapsed: _clock.elapsed,
+      );
+    });
     notifyListeners();
 
-    final reply = StringBuffer();
-    String? committedReply;
-    LlamaGenerationUsage? usage;
-    String? errorMessage;
     try {
-      await for (final chunk in session.create(
-        [LlamaTextContent(prompt)],
-        params: GenerationParams(
-          temp: _settings.temperature,
-          maxTokens: _settings.maxTokens,
-        ),
-        enableThinking: false,
-        onMessageAdded: (message) {
-          if (message.role == LlamaChatRole.assistant) {
-            committedReply = message.content;
-          }
-        },
-      )) {
-        if (_disposed) return;
-        reply.write(chunk.text);
-        usage = chunk.usage ?? usage;
-        _messages.last = ChatMessage(LlamaChatRole.assistant, reply.toString());
-        notifyListeners();
+      final reply = StringBuffer();
+      String? committedReply;
+      LlamaGenerationUsage? usage;
+      String? errorMessage;
+      try {
+        await for (final chunk in session.create(
+          [LlamaTextContent(prompt)],
+          params: GenerationParams(
+            temp: _settings.temperature,
+            maxTokens: _settings.maxTokens,
+          ),
+          enableThinking: false,
+          onMessageAdded: (message) {
+            if (message.role == LlamaChatRole.assistant) {
+              committedReply = message.content;
+            }
+          },
+        )) {
+          if (_disposed) return;
+          reply.write(chunk.text);
+          usage = chunk.usage ?? usage;
+          streamingText.value = reply.toString();
+        }
+      } on LlamaException catch (error) {
+        errorMessage = error.message;
+      } catch (_) {
+        errorMessage = 'Generation failed.';
+      } finally {
+        _ticker?.cancel();
+        _ticker = null;
+        _clock.stop();
       }
-    } on LlamaException catch (error) {
-      errorMessage = error.message;
+      if (_disposed) return;
+
+      streamingText.value = null;
+      // ChatSession decides whether this turn survives and normalizes its reply.
+      final answer = committedReply;
+      if (answer == null) {
+        if (_messages.isNotEmpty) _messages.removeLast();
+      } else {
+        _messages.add(ChatMessage(LlamaChatRole.assistant, answer));
+      }
+
+      final duration = usage?.duration ?? Duration.zero;
+      final elapsed = duration > Duration.zero ? duration : _clock.elapsed;
+      var tokens = usage?.completionTokens;
+      if (tokens == null &&
+          _stopRequested &&
+          answer != null &&
+          answer.isNotEmpty) {
+        try {
+          tokens = await session.engine.getTokenCount(answer);
+        } catch (_) {
+          // Some runtimes do not expose a tokenizer or may fail during teardown.
+        }
+      }
+      if (_disposed) return;
+      stats.value = ChatStats(
+        backendName: _backendName,
+        outputTokens: tokens,
+        tokensPerSecond: tokens != null && elapsed > Duration.zero
+            ? tokens * Duration.microsecondsPerSecond / elapsed.inMicroseconds
+            : null,
+        elapsed: elapsed,
+      );
+      status.value = _stopRequested
+          ? 'Stopped.'
+          : errorMessage ?? 'Model ready.';
     } finally {
       _ticker?.cancel();
+      _ticker = null;
       _clock.stop();
-    }
-    if (_disposed) return;
-
-    // ChatSession decides whether this turn survives and normalizes its reply.
-    final answer = committedReply;
-    if (answer == null) {
-      _messages.removeRange(_messages.length - 2, _messages.length);
-    } else {
-      _messages.last = ChatMessage(LlamaChatRole.assistant, answer);
-    }
-
-    final duration = usage?.duration ?? Duration.zero;
-    final elapsed = duration > Duration.zero ? duration : _clock.elapsed;
-    var tokens = usage?.completionTokens;
-    if (tokens == null &&
-        _stopRequested &&
-        answer != null &&
-        answer.isNotEmpty) {
-      try {
-        tokens = await session.engine.getTokenCount(answer);
-      } on LlamaException {
-        // Some runtimes do not expose a tokenizer.
+      _generating = false;
+      if (!_disposed) {
+        streamingText.value = null;
+        notifyListeners();
       }
     }
-    if (_disposed) return;
-    _stats = ChatStats(
-      backendName: _stats.backendName,
-      outputTokens: tokens,
-      tokensPerSecond: tokens != null && elapsed > Duration.zero
-          ? tokens * Duration.microsecondsPerSecond / elapsed.inMicroseconds
-          : null,
-      elapsed: elapsed,
-    );
-    _status = _stopRequested ? 'Stopped.' : errorMessage ?? 'Model ready.';
-    _generating = false;
-    notifyListeners();
   }
 
   void stop() {
     if (!_generating || _stopRequested) return;
     _stopRequested = true;
-    _status = 'Stopping…';
+    status.value = 'Stopping…';
     // The runtime can flush text before the stream ends and commits the reply.
     _engine?.cancelGeneration();
-    notifyListeners();
   }
 
   void clearChat() {
     if (_generating) return;
     _session?.reset();
     _messages.clear();
-    _stats = ChatStats(backendName: _stats.backendName);
-    _status = 'Model ready.';
+    streamingText.value = null;
+    stats.value = ChatStats(backendName: _backendName);
+    status.value = 'Model ready.';
     notifyListeners();
   }
 
@@ -353,7 +429,11 @@ class ChatController extends ChangeNotifier {
     _disposed = true;
     _ticker?.cancel();
     _engine?.cancelGeneration();
-    unawaited(_engine?.dispose());
+    unawaited(_disposeQuietly(_engine));
+    progress.dispose();
+    stats.dispose();
+    streamingText.dispose();
+    status.dispose();
     super.dispose();
   }
 }

@@ -228,6 +228,14 @@ JSON, and `completion.message` deliberately excludes them. See the
 
 ## Testing
 
+- `dartpad_gguf` (Flutter Web DartPad example; requires Flutter 3.47+ / Dart 3.13+):
+
+```bash
+cd dartpad_gguf
+flutter test --exclude-tags local-only
+flutter test --platform chrome
+```
+
 - `basic_app` (Dart console):
 
 ```bash
@@ -277,12 +285,12 @@ cd laya_command_bar
 flutter test
 ```
 
-Note: `chat_app`, `laya_tetris` and `laya_command_bar` use Flutter libraries (`dart:ui`), so
+Note: `chat_app`, `dartpad_gguf`, `laya_tetris` and `laya_command_bar` use Flutter libraries (`dart:ui`), so
 `dart test` is not the correct runner for those examples.
 
 ## Quick Start
 
-1. **Choose an example**: Basic (console), Chat (Flutter), API Server (Relic), llama.cpp-style CLI clone (Dart), TUI coding agent (Dart + nocterm), Laya Tetris (Flutter decision-model game), or Laya Command Bar (Flutter command bar)
+1. **Choose an example**: Basic (console), Chat (Flutter), DartPad GGUF (Flutter Web), API Server (Relic), llama.cpp-style CLI clone (Dart), TUI coding agent (Dart + nocterm), Laya Tetris (Flutter decision-model game), or Laya Command Bar (Flutter command bar)
 2. **Download a model** (see each example's README)
 3. **Run the example**: Follow instructions in each subdirectory
 
@@ -311,6 +319,11 @@ into the `litert_lm` native runtime family for supported native targets.
 
 ```
 example/
+├── dartpad_gguf/       # Flutter Web DartPad example
+│   ├── lib/            # Bridge bootstrap, controller, and chat UI
+│   ├── test/           # Widget and Web bridge bootstrap tests
+│   ├── pubspec.yaml    # Dependencies (Flutter 3.47+ / Dart 3.13+, material_ui)
+│   └── README.md       # Instructions
 ├── basic_app/          # Console application
 │   ├── lib/            # Dart code
 │   ├── pubspec.yaml    # Dependencies
@@ -358,6 +371,7 @@ example/
 
 - Dart SDK 3.10.7 or higher
 - For chat_app, laya_tetris and laya_command_bar: Flutter 3.38.6 or higher
+- For dartpad_gguf: Flutter 3.47.0 or higher and Dart SDK 3.13.0 or higher (`material_ui`)
 - Flutter Apple builds require deployment targets of iOS 16.4 or newer and
   macOS 14.0 or newer
 - Internet connection (for first run - downloads selected native runtime
