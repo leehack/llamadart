@@ -1729,6 +1729,35 @@ void main() {
         });
       }
 
+      test('redacts detached signatures from GPU refusal details', () async {
+        addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
+        runtimeGpuActive = false;
+        const signature = 'gpu-detail-detached-sig';
+        const password = 'gpu-pass';
+        globalContext['__llamadartBridgeModuleUrl'] =
+            'https://example.com/bridge.js?sig=$signature'.toJS;
+        bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+            'gpu_unavailable:err_${signature}_https://u:$password@cdn.example/x.js';
+
+        await expectLater(
+          backend.modelLoadFromUrl(
+            url,
+            const ModelParams(device: ComputeDevice.gpu),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('without GPU layers'),
+                isNot(contains(signature)),
+                isNot(contains(password)),
+              ),
+            ),
+          ),
+        );
+      });
+
       test('gpu ignores a note that only ends in gpu_unavailable:', () async {
         addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
         runtimeGpuActive = false;
@@ -2336,7 +2365,7 @@ void main() {
         expect((config['coreModuleUrl'] as JSString).toDart, 'pthread.js');
       });
 
-      test('an isolated page skips preflight even with the opt-in', () async {
+      void enableCrossOriginIsolation() {
         const property = 'crossOriginIsolated';
         final oldDescriptor = _getOwnPropertyDescriptor(
           globalContext,
@@ -2356,6 +2385,10 @@ void main() {
             _defineProperty(globalContext, property, oldDescriptor);
           }
         });
+      }
+
+      test('an isolated page skips preflight even with the opt-in', () async {
+        enableCrossOriginIsolation();
         globalContext['__llamadartBridgeCoreModuleUrl'] = 'pthread.js'.toJS;
         constructor.delete('supportsCorePreflight'.toJS);
 
@@ -2444,10 +2477,8 @@ void main() {
           test(
             'refuses a missing $asset during $execution preflight',
             () async {
-              if (asset == 'loader') {
-                globalContext['__llamadartBridgeCoreModuleUrlSt'] =
-                    'https://example.com/core_st.js?mode=$execution'.toJS;
-              }
+              addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
+              preflightResult['execution'] = execution.toJS;
               bridge['preflightCore'] = (() {
                 calls.add('preflight');
                 if (asset == 'wasm') {
@@ -2459,7 +2490,10 @@ void main() {
               }).toJS;
 
               await expectLater(
-                backend.modelLoadFromUrl(modelUrl, params),
+                backend.modelLoadFromUrl(
+                  modelUrl,
+                  const ModelParams(contextSize: 4096, gpuLayers: 99),
+                ),
                 unsupported,
               );
               expect(calls, ['preflight']);
@@ -2498,62 +2532,6 @@ void main() {
         }
       }
 
-      test('rejects the failed loader once per page and URL', () async {
-        const loaderGlobal = '__llamadartBridgeCoreModuleUrlSt';
-        const failed = 'https://example.com/core_st.js?v=failed';
-        globalContext[loaderGlobal] = failed.toJS;
-        bridge['preflightCore'] = (() {
-          calls.add('preflight');
-          final loader = lastBridgeConfig!['coreModuleUrl'] as JSString;
-          if (loader.toDart == failed) {
-            return _rejectPromise(
-              coreAssetError('CORE_ASSET_UNAVAILABLE', asset: 'loader'),
-            );
-          }
-          return Future<JSObject>.value(preflightResult).toJS;
-        }).toJS;
-
-        final loaderUnavailable = throwsA(
-          isA<LlamaUnsupportedException>().having(
-            (error) => error.message,
-            'message',
-            allOf(
-              contains('Reload the page or use a different core loader URL'),
-              contains('COOP/COEP'),
-              contains('v0.1.93+'),
-            ),
-          ),
-        );
-
-        await expectLater(
-          backend.modelLoadFromUrl(modelUrl, params),
-          loaderUnavailable,
-        );
-        globalContext['__llamadartBridgeWasmUrlSt'] = 'replaced.wasm'.toJS;
-        await expectLater(
-          backend.modelLoadFromUrl(modelUrl, params),
-          loaderUnavailable,
-        );
-        await backend.dispose();
-        backend = WebGpuLlamaBackend(
-          bridgeFactory: ([config]) {
-            lastBridgeConfig = config;
-            return _assignObject(JSObject(), bridge) as LlamaWebGpuBridge;
-          },
-        );
-        await expectLater(
-          backend.modelLoadFromUrl(modelUrl, params),
-          loaderUnavailable,
-        );
-
-        expect(calls, ['preflight']);
-
-        globalContext[loaderGlobal] =
-            'https://example.com/core_st.js?v=replacement'.toJS;
-        expect(await backend.modelLoadFromUrl(modelUrl, params), 1);
-        expect(calls, ['preflight', 'preflight', 'model']);
-      });
-
       test(
         'a failed wasm32 loader does not block memory64 preflight',
         () async {
@@ -2590,209 +2568,211 @@ void main() {
         },
       );
 
+      final loaderUnavailable = isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        allOf(
+          contains('WebGPU core loader'),
+          contains('llamadart:web_setup'),
+          isNot(contains('Reload the page')),
+        ),
+      );
+
       for (final reference in [null, './relative-loader.js']) {
-        test(
-          'a failed loader stays terminal for its bridge ($reference)',
-          () async {
-            const isolation = 'crossOriginIsolated';
-            final oldDescriptor = _getOwnPropertyDescriptor(
-              globalContext,
-              isolation,
-            );
-            _defineProperty(
-              globalContext,
-              isolation,
-              JSObject()
-                ..['value'] = true.toJS
-                ..['configurable'] = true.toJS,
-            );
-            addTearDown(() {
-              if (oldDescriptor == null) {
-                globalContext.delete(isolation.toJS);
-              } else {
-                _defineProperty(globalContext, isolation, oldDescriptor);
-              }
-            });
+        for (final path in ['constructor', 'factory', 'replacement']) {
+          test('isolated loader recovers with $path ($reference)', () async {
+            enableCrossOriginIsolation();
             globalContext.delete('__llamadartBridgeAllowSingleThreadCore'.toJS);
             if (reference != null) {
               globalContext['__llamadartBridgeCoreModuleUrl'] = reference.toJS;
             }
-            const factoryName = '__llamadartTestImplicitBridge';
-            addTearDown(() => globalContext.delete(factoryName.toJS));
-            JSFunction makeConstructor(String lane) {
-              return _jsFunction(
-                'config',
-                "return globalThis.$factoryName('$lane', config);",
-              );
-            }
-
-            globalContext[factoryName] = ((String lane, JSObject? config) {
-              calls.add('constructor:$lane');
+            var available = false;
+            JSObject createBridge(JSObject? config) {
               expect(
                 (config?['coreModuleUrl'] as JSString?)?.toDart,
                 reference,
               );
+              calls.add('bridge');
               return _assignObject(JSObject(), bridge)
                 ..['loadModelFromUrl'] = ((String url, JSObject? config) {
-                  calls.add('model:$lane');
-                  if (lane == 'missing') {
-                    return _rejectPromise(
-                      coreAssetError('CORE_ASSET_UNAVAILABLE', asset: 'loader')
-                        ..['url'] = 'https://example.com/missing/core.js'.toJS,
-                    );
-                  }
+                  calls.add('model');
+                  return available
+                      ? Future<void>.value().toJS
+                      : _rejectPromise(
+                          coreAssetError(
+                            'CORE_ASSET_UNAVAILABLE',
+                            asset: 'loader',
+                          ),
+                        );
+                }).toJS
+                ..['dispose'] = (() {
+                  calls.add('dispose');
                   return Future<void>.value().toJS;
                 }).toJS;
-            }).toJS;
+            }
 
-            final missing = makeConstructor('missing');
-            final healthy = makeConstructor('healthy');
-            const loadParams = ModelParams(gpuLayers: 0, preferMemory64: false);
-            final loaderUnavailable = throwsA(
-              isA<LlamaUnsupportedException>().having(
-                (error) => error.message,
-                'message',
-                contains('core loader is unavailable'),
-              ),
+            const factoryName = '__llamadartTestRestoreBridge';
+            JSFunction makeConstructor() => _jsFunction(
+              'config',
+              'return globalThis.$factoryName(config);',
             );
+            if (path == 'factory') {
+              backend = WebGpuLlamaBackend(
+                bridgeFactory: ([config]) =>
+                    createBridge(config) as LlamaWebGpuBridge,
+              );
+            } else {
+              addTearDown(() => globalContext.delete(factoryName.toJS));
+              globalContext[factoryName] = createBridge.toJS;
+              globalContext['LlamaWebGpuBridge'] = makeConstructor();
+              backend = WebGpuLlamaBackend();
+            }
 
-            globalContext['LlamaWebGpuBridge'] = missing;
-            backend = WebGpuLlamaBackend();
-            await expectLater(
-              backend.modelLoadFromUrl(modelUrl, loadParams),
-              loaderUnavailable,
-            );
-            await backend.dispose();
-            backend = WebGpuLlamaBackend();
-            await expectLater(
-              backend.modelLoadFromUrl(modelUrl, loadParams),
-              loaderUnavailable,
-            );
-            expect(calls, ['constructor:missing', 'model:missing']);
+            LlamaUnsupportedException? firstError;
+            try {
+              await backend.modelLoadFromUrl(modelUrl, params);
+            } on LlamaUnsupportedException catch (error) {
+              firstError = error;
+            }
+            expect(firstError, isNotNull);
+            expect(backend.isReady, isFalse);
+            expect(calls, ['bridge', 'model', 'dispose']);
 
-            globalContext['LlamaWebGpuBridge'] = healthy;
-            expect(await backend.modelLoadFromUrl(modelUrl, loadParams), 1);
-            expect(calls, [
-              'constructor:missing',
-              'model:missing',
-              'constructor:healthy',
-              'model:healthy',
-            ]);
-          },
-        );
+            available = true;
+            if (path == 'replacement') {
+              globalContext['LlamaWebGpuBridge'] = makeConstructor();
+            }
+            expect(await backend.modelLoadFromUrl(modelUrl, params), 1);
+            expect(calls, ['bridge', 'model', 'dispose', 'bridge', 'model']);
+            if (path != 'replacement') expect(firstError, loaderUnavailable);
+          });
+        }
       }
 
       test(
-        'a failed implicit loader keeps the same custom factory terminal',
+        'single-thread preflight recovers with the same two core widths',
         () async {
-          globalContext.delete('__llamadartBridgeAllowSingleThreadCore'.toJS);
-          LlamaWebGpuBridge missing([WebGpuBridgeConfig? config]) {
-            calls.add('factory:missing');
-            expect((config as JSObject)['coreModuleUrl'], isNull);
-            return (_assignObject(JSObject(), bridge)
-                  ..['loadModelFromUrl'] = ((String url, JSObject? options) {
-                    calls.add('model:missing');
-                    return _rejectPromise(
-                      coreAssetError('CORE_ASSET_UNAVAILABLE', asset: 'loader'),
-                    );
-                  }).toJS)
-                as LlamaWebGpuBridge;
-          }
+          globalContext['__llamadartBridgeCoreModuleUrlSt'] =
+              'https://example.com/restore/core32.js'.toJS;
+          globalContext['__llamadartBridgeCoreModuleUrlMem64St'] =
+              'https://example.com/restore/core64.js'.toJS;
+          globalContext['__llamadartBridgeWasmUrlMem64St'] =
+              'https://example.com/restore/core64.wasm'.toJS;
+          preflightResult['variant'] = 'memory64'.toJS;
+          var available = false;
+          bridge['preflightCore'] = (() {
+            calls.add('preflight');
+            expect(lastBridgeConfig!['preferMemory64'], isNull);
+            return available
+                ? Future<JSObject>.value(preflightResult).toJS
+                : _rejectPromise(
+                    coreAssetError('CORE_ASSET_UNAVAILABLE', asset: 'loader'),
+                  );
+          }).toJS;
 
-          const loadParams = ModelParams(gpuLayers: 0, preferMemory64: false);
-          final terminal = throwsA(isA<LlamaUnsupportedException>());
-          backend = WebGpuLlamaBackend(bridgeFactory: missing);
           await expectLater(
-            backend.modelLoadFromUrl(modelUrl, loadParams),
-            terminal,
+            backend.modelLoadFromUrl(modelUrl, params),
+            unsupported,
           );
-          await expectLater(
-            backend.modelLoadFromUrl(modelUrl, loadParams),
-            terminal,
-          );
-          expect(calls, ['factory:missing', 'model:missing']);
+          expect(calls, ['preflight']);
 
-          await backend.dispose();
-          backend = WebGpuLlamaBackend(
-            bridgeFactory: ([config]) {
-              calls.add('factory:replacement');
-              return bridge as LlamaWebGpuBridge;
-            },
-          );
-          expect(await backend.modelLoadFromUrl(modelUrl, loadParams), 1);
-          expect(calls, [
-            'factory:missing',
-            'model:missing',
-            'factory:replacement',
-            'model',
-          ]);
+          available = true;
+          expect(await backend.modelLoadFromUrl(modelUrl, params), 1);
+          expect(calls, ['preflight', 'preflight', 'model']);
         },
       );
 
-      test(
-        'a terminal wasm32 worker error covers both eligible loaders',
-        () async {
-          const loader32 = '__llamadartBridgeCoreModuleUrlSt';
-          const loader64 = '__llamadartBridgeCoreModuleUrlMem64St';
-          const first64 = 'https://example.com/both-missing/core64.js';
-          globalContext[loader32] =
-              'https://example.com/both-missing/core32.js'.toJS;
-          globalContext[loader64] = first64.toJS;
-          preflightResult['execution'] = 'worker'.toJS;
-          preflightResult['variant'] = 'memory64'.toJS;
-
-          LlamaWebGpuBridge factory(bool fail, WebGpuBridgeConfig? config) {
-            calls.add('constructor');
-            final assets = config as JSObject;
-            expect(assets['preferMemory64'], isNull);
-            return (_assignObject(JSObject(), bridge)
-                  ..['preflightCore'] = (() {
-                    calls.add('memory64');
-                    if (fail &&
-                        (assets['coreModuleUrlMem64'] as JSString).toDart ==
-                            first64) {
-                      calls.add('wasm32');
-                      return _rejectPromise(
-                        coreAssetError(
-                          'CORE_ASSET_UNAVAILABLE',
-                          asset: 'loader',
-                        ),
-                      );
-                    }
-                    return Future<JSObject>.value(preflightResult).toJS;
-                  }).toJS)
-                as LlamaWebGpuBridge;
-          }
-
-          backend = WebGpuLlamaBackend(
-            bridgeFactory: ([config]) => factory(true, config),
-          );
-          for (var attempt = 0; attempt < 3; attempt++) {
-            await expectLater(
-              backend.modelLoadFromUrl(modelUrl, params),
-              unsupported,
+      for (final asset in ['loader', 'wasm']) {
+        test('isolated load stops after one missing $asset attempt', () async {
+          enableCrossOriginIsolation();
+          globalContext.delete('__llamadartBridgeAllowSingleThreadCore'.toJS);
+          globalContext['__llamadartBridgeCoreModuleUrl'] =
+              'https://example.com/missing-$asset/core32.js'.toJS;
+          addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
+          bridge['loadModelFromUrl'] = ((String url, JSObject? config) {
+            calls.add('model');
+            return _rejectPromise(
+              coreAssetError('CORE_ASSET_UNAVAILABLE', asset: asset),
             );
-          }
-          expect(calls, ['constructor', 'memory64', 'wasm32']);
+          }).toJS;
 
-          globalContext[loader64] =
-              'https://example.com/recovered/core64.js'.toJS;
-          expect(await backend.modelLoadFromUrl(modelUrl, params), 1);
-          expect(calls, [
-            'constructor',
-            'memory64',
-            'wasm32',
-            'constructor',
-            'memory64',
-            'model',
-          ]);
-
-          await backend.dispose();
-          globalContext[loader64] = first64.toJS;
-          backend = WebGpuLlamaBackend(
-            bridgeFactory: ([config]) => factory(false, config),
+          await expectLater(
+            backend.modelLoadFromUrl(
+              modelUrl,
+              const ModelParams(contextSize: 4096, gpuLayers: 99),
+            ),
+            asset == 'loader'
+                ? throwsA(loaderUnavailable)
+                : throwsA(
+                    isA<LlamaUnsupportedException>().having(
+                      (error) => error.message,
+                      'message',
+                      allOf(
+                        contains('WebGPU core Wasm'),
+                        contains('llamadart:web_setup'),
+                      ),
+                    ),
+                  ),
           );
-          expect(await backend.modelLoadFromUrl(modelUrl, params), 1);
+          expect(calls, ['model']);
+          expect(backend.isReady, isFalse);
+        });
+      }
+
+      test('redacts overlapping data URLs in JSPI preflight errors', () async {
+        const prefix = 'data:text/javascript,AAA';
+        const marker = 'SECRET_MARKER';
+        globalContext['__llamadartBridgeModuleUrl'] =
+            '$prefix%20/*%20$marker%20*/'.toJS;
+        backend = WebGpuLlamaBackend(
+          bridgeScriptUrl: prefix,
+          bridgeFactory: ([config]) => bridge as LlamaWebGpuBridge,
+        );
+        bridge['preflightCore'] = (() {
+          calls.add('preflight');
+          return _rejectPromise(
+            _jsError('JSPI not supported by current environment'),
+          );
+        }).toJS;
+        final diagnostic = allOf(
+          contains('requires JSPI'),
+          contains('data:<redacted>'),
+          isNot(contains(marker)),
+        );
+
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await expectLater(
+          engine.loadModelFromUrl(modelUrl, modelParams: params),
+          throwsA(
+            isA<LlamaUnsupportedException>()
+                .having((error) => error.message, 'message', diagnostic)
+                .having((error) => error.toString(), 'diagnostic', diagnostic),
+          ),
+        );
+        expect(calls, ['preflight']);
+      });
+
+      test(
+        'redacts detached signatures from the bridge asset source',
+        () async {
+          const signature = 'asset-source-detached-sig';
+          globalContext['__llamadartBridgeAssetSource'] =
+              'https://example.com/assets?sig=$signature'.toJS;
+          bridge['preflightCore'] = (() => _rejectPromise(
+            _jsError('Core diagnostic $signature'),
+          )).toJS;
+
+          await expectLater(
+            backend.modelLoadFromUrl(modelUrl, params),
+            throwsA(
+              isA<LlamaModelException>().having(
+                (error) => error.toString(),
+                'diagnostic',
+                allOf(contains('Core diagnostic'), isNot(contains(signature))),
+              ),
+            ),
+          );
         },
       );
 

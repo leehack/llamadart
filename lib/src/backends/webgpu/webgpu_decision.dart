@@ -497,14 +497,23 @@ String webGpuBridgeErrorText(
   Iterable<String> sourceUrls = const <String>[],
 }) {
   var text = _bridgeErrorMessage(error);
+  final opaque = <String, String>{};
   for (final url in sourceUrls) {
-    final scheme = _opaqueUrlScheme.firstMatch(url.trim());
+    final trimmed = url.trim();
+    final scheme = _opaqueUrlScheme.firstMatch(trimmed);
     if (scheme == null) continue;
     final placeholder = '${scheme[1]!.toLowerCase()}:<redacted>';
-    // Match the whole configured URL before applying the free-form fallback.
-    text = text.replaceAll(url.trim(), placeholder);
+    opaque[trimmed] = placeholder;
     final href = _parseBrowserUrl(url)?.href;
-    if (href != null) text = text.replaceAll(href, placeholder);
+    if (href != null && href.isNotEmpty) opaque[href] = placeholder;
+  }
+  if (opaque.isNotEmpty) {
+    final candidates = opaque.keys.toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+    text = text.replaceAllMapped(
+      RegExp(candidates.map(RegExp.escape).join('|')),
+      (match) => opaque[match[0]!]!,
+    );
   }
   return redactUrlSecrets(
     text.replaceAllMapped(
