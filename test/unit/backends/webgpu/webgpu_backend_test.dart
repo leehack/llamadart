@@ -2590,6 +2590,145 @@ void main() {
         },
       );
 
+      test('a failed implicit loader stays terminal for its bridge', () async {
+        const isolation = 'crossOriginIsolated';
+        final oldDescriptor = _getOwnPropertyDescriptor(
+          globalContext,
+          isolation,
+        );
+        _defineProperty(
+          globalContext,
+          isolation,
+          JSObject()
+            ..['value'] = true.toJS
+            ..['configurable'] = true.toJS,
+        );
+        addTearDown(() {
+          if (oldDescriptor == null) {
+            globalContext.delete(isolation.toJS);
+          } else {
+            _defineProperty(globalContext, isolation, oldDescriptor);
+          }
+        });
+        globalContext.delete('__llamadartBridgeAllowSingleThreadCore'.toJS);
+        const factoryName = '__llamadartTestImplicitBridge';
+        addTearDown(() => globalContext.delete(factoryName.toJS));
+        JSFunction makeConstructor(String lane) {
+          return _jsFunction(
+            'config',
+            "return globalThis.$factoryName('$lane', config);",
+          );
+        }
+
+        globalContext[factoryName] = ((String lane, JSObject? config) {
+          calls.add('constructor:$lane');
+          expect(config?['coreModuleUrl'], isNull);
+          return _assignObject(JSObject(), bridge)
+            ..['loadModelFromUrl'] = ((String url, JSObject? config) {
+              calls.add('model:$lane');
+              if (lane == 'missing') {
+                return _rejectPromise(
+                  coreAssetError('CORE_ASSET_UNAVAILABLE', asset: 'loader')
+                    ..['url'] = 'https://example.com/missing/core.js'.toJS,
+                );
+              }
+              return Future<void>.value().toJS;
+            }).toJS;
+        }).toJS;
+
+        final missing = makeConstructor('missing');
+        final healthy = makeConstructor('healthy');
+        const loadParams = ModelParams(gpuLayers: 0, preferMemory64: false);
+        final loaderUnavailable = throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('core loader is unavailable'),
+          ),
+        );
+
+        globalContext['LlamaWebGpuBridge'] = missing;
+        backend = WebGpuLlamaBackend();
+        await expectLater(
+          backend.modelLoadFromUrl(modelUrl, loadParams),
+          loaderUnavailable,
+        );
+        await backend.dispose();
+        backend = WebGpuLlamaBackend();
+        await expectLater(
+          backend.modelLoadFromUrl(modelUrl, loadParams),
+          loaderUnavailable,
+        );
+        expect(calls, ['constructor:missing', 'model:missing']);
+
+        globalContext['LlamaWebGpuBridge'] = healthy;
+        expect(await backend.modelLoadFromUrl(modelUrl, loadParams), 1);
+        expect(calls, [
+          'constructor:missing',
+          'model:missing',
+          'constructor:healthy',
+          'model:healthy',
+        ]);
+      });
+
+      for (final jspi in [true, false]) {
+        test(
+          'redacts bridge URL credentials after preflight failure ($jspi)',
+          () async {
+            const password = 'test-bridge-password';
+            const signature = 'fake-bridge-signature';
+            const signedModule =
+                'https://bridge-user:$password@cdn.example/bridge.js'
+                '?signature=$signature#test-bridge-fragment';
+            globalContext['__llamadartBridgeModuleUrl'] = signedModule.toJS;
+            bridge['preflightCore'] = (() {
+              calls.add('preflight');
+              return _rejectPromise(
+                _jsError(
+                  jspi
+                      ? 'JSPI not supported by current environment'
+                      : 'Core initialization refused signature $signature',
+                ),
+              );
+            }).toJS;
+
+            final engine = LlamaEngine(backend);
+            addTearDown(engine.dispose);
+            final noSecrets = isNot(
+              anyOf(
+                contains('?'),
+                contains('bridge-user'),
+                contains(password),
+                contains(signature),
+                contains('test-bridge-fragment'),
+              ),
+            );
+            await expectLater(
+              engine.loadModelFromUrl(modelUrl, modelParams: params),
+              throwsA(
+                (jspi
+                        ? isA<LlamaUnsupportedException>()
+                        : isA<LlamaModelException>())
+                    .having(
+                      (error) => error.toString(),
+                      'diagnostic',
+                      allOf(
+                        contains(
+                          jspi
+                              ? 'requires JSPI'
+                              : 'Core initialization refused',
+                        ),
+                        noSecrets,
+                      ),
+                    ),
+              ),
+            );
+            expect(engine.isReady, isFalse);
+            expect(calls, ['preflight']);
+          },
+        );
+      }
+
       test('reports a missing Wasm binary on the default Web load', () async {
         globalContext.delete('__llamadartBridgeAllowSingleThreadCore'.toJS);
         bridge['loadModelFromUrl'] = ((String url, JSObject? config) {
@@ -2648,7 +2787,10 @@ void main() {
           ..['execution'] = 'worker'.toJS
           ..['fallback'] = true.toJS
           ..['fallbackReason'] = 'unsupported'.toJS
-          ..['wasmUrl'] = 'https://example.com/core_st.wasm?token=private'.toJS;
+          ..['loaderUrl'] =
+              'https://example.com/core_st.js?signature=synthetic-loader'.toJS
+          ..['wasmUrl'] =
+              'https://example.com/core_st.wasm?signature=synthetic-wasm'.toJS;
         bridgeRuntimeHints[notesKey] = 'core_pthreads:0;core_single_thread';
 
         final load = backend.modelLoadFromUrl(
@@ -2663,6 +2805,8 @@ void main() {
         expect(beforePreflightFinished, ['preflight']);
         expect(calls, ['preflight', 'model']);
         final metadata = await backend.modelMetadata(1);
+        expect(metadata.toString(), isNot(contains('?signature=')));
+        expect(metadata.toString(), isNot(contains('synthetic-')));
         expect(
           metadata[notesKey],
           'core_pthreads:0;core_single_thread;core_preflight_variant:wasm32;'
