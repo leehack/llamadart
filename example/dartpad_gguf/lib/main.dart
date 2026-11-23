@@ -54,25 +54,28 @@ class _GgufScreenState extends State<_GgufScreen> {
   bool _generating = false;
   String _status = 'Load Stories15M to begin.';
 
-  Future<void> _load() => _run('Loading Stories15M…', () async {
+  Future<void> _load() async {
+    if (_loading || _ready) return;
     _loading = true;
-    _progress = null;
-    final engine = _engine ?? await widget.createEngine();
-    if (!mounted) {
-      await engine.dispose();
-      return;
-    }
-    _engine = engine;
-    await engine.setModel(
-      LlamaModel(ModelSource.url(Uri.parse(_modelUrl))),
-      params: const ModelParams(contextSize: 1024),
-      onProgress: (progress) {
-        if (mounted) setState(() => _progress = progress.fraction);
-      },
-    );
-    _ready = true;
-    _status = 'Model ready.';
-  });
+    await _run('Loading Stories15M…', () async {
+      _progress = null;
+      final engine = _engine ?? await widget.createEngine();
+      if (!mounted) {
+        await engine.dispose();
+        return;
+      }
+      _engine = engine;
+      await engine.setModel(
+        LlamaModel(ModelSource.url(Uri.parse(_modelUrl))),
+        params: const ModelParams(contextSize: 1024),
+        onProgress: (progress) {
+          if (mounted) setState(() => _progress = progress.fraction);
+        },
+      );
+      _ready = true;
+      _status = 'Model ready.';
+    });
+  }
 
   Future<void> _generate() => _run('Generating…', () async {
     _generating = true;

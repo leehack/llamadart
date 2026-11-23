@@ -29,6 +29,31 @@ void main() {
     await tester.pump();
   }
 
+  testWidgets('starts one load when tapped twice before a rebuild', (
+    tester,
+  ) async {
+    engine = _FakeEngine();
+    final created = Completer<LlamaEngine>();
+    var attempts = 0;
+    await tester.pumpWidget(
+      GgufApp(
+        createEngine: () {
+          attempts++;
+          return created.future;
+        },
+      ),
+    );
+
+    await tester.tap(find.text('Load'));
+    await tester.tap(find.text('Load'));
+
+    created.complete(engine);
+    engine.loaded.complete();
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+    expect(attempts, 1);
+  });
+
   testWidgets('loads Stories15M, streams text and stops', (tester) async {
     await openApp(tester);
     expect(
