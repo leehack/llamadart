@@ -216,6 +216,23 @@ void main() {
     }
   });
 
+  test('an empty {} .json file from an all-skipped suite is skipped like the '
+      'pinned formatter', () async {
+    final fixture = _fixture();
+    final emptyFile = '${fixture.coverageDir}/nested/all_skipped.json';
+    _write(emptyFile, '{}');
+
+    final mixed = await format_lcov.formatLcovReport(
+      fixture.options(checkIgnore: true),
+    );
+    expect(mixed, await _referenceLcov(fixture, checkIgnore: true));
+
+    final single = await format_lcov.formatLcovReport(
+      fixture.options(checkIgnore: true, input: emptyFile),
+    );
+    expect(single, isEmpty);
+  });
+
   test('the CI command line parses to the CI semantics', () {
     final options = format_lcov.parseFormatLcovArgs([
       '--lcov',
