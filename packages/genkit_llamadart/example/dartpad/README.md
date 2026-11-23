@@ -6,13 +6,15 @@ in genkit_llamadart 3.10.0.
 
 | Option | Model | Requirements |
 | --- | --- | --- |
-| GGUF | SmolLM2-135M-Instruct Q4_K_M (about 106 MB) | llamadart 0.20.7 or newer. Runs in the browser. |
+| GGUF | SmolLM2 135M (~105 MB, default), Qwen3.5 0.8B (~533 MB), or Gemma 4 E2B (~3 GB) | llamadart 0.20.7 or newer. Runs in the browser. Gemma 4 E2B requires desktop Chrome with WebAssembly memory64 and 8+ GB RAM and is not supported on Safari or mobile browsers. |
 | LiteRT-LM | Qwen3-0.6B dynamic INT4 (about 343 MB) | Chrome with WebGPU. Runs in the browser. |
 | Gemini | Gemini 3.1 Flash-Lite | A Gemini API key and access to Google's API. Prompts are sent to Google. |
 
-Choose a model and select **Load** or **Connect**. Enter a prompt or tap a
-preset, then select **Send**. **Stop** cancels the request and keeps the text
-already streamed. **Clear** resets the chat and per-turn stats.
+Choose a model and select **Load** or **Connect**. Switching GGUF models
+unloads the current runtime, clears the chat and stats, and waits for **Load**.
+Enter a prompt or tap a preset, then select **Send**. **Stop** cancels the
+request and keeps the text already streamed. **Clear** resets the chat and
+per-turn stats.
 
 GGUF and Gemini send the conversation history with each turn. LiteRT-LM Web
 currently runs single-turn: the transcript remains visible, and each request

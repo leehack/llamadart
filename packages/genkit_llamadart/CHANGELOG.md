@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Add a GGUF model selector (SmolLM2 135M default, Qwen3.5 0.8B, and desktop-flagged Gemma 4 E2B) to the DartPad playground.
 - Add multi-turn chat, generation settings, live stats, and prompt presets to the DartPad playground, and use the automatic single-thread GGUF bridge default.
 - Migrate the DartPad playground from deprecated `package:flutter/material.dart` to `package:material_ui` and `package:flutter/widgets.dart`.
 

@@ -8,6 +8,7 @@ import 'package:genkit/genkit.dart';
 import 'package:genkit/plugin.dart';
 import 'package:genkit_llamadart/genkit_llamadart.dart';
 import 'package:genkit_llamadart_dartpad_example/main.dart';
+import 'package:genkit_llamadart_dartpad_example/playground_controller.dart';
 import 'package:llamadart/llamadart.dart' as llama;
 import 'package:material_ui/material_ui.dart' hide Action;
 
@@ -373,6 +374,219 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  test(
+    'buildGgufModelParams sets modelBytesHint on Web and omits it natively',
+    () {
+      expect(ggufModels.map((model) => model.id), [
+        'smollm2-135m',
+        'qwen3.5-0.8b',
+        'gemma-4-e2b',
+      ]);
+      for (final model in ggufModels) {
+        final webParams = buildGgufModelParams(model, isWeb: true);
+        expect(webParams.contextSize, 2048);
+        expect(webParams.modelBytesHint, model.sizeBytes);
+        expect(webParams.preferMemory64, isNull);
+
+        final nativeParams = buildGgufModelParams(model, isWeb: false);
+        expect(nativeParams.contextSize, 2048);
+        expect(nativeParams.modelBytesHint, isNull);
+        expect(nativeParams.preferMemory64, isNull);
+      }
+    },
+  );
+
+  testWidgets(
+    'default GGUF model is SmolLM2 135M with pinned URL and thinking off',
+    (tester) async {
+      final runtime = _LocalRuntime();
+      await tester.pumpWidget(_localApp(runtime));
+
+      expect(find.text('SmolLM2 135M (~105 MB)'), findsOneWidget);
+      expect(
+        find.text('Fastest download; good for quick tests.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Requires desktop Chrome'), findsNothing);
+
+      await _tap(tester, 'Load');
+      expect(runtime.definition?.name, 'smollm2-135m');
+      expect(
+        runtime.definition?.modelPath,
+        'https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/'
+        '9e6855bc4be717fca1ef21360a1db4b29d5c559a/'
+        'SmolLM2-135M-Instruct-Q4_K_M.gguf',
+      );
+      expect(runtime.definition?.modelParams.contextSize, 2048);
+
+      await _tap(tester, 'Send');
+      expect(runtime.enableThinking, isFalse);
+      await _reply(tester, runtime, 'A fox');
+    },
+  );
+
+  testWidgets(
+    'selecting Qwen3.5 0.8B updates status and loads pinned URL with thinking off',
+    (tester) async {
+      final runtime = _LocalRuntime();
+      await tester.pumpWidget(_localApp(runtime));
+
+      await _selectGgufModel(tester, 'Qwen3.5 0.8B (~533 MB)');
+      expect(runtime.definition, isNull);
+      expect(find.text('Load Qwen3.5 0.8B to begin.'), findsOneWidget);
+      expect(
+        find.text('Stronger responses; thinking disabled for quick replies.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Requires desktop Chrome'), findsNothing);
+
+      await _tap(tester, 'Load');
+      expect(runtime.definition?.name, 'qwen3.5-0.8b');
+      expect(
+        runtime.definition?.modelPath,
+        'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/'
+        '6ab461498e2023f6e3c1baea90a8f0fe38ab64d0/'
+        'Qwen3.5-0.8B-Q4_K_M.gguf',
+      );
+      expect(runtime.definition?.modelParams.contextSize, 2048);
+
+      await _tap(tester, 'Send');
+      expect(runtime.enableThinking, isFalse);
+      await _reply(tester, runtime, 'A fox');
+    },
+  );
+
+  testWidgets(
+    'selecting Gemma 4 E2B shows pre-download warning before Load and loads pinned URL',
+    (tester) async {
+      final runtime = _LocalRuntime();
+      await tester.pumpWidget(_localApp(runtime));
+
+      await _selectGgufModel(tester, 'Gemma 4 E2B (desktop Chrome, ~3 GB)');
+      expect(runtime.definition, isNull);
+      expect(find.text('Load Gemma 4 E2B to begin.'), findsOneWidget);
+      expect(
+        find.text(
+          'Large download (~3 GB). Requires desktop Chrome with WebAssembly '
+          'memory64 and 8+ GB RAM. Not supported on Safari or mobile browsers.',
+        ),
+        findsOneWidget,
+      );
+
+      await _tap(tester, 'Load');
+      expect(runtime.definition?.name, 'gemma-4-e2b');
+      expect(
+        runtime.definition?.modelPath,
+        'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/'
+        '0314792d7f1f7e229411f620751375812bb9faf2/'
+        'gemma-4-E2B-it-Q4_K_S.gguf',
+      );
+      expect(runtime.definition?.modelParams.contextSize, 2048);
+      expect(
+        find.textContaining('Requires desktop Chrome with WebAssembly'),
+        findsNothing,
+      );
+
+      await _tap(tester, 'Send');
+      expect(runtime.enableThinking, isFalse);
+      await _reply(tester, runtime, 'A fox');
+    },
+  );
+
+  testWidgets(
+    'switching GGUF model while loaded disposes runtime, clears chat, and waits for Load',
+    (tester) async {
+      final runtimes = <_LocalRuntime>[];
+      await tester.pumpWidget(
+        GenkitDartPadApp(
+          bootstrapGguf: () async {},
+          bootstrapLiteRt: () async {},
+          runtimeFactory: () {
+            final runtime = _LocalRuntime(supportsMultiTurn: true);
+            runtimes.add(runtime);
+            return runtime;
+          },
+        ),
+      );
+
+      await _tap(tester, 'Load');
+      expect(runtimes, hasLength(1));
+      expect(find.byType(DropdownButton<GgufModelOption>), findsOneWidget);
+
+      await _send(tester, 'Hello');
+      await _reply(tester, runtimes[0], 'Hi there');
+      expect(find.text('Hi there'), findsOneWidget);
+
+      await _selectGgufModel(tester, 'Qwen3.5 0.8B (~533 MB)');
+      expect(runtimes[0].disposed, isTrue);
+      expect(find.text('Hi there'), findsNothing);
+      expect(runtimes, hasLength(1));
+      expect(find.text('Load Qwen3.5 0.8B to begin.'), findsOneWidget);
+      final loadButton = find.widgetWithText(OutlinedButton, 'Load');
+      expect(loadButton, findsOneWidget);
+      expect(tester.widget<OutlinedButton>(loadButton).onPressed, isNotNull);
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Send'))
+            .onPressed,
+        isNull,
+      );
+
+      await _tap(tester, 'Load');
+      expect(runtimes, hasLength(2));
+      expect(
+        runtimes[1].definition?.modelPath,
+        'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/'
+        '6ab461498e2023f6e3c1baea90a8f0fe38ab64d0/'
+        'Qwen3.5-0.8B-Q4_K_M.gguf',
+      );
+    },
+  );
+
+  testWidgets('GGUF picker is visible only for GGUF provider', (tester) async {
+    await tester.pumpWidget(_localApp(_LocalRuntime()));
+    expect(find.byType(DropdownButton<GgufModelOption>), findsOneWidget);
+
+    await _tap(tester, 'LiteRT-LM');
+    expect(find.byType(DropdownButton<GgufModelOption>), findsNothing);
+
+    await _tap(tester, 'Gemini');
+    expect(find.byType(DropdownButton<GgufModelOption>), findsNothing);
+
+    await _tap(tester, 'GGUF');
+    expect(find.byType(DropdownButton<GgufModelOption>), findsOneWidget);
+  });
+
+  testWidgets('GGUF picker is disabled during load and generation', (
+    tester,
+  ) async {
+    final loading = Completer<void>();
+    final runtime = _LocalRuntime()..loading = loading.future;
+    await tester.pumpWidget(_localApp(runtime));
+
+    DropdownButton<GgufModelOption> picker() =>
+        tester.widget<DropdownButton<GgufModelOption>>(
+          find.byType(DropdownButton<GgufModelOption>),
+        );
+
+    expect(picker().onChanged, isNotNull);
+
+    await tester.tap(find.text('Load'));
+    await tester.pump();
+    expect(picker().onChanged, isNull);
+
+    loading.complete();
+    await tester.pumpAndSettle();
+    expect(picker().onChanged, isNotNull);
+
+    await tester.tap(find.text('Send'));
+    await tester.pump();
+    expect(picker().onChanged, isNull);
+
+    await _reply(tester, runtime, 'A fox');
+    expect(picker().onChanged, isNotNull);
+  });
 }
 
 const _fakeKey = 'widget-test-credential';
@@ -401,6 +615,13 @@ Future<void> _setSlider(WidgetTester tester, int index, double value) async {
 
 Future<void> _tap(WidgetTester tester, String label) async {
   await tester.tap(find.text(label));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _selectGgufModel(WidgetTester tester, String itemLabel) async {
+  await tester.tap(find.byType(DropdownButton<GgufModelOption>));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(itemLabel).last);
   await tester.pumpAndSettle();
 }
 
