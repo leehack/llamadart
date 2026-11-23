@@ -89,7 +89,7 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
         if legacy or not opt_in or (forced_fetch and not isolated):
             assert "unsupported" in result, result
             detail = result["unsupported"]
-            expected = "v0.1.92" if legacy else (
+            expected = "v0.1.93+" if legacy else (
                 "COOP/COEP" if not opt_in else "fetch-backed"
             )
             assert expected in detail, result
@@ -218,7 +218,7 @@ def run_bootstrap_case(browser, fixture, model_url, *, worker, case):
                 assert responses == [("llama_webgpu_bridge.js", 200)], responses
             assert all(name != "model.gguf" for name, _ in responses), responses
             detail = result.get("unsupported", "")
-            assert all(text in detail for text in ("Single-thread", "COOP/COEP", "v0.1.92")), result
+            assert all(text in detail for text in ("Single-thread", "COOP/COEP", "v0.1.93+")), result
         else:
             if mem64:
                 assert ("llama_webgpu_core_mem64_st.wasm", 200) in responses, responses

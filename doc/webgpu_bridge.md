@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.92`.
+Default pinned tag in the example is `v0.1.93`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.92 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.93 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -90,17 +90,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.92';
+  window.__llamadartBridgeAssetsTag = 'v0.1.93';
 </script>
 ```
 
 That release embeds llama.cpp `v1.0.0`, matching the `hook/build.dart` native pin
 (`v1.0.0-4`, both built from upstream llama.cpp `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`)
-even though the bridge asset tag `v0.1.92` differs from the native runtime tag
-`v1.0.0-4`. Provenance for this immutable consumer artifact: release `454541989`,
-tag commit `056f474f389feaa4e02a62a3125549cb9154fabf`, bridge source
-`d7236223d2393d51dab541df6caf3ef88f06d49b`, and manifest SHA-256
-`4f2fb82d55a932e9182e703d5265f3fc5875f808d4d9aa0ba18a0585d0d7784b`.
+even though the bridge asset tag `v0.1.93` differs from the native runtime tag
+`v1.0.0-4`. Provenance for this immutable consumer artifact: release `454836373`,
+tag commit `00866ed50f48ea4f9622c1b5e380f27405567033`, bridge source
+`273fe3bb59e7dcbb419ab25409863bb39826709a`, and manifest SHA-256
+`d6200d9f467b20a942f4a77ff7041d98815ecb16acecd5176040b503f3544f95`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
@@ -391,7 +391,7 @@ assets can time out during core initialization.
 Setting `__llamadartBridgeAllowSingleThreadCore` to literal `true` affects
 only a non-isolated page. Dart passes `allowSingleThreadCore: true` and selects
 the single-thread URLs for both wasm widths. The opt-in requires assets
-v0.1.92+. Dart checks the constructor's `supportsCorePreflight` flag and calls
+v0.1.93+. Dart checks the constructor's `supportsCorePreflight` flag and calls
 `preflightCore()` before model loading. The bridge initializes the core in
 the chosen execution mode and handles memory64 fallback and adjacent Wasm
 resolution. The model load reuses that core. Missing core assets and older
@@ -640,7 +640,7 @@ in both runtimes.
 ## Runtime globals read by `llamadart`
 
 - `window.__llamadartBridgeAllowSingleThreadCore`: literal `true` opts into
-  GGUF loading on non-isolated pages using matching v0.1.92+ bridge assets.
+  GGUF loading on non-isolated pages using matching v0.1.93+ bridge assets.
 - `window.__llamadartBridgeCoreModuleUrlSt` and
   `window.__llamadartBridgeWasmUrlSt` supply the single-thread wasm32 core.
   `window.__llamadartBridgeCoreModuleUrlMem64St` and

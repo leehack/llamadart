@@ -687,7 +687,7 @@ await prefs.setInt('preferred_backend', backendIndex);
 - The default GGUF core requires cross-origin isolation. If the host cannot set
   COOP/COEP headers, set `window.__llamadartBridgeAllowSingleThreadCore = true`
   in a script before the bridge bootstrap. On non-isolated pages the app
-  initializes the local `_st` core with bridge assets v0.1.92+ before fetching
+  initializes the local `_st` core with bridge assets v0.1.93+ before fetching
   the model. Verify `core_preflight_threading:single-thread` in
   `llamadart.webgpu.runtime_notes`. This core uses one
   CPU thread, can offload GPU layers, and uses streamed staging. Fetch-backed

@@ -59,7 +59,7 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   reject with `LlamaUnsupportedException` naming COOP/COEP by default.
   When the host cannot isolate the page, run `dart run llamadart:web_setup`
   and set `window.__llamadartBridgeAllowSingleThreadCore = true` before the
-  first GGUF load. This requires matching v0.1.92+ assets and affects only
+  first GGUF load. This requires matching v0.1.93+ assets and affects only
   non-isolated pages. For custom hosting, configure
   `__llamadartBridgeCoreModuleUrlSt` / `__llamadartBridgeWasmUrlSt` and
   `__llamadartBridgeCoreModuleUrlMem64St` / `__llamadartBridgeWasmUrlMem64St`.

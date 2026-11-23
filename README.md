@@ -182,7 +182,7 @@ Current default runtime pins:
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v1.0.0-4` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.19.1-7` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.92` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.93` |
 
 The Web backend reuses cached HTTP(S) projectors through the pinned bridge.
 If a direct WebAssembly core abort unloads the model, catch

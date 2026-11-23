@@ -2233,7 +2233,7 @@ void main() {
           allOf(
             contains('Single-thread'),
             contains('COOP/COEP'),
-            contains('v0.1.92'),
+            contains('v0.1.93+'),
           ),
         ),
       );
@@ -2520,7 +2520,7 @@ void main() {
             allOf(
               contains('Reload the page or use a different core loader URL'),
               contains('COOP/COEP'),
-              contains('v0.1.92'),
+              contains('v0.1.93+'),
             ),
           ),
         );
@@ -2553,6 +2553,90 @@ void main() {
         expect(await backend.modelLoadFromUrl(modelUrl, params), 1);
         expect(calls, ['preflight', 'preflight', 'model']);
       });
+
+      test(
+        'a failed wasm32 loader does not block memory64 preflight',
+        () async {
+          globalContext['__llamadartBridgeCoreModuleUrlSt'] =
+              'https://example.com/core_st.js?v=wasm32-unavailable'.toJS;
+          globalContext['__llamadartBridgeCoreModuleUrlMem64St'] =
+              'https://example.com/mem64_st.js'.toJS;
+          bridge['preflightCore'] = (() {
+            calls.add('preflight');
+            if ((lastBridgeConfig!['preferMemory64'] as JSBoolean).toDart) {
+              preflightResult['variant'] = 'memory64'.toJS;
+              return Future<JSObject>.value(preflightResult).toJS;
+            }
+            return _rejectPromise(
+              coreAssetError('CORE_ASSET_UNAVAILABLE', asset: 'loader'),
+            );
+          }).toJS;
+
+          await expectLater(
+            backend.modelLoadFromUrl(
+              modelUrl,
+              params.copyWith(preferMemory64: false),
+            ),
+            unsupported,
+          );
+          expect(
+            await backend.modelLoadFromUrl(
+              modelUrl,
+              params.copyWith(preferMemory64: true),
+            ),
+            1,
+          );
+          expect(calls, ['preflight', 'preflight', 'model']);
+        },
+      );
+
+      test('reports a missing Wasm binary on the default Web load', () async {
+        globalContext.delete('__llamadartBridgeAllowSingleThreadCore'.toJS);
+        bridge['loadModelFromUrl'] = ((String url, JSObject? config) {
+          calls.add('model');
+          return _rejectPromise(coreAssetError('CORE_ASSET_UNAVAILABLE'));
+        }).toJS;
+
+        await expectLater(
+          backend.modelLoadFromUrl(modelUrl, params),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('WebGPU core Wasm'),
+                contains('llamadart:web_setup'),
+                isNot(contains('Single-thread')),
+              ),
+            ),
+          ),
+        );
+        expect(calls, ['model']);
+      });
+
+      test(
+        'preflights the single-thread core with explicit JS staging',
+        () async {
+          constructor['supportsJsBackedModelStaging'] = true.toJS;
+          bridgeRuntimeHints[notesKey] = 'model_staging_js_backed';
+          globalContext['__llamadartBridgeAllowAutoRemoteFetchBackend'] =
+              true.toJS;
+          expect(
+            await backend.modelLoadFromUrl(
+              modelUrl,
+              const LlamaCppModelParams(
+                gpuLayers: 0,
+                jsBackedModelStaging: true,
+              ),
+            ),
+            1,
+          );
+          expect(lastBridgeConfig!['allowSingleThreadCore'].dartify(), isTrue);
+          expect(lastBridgeConfig!['jsBackedModelStaging'].dartify(), isTrue);
+          expect(requestedForceRemoteFetchBackends, [false]);
+          expect(calls, ['preflight', 'model']);
+        },
+      );
 
       test('awaits the selected core and records fallback notes', () async {
         final preflight = Completer<JSObject>();

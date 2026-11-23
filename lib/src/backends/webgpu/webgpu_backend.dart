@@ -105,7 +105,7 @@ class WebGpuLlamaBackend
   static const String _nextTokenScoringUnsupportedMessage =
       'Web next-token scoring requires llama-web-bridge-assets v0.1.52+.';
   static const String _singleThreadCoreUnavailable =
-      'Single-thread GGUF loading needs llama-web-bridge-assets v0.1.92+ and '
+      'Single-thread GGUF loading needs llama-web-bridge-assets v0.1.93+ and '
       'matching single-thread core assets. Run dart run llamadart:web_setup '
       'or serve the page with cross-origin isolation (COOP/COEP).';
   static const String _coreLoaderUnavailable =
@@ -427,7 +427,9 @@ class WebGpuLlamaBackend
 
     _coreLoaderKeys = (
       wasm32: loaderKey(coreModuleUrl, 'wasm32'),
-      memory64: preferMemory64 == false
+      memory64:
+          preferMemory64 == false ||
+              (coreModuleUrl != null && coreModuleUrlMem64 == null)
           ? null
           : loaderKey(coreModuleUrlMem64, 'memory64'),
     );
@@ -489,9 +491,10 @@ class WebGpuLlamaBackend
   void _checkCoreLoaderFailures({required bool allowSingleThreadCore}) {
     final keys = _coreLoaderKeys;
     if (keys != null &&
-        (_failedCoreLoaders.contains(keys.wasm32) ||
-            _failedCoreLoaders.contains(keys.memory64) ||
-            _failedUnidentifiedCoreLoaders.contains(keys))) {
+        (_failedUnidentifiedCoreLoaders.contains(keys) ||
+            (_failedCoreLoaders.contains(keys.wasm32) &&
+                (keys.memory64 == null ||
+                    _failedCoreLoaders.contains(keys.memory64))))) {
       throw _coreLoaderError(allowSingleThreadCore: allowSingleThreadCore);
     }
   }
@@ -565,8 +568,7 @@ class WebGpuLlamaBackend
         !_constructorSupportsJsBackedModelStaging(constructor)) {
       throw LlamaUnsupportedException(webGpuJsBackedStagingRequired);
     }
-    if (allowSingleThreadCore &&
-        !_supportsCorePreflight(constructor)) {
+    if (allowSingleThreadCore && !_supportsCorePreflight(constructor)) {
       throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
     }
     _bridge = LlamaWebGpuBridge(
@@ -1676,9 +1678,23 @@ class WebGpuLlamaBackend
             _rememberCoreLoaderFailure(variant);
           }
           await _safeDisposeBridge();
-          throw asset == 'loader'
-              ? _coreLoaderError(allowSingleThreadCore: allowSingleThreadCore)
-              : LlamaUnsupportedException(_singleThreadCoreUnavailable);
+          if (asset == 'loader') {
+            throw _coreLoaderError(
+              allowSingleThreadCore: allowSingleThreadCore,
+            );
+          }
+          if (allowSingleThreadCore) {
+            throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
+          }
+          final unavailable = switch (asset) {
+            'wasm' => 'core Wasm binary',
+            'worker' => 'bridge worker',
+            _ => 'core asset',
+          };
+          throw LlamaUnsupportedException(
+            'The WebGPU $unavailable is unavailable. Run dart run '
+            'llamadart:web_setup to install matching bridge assets.',
+          );
         }
         final isolationError = webGpuCrossOriginIsolationError(e);
         if (isolationError != null) {
