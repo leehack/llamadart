@@ -8,8 +8,15 @@ PR. A path filter must not prevent a required workflow from reporting.
 
 | Changed inputs | Core checks | Portable builds |
 |---|---|---|
-| Documentation, website, docs tooling | Docs build/tool tests plus version and bridge-pin checks | None |
+| Documentation (including `MIGRATION.md`), website, docs tooling | Docs build/tool tests plus version and bridge-pin checks | None |
 | Any path | Adds `Markdown Tests`, unless the Linux VM tests are selected | None |
+| Published skills, Dartdoc options, `docker/`, Dependabot configuration | Root static checks and Markdown Tests | None |
+| PR description template | Markdown Tests (template and release-note contracts) | None |
+| Root `.dockerignore` | Markdown Tests | None |
+| `.github/CODEOWNERS` or `.pubignore` | Root static checks and Linux VM tests (ownership and package archive contracts) | None |
+| Root `.gitignore` | Root static checks, Linux VM tests, Model Store, and all three Apple companion packages | None |
+| `codecov.yml` | Linux VM tests. Coverage calculation and Codecov upload run after merge. | None |
+| `.gitattributes` | Full fallback. Git attributes can change checkout bytes across platforms, including hash-checked fixtures. | Full fallback targets |
 | Genkit or Model Store package | Affected package checks and root Linux VM tests | None |
 | Studio core or UI package (`web/`, `windows/`, `linux/` packaging vs shared/macOS) | Studio core and Flutter UI format, analysis and VM tests; `studio-macos` for non-exempt inputs; Web files also run version and bridge-pin checks | None |
 | One companion package | Root static checks, affected package's Flutter/SwiftPM/publish checks, Apple cache check, root Linux coverage and full macOS/Windows VM checks, Studio + `studio-macos`, Web Chat consumer | Android, Web, iOS inputs |
@@ -38,6 +45,10 @@ would not run them. They run on Linux only; a change there adds no macOS or
 Windows `Test Native`. The consumer job runs the Flutter validation
 controller/app tests and is omitted when Web Chat, which runs all Flutter app
 tests, is selected.
+Root static checks validate shipped skills and Docker files through the core
+archive check and Pana, and run the Dependabot package inventory test. Docker
+builds use local scripts. The Model Store and Apple companion jobs check for
+untracked package output, so root `.gitignore` changes select both.
 For DartPad GGUF, the root static job runs `public_entrypoints_test.dart` and
 `dartpad_examples_imports_test.dart` in place of the Linux VM shards.
 Markdown-only changes in the example run the docs jobs and Markdown Tests,

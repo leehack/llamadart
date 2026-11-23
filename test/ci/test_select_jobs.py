@@ -88,13 +88,13 @@ class SelectionTest(unittest.TestCase):
                 self.assertEqual(plan['desktops'], [])
 
         # Unclassified Markdown retains the conservative full fallback too.
-        self.assertTrue(ci.select(['skills/llamadart-chat/SKILL.md'])
+        self.assertTrue(ci.select(['new/unclassified.md'])
                         ['jobs']['test-linux-coverage'])
 
     def test_markdown_tests_defer_to_linux_coverage_which_runs_them_too(self):
         for paths in (['README.md', 'lib/llamadart.dart'], ['doc/a.md', 'test/unit/a_test.dart'],
                       ['test/README.md'], ['packages/llamadart_litert_lm_flutter/lib/a.dart', 'doc/a.md'],
-                      ['skills/llamadart-chat/SKILL.md'], []):
+                      ['new/unclassified.md'], []):
             with self.subTest(paths=paths):
                 plan = ci.select(paths)
                 self.assertTrue(plan['jobs']['test-linux-coverage'])
@@ -124,6 +124,66 @@ class SelectionTest(unittest.TestCase):
                 self.assertFalse(plan['jobs']['test-linux-coverage'])
                 self.assertFalse(plan['jobs']['test-web'])
                 self.assertFalse(plan['jobs']['test-other-os'])
+
+    def test_metadata_paths_select_their_consumers(self):
+        static = {'analyze', 'markdown-tests'}
+        static_and_vm = {'analyze', 'test-linux-coverage'}
+        cases = {
+            'skills/llamadart-web/SKILL.md': static,
+            'skills/llamadart-web/references/bridge.json': static,
+            'MIGRATION.md': {'docs-check', 'docs-versions', 'markdown-tests'},
+            '.github/CODEOWNERS': static_and_vm,
+            '.github/pull_request_template.md': {'markdown-tests'},
+            '.github/dependabot.yml': static,
+            '.gitignore': static_and_vm | {'model-store', 'companion-packages'},
+            '.pubignore': static_and_vm,
+            '.dockerignore': {'markdown-tests'},
+            'codecov.yml': {'test-linux-coverage'},
+            'dartdoc_options.yaml': static,
+            'docker/Dockerfile': static,
+            'docker/validation/Dockerfile.hip-linkcheck': static,
+        }
+        for path, expected in cases.items():
+            for pull_request in (True, False):
+                with self.subTest(path=path, pull_request=pull_request):
+                    plan = ci.select([path], pull_request=pull_request)
+                    self.assertEqual({j for j, v in plan['jobs'].items() if v}, expected)
+                    companions = (['packages/' + name for name in ci.COMPANIONS]
+                                  if path == '.gitignore' else [])
+                    self.assertEqual(plan['companions'], companions)
+                    for key in ('apps', 'desktops', 'test-other-os-matrix', 'reasons'):
+                        self.assertEqual(plan[key], [], key)
+                    for key in ('macos-native', 'windows-native', 'studio-macos',
+                                'macos-validation-memory', 'apple-cache'):
+                        self.assertFalse(plan[key], key)
+                    self.assertEqual(plan['coverage'], not pull_request)
+
+    def test_metadata_mixes_with_docs_bundles_and_full_fallback(self):
+        for pull_request in (True, False):
+            mixed = ['MIGRATION.md', '.github/CODEOWNERS', 'docker/Dockerfile',
+                     'example/chat_app/android/build.gradle']
+            for paths in (mixed, mixed[::-1]):
+                plan = ci.select(paths, pull_request=pull_request)
+                self.assertEqual(
+                    {j for j, v in plan['jobs'].items() if v},
+                    {'analyze', 'docs-check', 'test-linux-coverage'},
+                )
+                self.assertEqual(plan['apps'], ['android'])
+                self.assertEqual(plan['desktops'], [])
+                self.assertEqual(plan['reasons'], [])
+
+            for path in ('.gitattributes', '.github/unknown.yml',
+                         'skills-backup/example.md', 'docker-backup/Dockerfile',
+                         'codecov.yml.backup', 'nested/.pubignore'):
+                with self.subTest(path=path, pull_request=pull_request):
+                    full = ci.select([path], pull_request=pull_request)
+                    self.assertTrue(full['reasons'])
+                    self.assertTrue(full['macos-native'])
+                    self.assertTrue(full['windows-native'])
+                    self.assertTrue(full['jobs']['test-web'])
+                    for paths in ([path, 'skills/llamadart-web/SKILL.md'],
+                                  ['skills/llamadart-web/SKILL.md', path]):
+                        self.assertEqual(ci.select(paths, pull_request=pull_request), full)
 
     def test_deleted_and_renamed_markdown_keep_tooling_and_specialized_jobs(self):
         for raw in (b'D\0website/docs/integrations/genkit.md\0',
@@ -589,6 +649,10 @@ class SelectionTest(unittest.TestCase):
             'test/unit/tooling/validation_remote_test.dart',
             'example/chat_app/android/config', 'example/chat_app/web/config',
             'example/dartpad_gguf/lib/main.dart',
+            'skills/llamadart-web/SKILL.md', 'MIGRATION.md', '.github/CODEOWNERS',
+            '.github/pull_request_template.md', '.github/dependabot.yml', '.gitignore',
+            '.pubignore', '.dockerignore', 'codecov.yml', 'dartdoc_options.yaml',
+            'docker/Dockerfile', '.gitattributes',
         ]
         for left in paths:
             for right in paths:
@@ -1072,7 +1136,7 @@ class MacosPathGatingTest(unittest.TestCase):
                     + int('macos-15' in plan['desktops']))
 
         cases = (
-            ('skill-only', ['skills/llamadart-web/SKILL.md'], None, 5),
+            ('skill-only', ['skills/llamadart-web/SKILL.md'], None, 0),
             ('#2055', ['lib/llamadart.dart', 'MIGRATION.md',
                        'skills/llamadart-chat/SKILL.md', 'tool/testing/test_matrix.dart'],
              None, 5),

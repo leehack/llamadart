@@ -98,7 +98,8 @@ def builds_target(target, path):
 
 
 def select(paths, force_full=False, pull_request=False, host_suites=None):
-    jobs, companions, desktops, apps = set(), set(), set(), set()
+    # Every path runs the Markdown reader inventory unless Linux VM runs it.
+    jobs, companions, desktops, apps = {'markdown-tests'}, set(), set(), set()
     reasons = []
     macos_native = False
     windows_native = False
@@ -144,10 +145,24 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
             jobs.update(('docs-check', 'docs-versions', 'model-store'))
         elif path.startswith('packages/llamadart_model_store/'):
             jobs.update(('model-store', 'test-linux-coverage'))
-        elif (path in ('README.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'AGENTS.md', 'LICENSE')
+        elif path in ('.github/pull_request_template.md', '.dockerignore'):
+            continue  # Markdown Tests covers the template. Docker builds run locally.
+        elif (path in ('README.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'AGENTS.md',
+                       'LICENSE', 'MIGRATION.md')
               or path.startswith(('doc/', 'website/', 'tool/docs/'))
               or (path.startswith(('packages/', 'example/')) and path.endswith('.md'))):
             jobs.update(('docs-check', 'docs-versions'))
+        elif (path in ('.github/dependabot.yml', 'dartdoc_options.yaml')
+              or path.startswith(('skills/', 'docker/'))):
+            jobs.add('analyze')
+        elif path in ('.github/CODEOWNERS', '.pubignore'):
+            jobs.update(('analyze', 'test-linux-coverage'))
+        elif path == '.gitignore':
+            # The companion and Model Store lanes check for untracked files.
+            jobs.update(('analyze', 'test-linux-coverage', 'model-store'))
+            companions.update(COMPANIONS)
+        elif path == 'codecov.yml':
+            jobs.add('test-linux-coverage')
         elif any(path.startswith('packages/' + name + '/') for name in COMPANIONS):
             name = path.split('/')[1]
             companions.add(name)
@@ -243,11 +258,8 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
         elif path.startswith(('lib/', 'example/')):
             full('shared/runtime or example path: ' + path)
         else:
+            # This includes .gitattributes, which can change checkout bytes in any lane.
             full('shared/runtime or unclassified path: ' + path)
-        # Root tests scan all maintained Markdown, and any file a root suite
-        # reaches can start reading it, so every path runs those suites and
-        # their reader-inventory guard unless Linux coverage runs them.
-        jobs.add('markdown-tests')
     if 'analyze' in jobs:
         jobs.discard('docs-versions')  # Already included in root static validation.
     if 'test-linux-coverage' in jobs:
