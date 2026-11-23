@@ -1,3 +1,7 @@
+## Unreleased
+
+- Add multi-turn chat, generation settings, live stats, and prompt presets to the DartPad playground, and use the automatic single-thread GGUF bridge default.
+
 ## 3.10.0 - 2026-11-22
 
 - Require llamadart 0.20.6 and matching 0.20.x Apple companions.
