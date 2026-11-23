@@ -253,6 +253,18 @@ void main() {
     );
   });
 
+  test('sampling metadata names the vocabulary size and every '
+      'end-of-generation token', () {
+    final calls = LlamaCppObjectCalls.upstream;
+    final model = load(calls);
+    addTearDown(() => calls.freeModel(model));
+
+    final info = calls.samplingModelInfo(model);
+    expect(info.vocabSize, 259);
+    expect(info.suppressedTokens, isEmpty);
+    expect(info.endOfGenerationTokens, const <int>[2]);
+  });
+
   test('tracked calls use the exit API for every call', () {
     final exports = _RecordingExports();
     addTearDown(exports.close);
@@ -553,6 +565,24 @@ void main() {
         }
       });
     }
+
+    test('sampling metadata refuses a free-only model before reading it', () {
+      final calls = tracked();
+      expect(
+        () => calls.adapterLoraInit(model, nullptr),
+        throwsA(isA<LlamaModelException>()),
+      );
+      expect(
+        () => calls.samplingModelInfo(model),
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            startsWith('This model is unusable'),
+          ),
+        ),
+      );
+    });
 
     test('a failure value without a caught exception is returned', () {
       exitThrows = false;

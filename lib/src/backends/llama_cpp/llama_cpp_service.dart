@@ -2988,19 +2988,16 @@ class LlamaCppService {
     required String sourcePath,
   }) {
     try {
-      final vocab = llama_model_get_vocab(modelPointer);
-      final vocabSize = llama_vocab_n_tokens(vocab);
-      final suppressedTokens = readModelSuppressTokens(vocab);
+      final info = _calls.samplingModelInfo(modelPointer);
       return _LlamaModelWrapper(
         modelPointer,
         _calls,
         sourcePath: sourcePath,
-        vocabSize: vocabSize,
-        suppressedTokens: suppressedTokens,
-        // Read with the other metadata at load, not during a generation.
+        vocabSize: info.vocabSize,
+        suppressedTokens: info.suppressedTokens,
         suppressedTokensIgnoringEos: List<int>.unmodifiable({
-          ...suppressedTokens,
-          ...readModelEndOfGenerationTokens(vocab, vocabSize),
+          ...info.suppressedTokens,
+          ...info.endOfGenerationTokens,
         }),
       );
     } catch (_) {
