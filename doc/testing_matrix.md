@@ -1647,6 +1647,27 @@ single-thread binaries. The run reports the loaded core, execution mode,
 model size, loader and thread count. Other models, browsers and
 hardware require their own measurements.
 
+## Web JS-backed model staging
+
+Stage a checksum-verified Stories15M GGUF at
+`build/web_js_backed_model_staging/model.gguf` and install Playwright Chromium.
+Run
+`dart run tool/testing/run_local_e2e.dart --scenario web-js-backed-model-staging --dry-run`
+first, then omit `--dry-run`; the scenario fetches the pinned bridge assets
+automatically.
+The scenario compares omitted, enabled and disabled settings in direct and
+worker runtimes, with both Wasm widths and a WebKit user-agent control. It
+checks unload and reload, and records generation output and runtime notes.
+It also checks pre-download refusals for
+old bridge, worker and core assets and for forced fetch-backed loading.
+
+Use `--model-url` for a larger GGUF. Pair it with `--mmproj-url` for a
+compatible projector. Record the SHA-256 of each staged file with the run.
+Use `--backend webgpu` to require GPU offload. Record the browser and device,
+execution mode, core, model bytes and the available JavaScript and Wasm
+memory measurements. A WebKit user-agent override tests the default policy on
+Chromium. CPU and software-adapter runs do not establish hardware qualification.
+
 ## Web lazy grammar
 
 Stage existing read-only weights under `build/web_lazy_grammar/models/` and write

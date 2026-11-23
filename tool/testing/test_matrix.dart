@@ -994,6 +994,18 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     useWhen: 'Web bridge core selection or single-thread loading changes.',
   ),
   TestMatrixRow(
+    id: 'web-js-backed-model-staging',
+    tier: 'targeted',
+    mode: 'local-only, Chromium',
+    covers:
+        'Direct and worker JS-backed staging in wasm32 and memory64, '
+        'with default and opt-out controls, version skew, forced fetch '
+        'refusal, output parity and reload.',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario web-js-backed-model-staging',
+    useWhen: 'JS-backed staging, its capability gates or bridge assets change.',
+  ),
+  TestMatrixRow(
     id: 'web-webgpu-generation',
     tier: 'targeted',
     mode: 'local-only, WebGPU browser',
