@@ -4,9 +4,9 @@ import 'dart:js_interop_unsafe';
 import 'package:llamadart/llamadart.dart';
 
 const String defaultBridgeAssetsTag = 'v0.1.93';
-const _assetBase =
-    'https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@'
-    '$defaultBridgeAssetsTag/';
+final _assetBase =
+    'https://cdn.jsdelivr.net/npm/llama-web-bridge@'
+    '${defaultBridgeAssetsTag.substring(1)}/dist/';
 
 Future<JSObject> _importBridge(String url) => importModule(url.toJS).toDart;
 

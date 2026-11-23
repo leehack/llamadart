@@ -21,7 +21,7 @@ LEGACY_BRIDGE_DIGESTS = {
 def run_case(browser, origin, model_url, *, worker, isolated=False,
              shared_memory_override=False,
              opt_in=None, mem64=False, legacy=False, forced_fetch=False, gpu=False,
-             allow_wasm64_retry=False):
+             allow_wasm64_retry=False, asset_base=None):
     legacy_assets_url = (
         LEGACY_ASSETS_URL_FILE.read_text(encoding="utf-8").strip()
         if legacy
@@ -29,6 +29,7 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
     )
     page = browser.new_page()
     wasm_files = []
+    cdn_responses = []
     warnings = []
     offload_logs = []
 
@@ -43,12 +44,16 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
     repeat = opt_in is None and not (threaded or legacy or forced_fetch or allow_wasm64_retry)
 
     def track_wasm(request):
-        if request.url.startswith(f"{origin}/build/web_single_thread_core/bridge/"):
+        if request.url.startswith(asset_base or f"{origin}/build/web_single_thread_core/bridge/"):
             name = Path(urlsplit(request.url).path).name
             if name.endswith(".wasm"):
                 wasm_files.append(name)
 
     page.context.on("request", track_wasm)
+    if asset_base is not None:
+        page.context.on("response", lambda response: cdn_responses.append(
+            (Path(urlsplit(response.url).path).name, response.status)
+        ) if response.url.startswith(asset_base) else None)
     # Only the isolated control receives COOP/COEP on its document.
     headers = {
         "Cross-Origin-Opener-Policy": "same-origin",
@@ -68,8 +73,8 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
         assert page.evaluate("crossOriginIsolated") == isolated
         assert page.evaluate("typeof SharedArrayBuffer === 'function'") == threaded
         results = page.evaluate(
-            """async ({ worker, optIn, mem64, legacyAssetsUrl, forcedFetch, gpu, modelUrl, repeat }) => {
-              const base = legacyAssetsUrl ?? new URL('bridge/', location.href).href;
+            """async ({ worker, optIn, mem64, legacyAssetsUrl, assetBase, forcedFetch, gpu, modelUrl, repeat }) => {
+              const base = assetBase ?? legacyAssetsUrl ?? new URL('bridge/', location.href).href;
               const asset = (file) => new URL(file, base).href;
               const {LlamaWebGpuBridge} = await import(asset('llama_webgpu_bridge.js'));
               window.LlamaWebGpuBridge = class extends LlamaWebGpuBridge {
@@ -96,7 +101,7 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
               if (repeat) results.push(await load());
               return results;
             }""",
-            dict(worker=worker, optIn=opt_in, mem64=mem64, legacyAssetsUrl=legacy_assets_url,
+            dict(worker=worker, optIn=opt_in, mem64=mem64, legacyAssetsUrl=legacy_assets_url, assetBase=asset_base,
                  forcedFetch=forced_fetch, gpu=gpu, modelUrl=model_url, repeat=repeat),
         )
         result = results[0]
@@ -159,6 +164,14 @@ def run_case(browser, origin, model_url, *, worker, isolated=False,
             assert "WebGPU" in result["backends"], result
             assert len(offload_logs) == len(results), offload_logs
             assert all(re.search(r"offloaded [1-9]\d*/\d+ layers", line) for line in offload_logs), offload_logs
+        if asset_base is not None:
+            stem = "llama_webgpu_core_mem64_st" if mem64 else "llama_webgpu_core_st"
+            required = {"llama_webgpu_bridge.js", f"{stem}.js", f"{stem}.wasm"}
+            if worker:
+                required.add("llama_webgpu_bridge_worker.js")
+            assert required <= {name for name, status in cdn_responses if status == 200}, cdn_responses
+            print(json.dumps(dict(asset_base=asset_base, worker=worker, mem64=mem64,
+                                  cdn_responses=cdn_responses)))
     finally:
         page.close()
 
@@ -292,6 +305,9 @@ def main():
     local_model = Path("build/web_single_thread_core/model.gguf")
     if not local_model.is_file():
         parser.error(f"stage the Stories15M GGUF at {local_model} before running the scenario")
+    manifest = json.loads(Path("build/web_single_thread_core/bridge/manifest.json").read_text())
+    npm_version = manifest["release_tag"].removeprefix("v")
+    npm_assets = f"https://cdn.jsdelivr.net/npm/llama-web-bridge@{npm_version}/dist/"
 
     launch_args = ["--enable-unsafe-webgpu", "--disable-dev-shm-usage"]
     if platform.system() == "Darwin":
@@ -309,6 +325,8 @@ def main():
                 run_case(browser, origin, fixture_url, worker=worker, opt_in=True)
                 for mem64 in [False, True]:
                     run_case(browser, origin, fixture_url, worker=worker, mem64=mem64, gpu=args.gpu)
+                    run_case(browser, origin, fixture_url, worker=worker, mem64=mem64,
+                             opt_in=True, gpu=args.gpu, asset_base=npm_assets)
             check_bootstrap_errors(browser, f"{origin}/build/web_single_thread_core/", fixture_url)
             if args.model_url:
                 for mem64 in [False, True]:

@@ -5,7 +5,18 @@ ROOT_DIR="$(git rev-parse --show-toplevel)"
 OUT_DIR="${WEBGPU_BRIDGE_OUT_DIR:-$ROOT_DIR/example/chat_app/web/webgpu_bridge}"
 ASSETS_REPO="${WEBGPU_BRIDGE_ASSETS_REPO:-leehack/llama-web-bridge-assets}"
 ASSETS_TAG="${WEBGPU_BRIDGE_ASSETS_TAG:-v0.1.93}"
-CDN_BASE="${WEBGPU_BRIDGE_CDN_BASE:-https://cdn.jsdelivr.net/gh/${ASSETS_REPO}@${ASSETS_TAG}}"
+CDN_BASE="${WEBGPU_BRIDGE_CDN_BASE:-}"
+if [[ -z "$CDN_BASE" ]]; then
+  if [[ "$ASSETS_REPO" == leehack/llama-web-bridge-assets &&
+        "$ASSETS_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] &&
+     (( BASH_REMATCH[1] > 0 || BASH_REMATCH[2] > 1 ||
+        (BASH_REMATCH[2] == 1 && BASH_REMATCH[3] >= 91) )); then
+    CDN_BASE="https://cdn.jsdelivr.net/npm/llama-web-bridge@${ASSETS_TAG#v}/dist"
+  else
+    CDN_BASE="https://cdn.jsdelivr.net/gh/${ASSETS_REPO}@${ASSETS_TAG}"
+  fi
+fi
+CDN_BASE="${CDN_BASE%/}"
 CURL_DOWNLOAD_ARGS=(
   --connect-timeout 15
   --max-time 300
@@ -19,11 +30,11 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 Downloads prebuilt WebGPU bridge assets into the chat_app web directory.
 
 Default source:
-  https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@v0.1.93
+  https://cdn.jsdelivr.net/npm/llama-web-bridge@0.1.93/dist/
 
 Environment variables:
-  WEBGPU_BRIDGE_ASSETS_REPO   Asset repo in owner/repo format
-  WEBGPU_BRIDGE_ASSETS_TAG    Asset version/tag (recommended: pinned release tag)
+  WEBGPU_BRIDGE_ASSETS_REPO   Asset repo in owner/repo format (custom repos use GitHub)
+  WEBGPU_BRIDGE_ASSETS_TAG    Asset tag (official stable versions from v0.1.91 use npm)
   WEBGPU_BRIDGE_CDN_BASE      Full base URL override (advanced)
   WEBGPU_BRIDGE_OUT_DIR       Destination directory
 

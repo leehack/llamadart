@@ -26,13 +26,16 @@ const String _flutterIndexHtml = '''
 ''';
 
 final class _FakeRelease {
-  _FakeRelease({String tag = 'v9.9.9', Map<String, List<int>>? files})
-    : files =
-          files ??
-          <String, List<int>>{
-            for (final String name in webBridgeRuntimeFiles)
-              name: utf8.encode('contents of $name for $tag'),
-          } {
+  _FakeRelease({
+    String repository = 'example/assets',
+    String tag = 'v9.9.9',
+    Map<String, List<int>>? files,
+  }) : files =
+           files ??
+           <String, List<int>>{
+             for (final String name in webBridgeRuntimeFiles)
+               name: utf8.encode('contents of $name for $tag'),
+           } {
     manifestBytes = utf8.encode(
       jsonEncode(<String, Object?>{
         'release_tag': tag,
@@ -46,7 +49,7 @@ final class _FakeRelease {
       }),
     );
     pin = WebBridgePin(
-      repository: 'example/assets',
+      repository: repository,
       tag: tag,
       manifestSha256: sha256.convert(manifestBytes).toString(),
     );
@@ -128,6 +131,64 @@ void main() {
         fetch: release.fetch,
         patchIndexHtml: patchIndexHtml,
       );
+
+  test('fetches and verifies pinned assets through the npm dist URL', () async {
+    release = _FakeRelease(
+      repository: webBridgeAssetsRepository,
+      tag: webBridgeAssetsTag,
+    );
+    final version = webBridgeAssetsTag.substring(1);
+    final base = Uri.parse(
+      'https://cdn.jsdelivr.net/npm/llama-web-bridge@$version/dist/',
+    );
+
+    final result = await runSetup();
+    expect(release.urls, [
+      base.resolve('manifest.json'),
+      for (final file in webBridgeRuntimeFiles) base.resolve(file),
+    ]);
+    expect(result.downloaded, webBridgeRuntimeFiles);
+    expect(
+      await checkWebBridgeSetup(webDir: webDir, pin: release.pin),
+      isEmpty,
+    );
+
+    final wasm = File(assetPath('llama_webgpu_core_st.wasm'));
+    _corruptKeepingSize(wasm);
+    release.served['llama_webgpu_core_st.wasm'] = wasm.readAsBytesSync();
+    await expectLater(runSetup(), throwsA(isA<WebSetupException>()));
+  });
+
+  test('uses GitHub for different tags and custom asset repositories', () {
+    for (final (repository, tag) in [
+      (webBridgeAssetsRepository, 'v0.1.90'),
+      (webBridgeAssetsRepository, '$webBridgeAssetsTag-preview'),
+      (webBridgeAssetsRepository, 'v0.1.093'),
+      (webBridgeAssetsRepository, 'main'),
+      ('example/assets', webBridgeAssetsTag),
+    ]) {
+      final pin = _FakeRelease(repository: repository, tag: tag).pin;
+      expect(
+        pin.baseUri,
+        Uri.parse('https://cdn.jsdelivr.net/gh/$repository@$tag/'),
+      );
+    }
+  });
+
+  test('maps the first published npm tag and later stable releases', () {
+    for (final version in ['0.1.91', '0.1.100', '0.2.0', '1.0.0']) {
+      final pin = _FakeRelease(
+        repository: webBridgeAssetsRepository,
+        tag: 'v$version',
+      ).pin;
+      expect(
+        pin.baseUri,
+        Uri.parse(
+          'https://cdn.jsdelivr.net/npm/llama-web-bridge@$version/dist/',
+        ),
+      );
+    }
+  });
 
   test('pins, verifies and exposes both single-thread core variants', () async {
     await runSetup();

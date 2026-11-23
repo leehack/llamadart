@@ -46,6 +46,9 @@ const int _maxManifestBytes = 64 * 1024;
 const String _beginMarker = '<!-- llamadart:web_setup:begin -->';
 const String _endMarker = '<!-- llamadart:web_setup:end -->';
 final RegExp _sha256Hex = RegExp(r'^[0-9a-f]{64}$');
+final RegExp _stableBridgeTag = RegExp(
+  r'^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$',
+);
 final RegExp _flutterBootstrapScript = RegExp(
   r'''^([ \t]*)<script\b[^>]*\bsrc=["'](?:\./)?flutter_bootstrap\.js["']''',
   multiLine: true,
@@ -90,7 +93,27 @@ final class WebBridgePin {
   final String manifestSha256;
 
   /// The CDN directory that serves this release.
-  Uri get baseUri => Uri.parse('https://cdn.jsdelivr.net/gh/$repository@$tag/');
+  ///
+  /// Official stable releases from v0.1.91 use npm. Other tags and custom
+  /// repositories use the GitHub route.
+  Uri get baseUri {
+    final stable = _stableBridgeTag.firstMatch(tag);
+    if (repository == webBridgeAssetsRepository && stable?.end == tag.length) {
+      final major = stable![1]!;
+      final minor = stable[2]!;
+      final patch = stable[3]!;
+      if (major != '0' ||
+          (minor != '0' && minor != '1') ||
+          (minor == '1' &&
+              (patch.length > 2 ||
+                  (patch.length == 2 && patch.compareTo('91') >= 0)))) {
+        return Uri.parse(
+          'https://cdn.jsdelivr.net/npm/llama-web-bridge@${tag.substring(1)}/dist/',
+        );
+      }
+    }
+    return Uri.parse('https://cdn.jsdelivr.net/gh/$repository@$tag/');
+  }
 }
 
 /// The pin this llamadart version ships with.
