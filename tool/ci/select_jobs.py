@@ -61,6 +61,69 @@ VALIDATION_BUNDLED_ASSETS = (
     'packages/llamadart_validation/assets/embeddings/v1/',
 )
 
+# Use exact paths so new tools and fixtures default to full CI. Workflow and
+# bundle entrypoints and their dependencies stay out of these sets.
+TOOLS_STATIC = {
+    'scripts/android_runtime_smoke.sh',
+    'tool/gen_litert_lm_templates.dart',
+    'tool/gguf_chat_features_smoke.dart',
+    'tool/git/pr_head_update_evidence.schema.json',
+    'tool/litert_lm_pixel_benchmark.sh',
+    'tool/macos_fair_litert_vs_llamadart.sh',
+    'tool/macos_llamadart_benchmark.dart',
+    'tool/native/fixtures/litert_lm_legacy_Package.swift',
+    'tool/native/fixtures/litert_lm_modern_provider_Package.swift',
+    'tool/native/fixtures/litert_lm_v0191_owner_SHA256SUMS',
+    'tool/native/fixtures/litert_lm_v0191_owner_manifest.json',
+    'tool/native/fixtures/litert_lm_v0191_owner_release.json',
+    'tool/native/fixtures/litert_lm_v019_owner_SHA256SUMS',
+    'tool/native/fixtures/litert_lm_v019_owner_manifest.json',
+    'tool/native/fixtures/litert_lm_v019_owner_release.json',
+    'tool/native/fixtures/v0.16.0-native.2-manifest.json',
+    'tool/testing/gemma4_mtp_smoke.dart',
+    'tool/testing/native_embedding_benchmark.dart',
+    'tool/testing/native_embedding_sweep.dart',
+    'tool/testing/native_inference_benchmark.dart',
+    'tool/testing/playwright_bridge_smoke.py',
+    'tool/testing/playwright_chat_app_benchmark.py',
+    'tool/testing/playwright_qwen_cpu_multimodal_smoke.py',
+    'tool/testing/playwright_qwen_harness.py',
+    'tool/testing/playwright_web_single_thread_core.py',
+    'tool/testing/prepare_llama_cpp_source.sh',
+    'tool/testing/prompts/native_prompt_reuse_parity_prompts.txt',
+    'tool/testing/run_webgpu_multimodal_regression_gate.sh',
+    'tool/web_fair_litert_vs_llamadart.sh',
+}
+TOOLS_LINUX_VM = {
+    'tool/litert_lm_templates/gemma.jinja',
+    'tool/litert_lm_templates/gemma3n.jinja',
+    'tool/litert_lm_templates/qwen25.jinja',
+    'tool/litert_lm_templates/qwen3.jinja',
+    'tool/testing/run_llama_cpp_chat_tests.sh',
+}
+# The host suites that execute these shell scripts skip those tests on Windows.
+TOOLS_MACOS_VM = {
+    'tool/testing/build_llama_cpp_runtime_gbnf_validator.sh',
+    'tool/testing/run_template_parity_suites.sh',
+    'tool/testing/without_app_nap.sh',
+}
+TOOLS_ALL_HOST_VM = {
+    'tool/litert_lm_asr_smoke.dart',
+    'tool/litert_lm_templates/gemma4.jinja',
+    'tool/native/fixtures/litert_lm_schema2_owner_manifest.json',
+    'tool/native/fixtures/litert_lm_schema2_owner_release.json',
+    'tool/native/fixtures/litert_lm_v018_samplers_Package.swift',
+    'tool/native/fixtures/litert_lm_v019_apple_inventory_projection.json',
+    'tool/testing/litert_text_history_web_e2e.py',
+    'tool/testing/llama_cpp_speculative_benchmark.dart',
+    'tool/testing/playwright_chat_app_microphone_lifecycle.py',
+    'tool/testing/playwright_chat_app_text_to_speech_smoke.py',
+    'tool/testing/playwright_web_js_backed_model_staging.py',
+    'tool/testing/test_matrix.dart',
+    'tool/testing/verify_image_e2e_evidence.dart',
+    'tool/testing/verify_speech_stream_qualification.dart',
+}
+
 def inventory(raw):
     """Return both endpoints of renames/copies and deleted paths; reject truncation."""
     parts = raw.decode('utf-8', errors='strict').split('\0')
@@ -159,6 +222,17 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
             jobs.update(('analyze', 'test-linux-coverage'))
         elif path == 'codecov.yml':
             jobs.add('test-linux-coverage')
+        elif path in TOOLS_STATIC:
+            jobs.add('analyze')
+        elif path in TOOLS_LINUX_VM:
+            jobs.update(('analyze', 'test-linux-coverage'))
+        elif path in TOOLS_MACOS_VM:
+            jobs.update(('analyze', 'test-linux-coverage'))
+            macos_native = True
+        elif path in TOOLS_ALL_HOST_VM:
+            jobs.update(('analyze', 'test-linux-coverage'))
+            macos_native = True
+            windows_native = True
         elif any(path.startswith('packages/' + name + '/') for name in COMPANIONS):
             name = path.split('/')[1]
             companions.add(name)

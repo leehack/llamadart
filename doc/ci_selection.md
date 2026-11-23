@@ -17,6 +17,10 @@ PR. A path filter must not prevent a required workflow from reporting.
 | Root `.gitignore` | Full fallback. Root ignore rules affect the clean-tree checks in the Model Store, Apple companions and validation bundles. | Linux and Windows desktops, Web and iOS inputs on PRs. All targets on pushes. |
 | `codecov.yml` | Linux VM tests. Coverage calculation and Codecov upload run after merge. | None |
 | `.gitattributes` | Full fallback. Git attributes can change checkout bytes across platforms, including hash-checked fixtures. | Full fallback targets |
+| Listed local tools, native Python test fixtures and PR head-update evidence schema | Root static checks and Markdown Tests | None |
+| Listed tooling inputs read by Linux VM suites, including most LiteRT-LM template sources | Root static checks and Linux VM tests | None |
+| Listed shell scripts exercised by POSIX root suites | Root static checks, Linux VM tests and macOS native shards | None |
+| Listed tooling inputs read by host VM suites, including `tool/litert_lm_templates/gemma4.jinja` | Root static checks, Linux VM tests and macOS and Windows native shards | None |
 | Genkit or Model Store package | Affected package checks and root Linux VM tests | None |
 | Studio core or UI package (`web/`, `windows/`, `linux/` packaging vs shared/macOS) | Studio core and Flutter UI format, analysis and VM tests; `studio-macos` for non-exempt inputs; Web files also run version and bridge-pin checks | None |
 | One companion package | Root static checks, affected package's Flutter/SwiftPM/publish checks, Apple cache check, root Linux coverage and full macOS/Windows VM checks, Studio + `studio-macos`, Web Chat consumer | Android, Web, iOS inputs |
@@ -48,6 +52,19 @@ tests, is selected.
 Root static checks validate shipped skills and Docker files through the core
 archive check and Pana, and run the Dependabot package inventory test. Docker
 builds use local scripts.
+
+The tool rules in `select_jobs.py` list exact paths. New tools and fixtures
+default to the full fallback until their consumers are traced. Workflow and
+bundle entrypoints, the helpers they execute, and release-prep inputs keep
+their existing selection. This includes the production Web smoke's Python
+imports, the native sync allowlist, changelog resolutions and the release tag
+grammar fixture. Validation tooling keeps its bundle-aware rule. Check
+indirect imports, script calls, fixture readers and host shard membership
+before adding a path. Markdown Tests already runs the PR head-update schema
+test, and Analyze runs the Python native-sync suites that read their fixtures.
+The Jinja source-reading cases run on the VM. Changes to the generated Dart
+templates under `lib/` select the full runtime graph.
+
 For DartPad GGUF, the root static job runs `public_entrypoints_test.dart` and
 `dartpad_examples_imports_test.dart` in place of the Linux VM shards.
 Markdown-only changes in the example run the docs jobs and Markdown Tests,
