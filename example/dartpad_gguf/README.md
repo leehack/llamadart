@@ -4,10 +4,18 @@
 The link always opens the latest published llamadart.
 The example is available starting in 0.20.7.
 
-Run the Flutter preview and choose **Load** to download SmolLM2-135M-Instruct
-Q4_K_M (about 106 MB). Enter a prompt or pick a preset, then choose **Send** to
-stream a reply. Follow-up prompts use the conversation history. Choose **Clear**
-to start a new conversation with the same model.
+Choose a model from the **Model** selector and select **Load** to download it:
+
+- **SmolLM2 135M** (~105 MB, default) — fastest download for quick tests.
+- **Qwen3.5 0.8B** (~533 MB) — stronger replies, with thinking disabled.
+- **Gemma 4 E2B** (~3 GB, flagged in the UI with a pre-download warning) —
+  higher quality; requires desktop Chrome with WebAssembly `memory64` and
+  8+ GB RAM, and is not supported on Safari or mobile browsers.
+
+Switching models disposes the active engine, clears the conversation, and
+requires choosing **Load** again. Enter a prompt or pick a preset, then choose
+**Send** to stream a reply. Follow-up prompts use the conversation history.
+Choose **Clear** to start a new conversation with the same model.
 
 Open **Settings** to change temperature, maximum output tokens, or the system
 prompt. The stats show the active backend and elapsed time while streaming,

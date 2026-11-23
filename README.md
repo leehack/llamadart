@@ -250,7 +250,7 @@ allocation-to-registration gaps remain; see the
 Run the Flutter chat app from a
 [repository checkout](https://github.com/leehack/llamadart/tree/main/example/chat_app),
 try the [hosted chat app](https://leehack-llamadart.static.hf.space), or
-[chat with SmolLM2-135M-Instruct on preview.dartpad.dev](https://preview.dartpad.dev/?package=llamadart&root=example/dartpad_gguf&file=example/dartpad_gguf/lib/main.dart).
+[chat with GGUF models (SmolLM2 135M, Qwen3.5 0.8B, or desktop Chrome Gemma 4 E2B) on preview.dartpad.dev](https://preview.dartpad.dev/?package=llamadart&root=example/dartpad_gguf&file=example/dartpad_gguf/lib/main.dart).
 
 - [Basic Dart CLI](https://github.com/leehack/llamadart/tree/main/example/basic_app)
 - [Flutter chat app](https://github.com/leehack/llamadart/tree/main/example/chat_app)

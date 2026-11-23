@@ -3,6 +3,90 @@ import 'package:material_ui/material_ui.dart';
 
 import 'chat_controller.dart';
 
+class ModelPicker extends StatelessWidget {
+  const ModelPicker({
+    super.key,
+    required this.selected,
+    required this.enabled,
+    required this.onSelected,
+  });
+
+  final GgufModelOption selected;
+  final bool enabled;
+  final ValueChanged<GgufModelOption> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final warning = selected.warning;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InputDecorator(
+          decoration: InputDecoration(
+            labelText: 'Model',
+            border: const OutlineInputBorder(),
+            enabled: enabled,
+            isDense: true,
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<GgufModelOption>(
+              value: selected,
+              isExpanded: true,
+              isDense: true,
+              items: [
+                for (final model in ggufModels)
+                  DropdownMenuItem(
+                    value: model,
+                    child: Text('${model.label} (${model.sizeLabel})'),
+                  ),
+              ],
+              onChanged: enabled
+                  ? (model) {
+                      if (model != null) onSelected(model);
+                    }
+                  : null,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(selected.note, style: theme.textTheme.bodySmall),
+        if (warning != null) ...[
+          const SizedBox(height: 6),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.errorContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 18,
+                    color: theme.colorScheme.onErrorContainer,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      warning,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class StatsBar extends StatelessWidget {
   const StatsBar({super.key, required this.stats, required this.generating});
 

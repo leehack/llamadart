@@ -1,11 +1,28 @@
 import 'dart:async';
 
+import 'package:dartpad_gguf_example/chat_controller.dart';
 import 'package:dartpad_gguf_example/main.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:material_ui/material_ui.dart';
 
 const _defaultSystem = 'You are a concise, helpful assistant.';
+const _smolLmUrl =
+    'https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/'
+    '9e6855bc4be717fca1ef21360a1db4b29d5c559a/'
+    'SmolLM2-135M-Instruct-Q4_K_M.gguf';
+const _qwen35Url =
+    'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/'
+    '6ab461498e2023f6e3c1baea90a8f0fe38ab64d0/'
+    'Qwen3.5-0.8B-Q4_K_M.gguf';
+const _gemma4Url =
+    'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/'
+    '0314792d7f1f7e229411f620751375812bb9faf2/'
+    'gemma-4-E2B-it-Q4_K_S.gguf';
+const _smolLmItem = 'SmolLM2 135M (~105 MB)';
+const _qwen35Item = 'Qwen3.5 0.8B (~533 MB)';
+const _gemma4Item = 'Gemma 4 E2B (desktop Chrome, ~3 GB)';
 final _prompt = find.widgetWithText(TextField, 'Prompt');
 final _send = find.widgetWithText(FilledButton, 'Send');
 final _stop = find.widgetWithText(FilledButton, 'Stop');
@@ -339,6 +356,194 @@ void main() {
     expect(engine.events, ['dispose']);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('defaults to SmolLM2 135M and disables thinking mode', (
+    tester,
+  ) async {
+    createFakeEngine();
+    await tester.pumpWidget(GgufApp(createEngine: () async => engine));
+
+    expect(find.text(_smolLmItem), findsOneWidget);
+    expect(find.text('Load SmolLM2 135M to begin.'), findsOneWidget);
+
+    await tester.tap(find.text('Load'));
+    await tester.pump();
+    expect(engine.source?.url, Uri.parse(_smolLmUrl));
+    expect(engine.contextSize, 2048);
+    expect(engine.modelBytesHint, kIsWeb ? 105454144 : null);
+
+    engine.loaded.complete();
+    await tester.pump();
+    await send(tester, 'Hello');
+    expect(engine.lastEnableThinking, isFalse);
+    await finishTurn(tester, 'Hi!');
+  });
+
+  testWidgets('selecting another model passes its pinned URL and params', (
+    tester,
+  ) async {
+    createFakeEngine();
+    await tester.pumpWidget(GgufApp(createEngine: () async => engine));
+
+    await tester.tap(find.text(_smolLmItem));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(_qwen35Item).last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Load Qwen3.5 0.8B to begin.'), findsOneWidget);
+    await tester.tap(find.text('Load'));
+    await tester.pump();
+
+    expect(engine.source?.url, Uri.parse(_qwen35Url));
+    expect(engine.contextSize, 2048);
+    expect(engine.modelBytesHint, kIsWeb ? 532517120 : null);
+
+    engine.loaded.complete();
+    await tester.pump();
+  });
+
+  testWidgets(
+    'selecting Gemma 4 E2B shows desktop Chrome ~3 GB label and warning before Load',
+    (tester) async {
+      createFakeEngine();
+      await tester.pumpWidget(GgufApp(createEngine: () async => engine));
+
+      await tester.tap(find.text(_smolLmItem));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(_gemma4Item).last);
+      await tester.pumpAndSettle();
+
+      expect(find.text(_gemma4Item), findsOneWidget);
+      expect(find.textContaining('Large download (~3 GB)'), findsOneWidget);
+      expect(find.textContaining('memory64'), findsOneWidget);
+      expect(find.textContaining('Safari'), findsOneWidget);
+      expect(engine.source, isNull);
+
+      await tester.tap(find.text('Load'));
+      await tester.pump();
+      expect(engine.source?.url, Uri.parse(_gemma4Url));
+      expect(engine.contextSize, 2048);
+      expect(engine.modelBytesHint, kIsWeb ? 3043934304 : null);
+
+      engine.loaded.complete();
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'switching model while loaded disposes previous engine, clears chat, and requires Load',
+    (tester) async {
+      final engines = <_FakeEngine>[];
+      await tester.pumpWidget(
+        GgufApp(
+          createEngine: () async {
+            final created = _FakeEngine();
+            engines.add(created);
+            addTearDown(created.dispose);
+            return created;
+          },
+        ),
+      );
+
+      await tester.tap(find.text('Load'));
+      await tester.pump();
+      engines[0].loaded.complete();
+      await tester.pump();
+
+      await tester.enterText(_prompt, 'Hello');
+      await tester.pump();
+      await tester.tap(_send);
+      await tester.pump();
+      engines[0].emit('Hi there');
+      unawaited(engines[0].output!.close());
+      await finishStream(tester);
+      expect(find.text('Hello'), findsOneWidget);
+      expect(find.text('Hi there'), findsOneWidget);
+
+      await tester.tap(find.text(_smolLmItem));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(_qwen35Item).last);
+      await tester.pumpAndSettle();
+
+      expect(engines[0].events, contains('dispose'));
+      expect(find.text('Hello'), findsNothing);
+      expect(find.text('Hi there'), findsNothing);
+      expect(find.text('Load Qwen3.5 0.8B to begin.'), findsOneWidget);
+      expect(tester.widget<FilledButton>(_send).onPressed, isNull);
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Load'))
+            .onPressed,
+        isNotNull,
+      );
+      expect(engines, hasLength(1));
+
+      await tester.tap(find.text('Load'));
+      await tester.pump();
+      expect(engines, hasLength(2));
+      expect(engines[1].source?.url, Uri.parse(_qwen35Url));
+
+      engines[1].progress?.call(const ModelDownloadProgress.fraction(0.4));
+      await tester.pump();
+      expect(
+        tester
+            .widget<LinearProgressIndicator>(
+              find.byType(LinearProgressIndicator),
+            )
+            .value,
+        0.4,
+      );
+
+      engines[1].loaded.complete();
+      await tester.pump();
+    },
+  );
+
+  test('buildGgufModelParams passes modelBytesHint only on web', () {
+    for (final model in ggufModels) {
+      final webParams = buildGgufModelParams(model, isWeb: true);
+      expect(webParams.contextSize, model.contextSize);
+      expect(webParams.modelBytesHint, model.sizeBytes);
+      expect(webParams.preferMemory64, isNull);
+
+      final nativeParams = buildGgufModelParams(model, isWeb: false);
+      expect(nativeParams.contextSize, model.contextSize);
+      expect(nativeParams.modelBytesHint, isNull);
+      expect(nativeParams.preferMemory64, isNull);
+    }
+  });
+
+  testWidgets('picker is disabled during load and generation', (tester) async {
+    createFakeEngine();
+    await tester.pumpWidget(GgufApp(createEngine: () async => engine));
+
+    DropdownButton<GgufModelOption> pickerWidget() =>
+        tester.widget<DropdownButton<GgufModelOption>>(
+          find.byType(DropdownButton<GgufModelOption>),
+        );
+
+    expect(pickerWidget().onChanged, isNotNull);
+
+    await tester.tap(find.text('Load'));
+    await tester.pump();
+    expect(pickerWidget().onChanged, isNull);
+    await tester.tap(find.text(_smolLmItem));
+    await tester.pump();
+    expect(find.text(_qwen35Item), findsNothing);
+
+    engine.loaded.complete();
+    await tester.pump();
+    expect(pickerWidget().onChanged, isNotNull);
+
+    await send(tester, 'Hello');
+    expect(pickerWidget().onChanged, isNull);
+    await tester.tap(find.text(_smolLmItem));
+    await tester.pump();
+    expect(find.text(_qwen35Item), findsNothing);
+
+    await finishTurn(tester, 'Done');
+    expect(pickerWidget().onChanged, isNotNull);
+  });
 }
 
 class _FakeBackend extends Fake implements LlamaBackend {
@@ -354,9 +559,11 @@ class _FakeEngine extends LlamaEngine {
   ModelDownloadProgressCallback? progress;
   ModelSource? source;
   int? contextSize;
+  int? modelBytesHint;
   StreamController<LlamaCompletionChunk>? output;
   List<(LlamaChatRole, String)>? lastMessages;
   GenerationParams? lastParams;
+  bool? lastEnableThinking;
   String? flushOnCancel;
   bool holdAfterCancel = false;
   String? countedText;
@@ -388,6 +595,7 @@ class _FakeEngine extends LlamaEngine {
   }) {
     source = model.source;
     contextSize = params.contextSize;
+    modelBytesHint = params.modelBytesHint;
     progress = onProgress;
     return loaded.future;
   }
@@ -426,6 +634,7 @@ class _FakeEngine extends LlamaEngine {
   }) {
     lastMessages = messages.map((m) => (m.role, m.content)).toList();
     lastParams = params;
+    lastEnableThinking = enableThinking;
     output = StreamController<LlamaCompletionChunk>.broadcast();
     return output!.stream;
   }
