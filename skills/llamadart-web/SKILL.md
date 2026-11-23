@@ -68,6 +68,12 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   `llamadart.webgpu.runtime_notes`. A single-thread core runs streamed model
   staging and rejects forced fetch-backed loading. It can offload GPU layers
   when the adapter supports WebGPU.
+- When the host controls `index.html` (for example preview.dartpad.dev), set the
+  single-thread opt-in and absolute core, Wasm, and worker URLs in Dart
+  before the first load. Import the pinned CDN bridge with
+  `dart:js_interop` and assign its constructor to
+  `globalThis.LlamaWebGpuBridge`. See the
+  [DartPad GGUF example](https://github.com/leehack/llamadart/tree/main/example/dartpad_gguf).
 - Treat WebGPU as a runtime capability. A supported browser (Chrome/Edge 128+,
   Firefox 129+, Safari 17.4+) can still lack an adapter, features or memory.
   Prove a first load with a small quantized GGUF, `contextSize: 2048` or less

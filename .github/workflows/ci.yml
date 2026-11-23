@@ -837,6 +837,13 @@ jobs:
           flutter pub get
           TMPDIR="$(mktemp -d)" dart test --exclude-tags local-only
 
+      - name: Test dartpad_gguf
+        if: ${{ !cancelled() }}
+        working-directory: example/dartpad_gguf
+        run: |
+          flutter pub get
+          TMPDIR="$(mktemp -d)" flutter test --exclude-tags local-only
+
       - name: Test laya_command_bar
         if: ${{ !cancelled() }}
         working-directory: example/laya_command_bar
