@@ -592,6 +592,16 @@ void main() {
     },
   );
 
+  test('Genkit DartPad pins the bridge with single-thread core preflight', () {
+    const path =
+        'packages/genkit_llamadart/example/dartpad/lib/bridge_bootstrap_web.dart';
+    expect(
+      File(path).readAsStringSync(),
+      contains("const String defaultBridgeAssetsTag = 'v0.1.93';"),
+      reason: path,
+    );
+  });
+
   test('tracked Studio bootstrap pins are registered and cannot drift', () {
     const path = 'packages/llamadart_studio/web/index.html';
     final root = _fakeRepo(

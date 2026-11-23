@@ -43,6 +43,7 @@ void main() {
       'example/llamadart_server',
       'example/tui_coding_agent',
       'packages/genkit_llamadart',
+      'packages/genkit_llamadart/example/dartpad',
       'packages/llamadart_validation',
       'packages/llamadart_litert_lm_flutter',
       'packages/llamadart_model_store',

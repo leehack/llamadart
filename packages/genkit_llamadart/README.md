@@ -18,7 +18,7 @@ embedding model. See [runtime support](https://github.com/leehack/llamadart/blob
 
 ## Install
 
-Requires Dart 3.12 or newer, Genkit 1.x and llamadart 0.19.7 or newer 0.19.x.
+Requires Dart 3.12 or newer, Genkit 1.x and llamadart 0.20.6 or newer 0.20.x.
 
 ```bash
 dart pub add genkit genkit_llamadart
@@ -30,8 +30,8 @@ platform setup. Apple apps using Swift Package Manager need the runtime
 companion matching their model family:
 
 ```bash
-flutter pub add 'llamadart_llama_cpp_flutter:^0.19.0'
-flutter pub add 'llamadart_litert_lm_flutter:^0.19.0'
+flutter pub add 'llamadart_llama_cpp_flutter:^0.20.0'
+flutter pub add 'llamadart_litert_lm_flutter:^0.20.0'
 ```
 
 Choose the GGUF companion, the LiteRT-LM companion, or both if your app uses
@@ -39,8 +39,13 @@ both runtimes. Apple companion builds require iOS 16.4+ or macOS 14.0+; an iOS
 Podfile must also target 16.4+ when using CocoaPods.
 
 llamadart supports Android, iOS, macOS, Linux, Windows and Web. Backend features
-and setup differ by platform. This adapter's browser guard tests do not qualify
-a complete Genkit Web deployment; validate your chosen browser and runtime.
+and setup differ by platform.
+
+Try the [DartPad Preview example](https://preview.dartpad.dev/?package=genkit_llamadart&root=example/dartpad&file=example/dartpad/lib/main.dart), available starting in genkit_llamadart 3.10.0.
+In Chrome, LiteRT-LM runs locally on llamadart 0.20.6 with WebGPU. GGUF in
+DartPad requires llamadart 0.20.7 or newer. Gemini sends prompts to Google's
+API using the key you enter for the session. See the
+[example instructions](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/dartpad/README.md).
 
 ## Quickstart
 

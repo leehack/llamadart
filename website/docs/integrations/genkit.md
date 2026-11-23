@@ -14,7 +14,8 @@ and its guides are canonical for adapter behavior.
 This example targets published **genkit_llamadart 3.9.0**, **Genkit 1.0.0** and
 **llamadart 0.19.7**, on Dart **3.12+**. The adapter remains independently
 versioned after its source moves into this repository. Core's Dart floor remains
-3.10.7; installing this optional adapter raises the application requirement.
+3.10.7. Installing this optional adapter raises the application requirement.
+The next adapter release targets llamadart 0.20.6.
 
 ```bash
 dart pub add 'genkit:1.0.0' 'genkit_llamadart:3.9.0' 'llamadart:0.19.7'

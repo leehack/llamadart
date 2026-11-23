@@ -26,6 +26,8 @@ description: >-
     It returns a `LlamaPreparedModel` with `plugin`, `modelRef`, optional
     `embedderRef` and `createGenkit()`. Use `llamaDart.prepareModelTask(...)`
     instead when a UI needs progress snapshots and cancellation.
+- On Web and DartPad, give `LlamaModelDefinition(modelPath: '<https-url>')`
+  the model URL directly. `prepareModel` uses the native download manager.
 - Set the capability flags on every definition. `supportsEmbeddings`,
   `supportsTools` and `supportsConstrainedOutput` all default to `true`; set
   them to `false` for what the model should not serve (for example

@@ -1,3 +1,8 @@
+## Unreleased
+
+- Require llamadart 0.20.6 and matching 0.20.x Apple companions.
+- Add a DartPad example that streams from GGUF, LiteRT-LM and Gemini models through Genkit.
+
 ## 3.9.0 - 2026-11-12
 
 - Structured output builds its thinking budget with llamadart's `ChatTemplateEngine.resolveThinkingBudget`, so a Qwen3.5 or Qwen3-Coder XML template closes a spent budget with `\n</think>` instead of a bare `</think>`. Requires llamadart 0.19.7.
