@@ -76,6 +76,8 @@ jobs:
         number: ${{ fromJSON(needs.open-preps.outputs.numbers || '[0]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Base-advance events run open PR code in the default branch cache scope.
+    cache-mode: none
     permissions:
       contents: read
       pull-requests: read
