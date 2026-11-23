@@ -21,6 +21,7 @@ PR. A path filter must not prevent a required workflow from reporting.
 | iOS/macOS chat packaging | Root static checks, Linux VM tests, Apple cache check and Mac native shards | iOS inputs (`ios/`) |
 | Other chat app implementation/dependencies (`lib/**`, `pubspec.*`, `integration_test/**`, `physical_ios_speech_e2e_support_test.dart`) | Static, Linux VM tests, private harness, Apple cache check, Web Chat | All app targets |
 | Chat app unit tests (other than `physical_ios_speech_e2e_support_test.dart`) | Static, Linux VM tests and Web Chat | None |
+| DartPad GGUF example (non-Markdown files under `example/dartpad_gguf/`) | Root static checks, Example Package Tests (VM and Chrome), and Markdown Tests | None |
 | Root `test/**` (extant Linux-only leaf suite on PR vs host-sensitive suite, helper/fixture, deleted/unknown, or push) | Static, all Linux VM tests, Chrome and Windows host tests; Mac native shards only when `test_shards.dart hosts-json` reports host-relevant or on helper/fixture/push/probe-failure; shared fixtures/helpers also run Studio, `studio-macos` and Apple cache | None |
 | Browser backend trees (`lib/src/backends/web/**`, `lib/src/backends/webgpu/**`) | Non-Mac full graph (Linux, Chrome, Windows native, Ubuntu Studio, Web Chat, Genkit, Model Store, examples) with zero Mac allocations | Linux, Windows desktops; apps (PR defers Android) |
 | Root runtime/hooks/dependencies, other example packages, conditional backend entrypoints | Full behavioral graph | All targets; a PR defers macOS desktop and Android unless it changes their build inputs (`.flutter-version` included for `macos-15`) |
@@ -37,6 +38,10 @@ would not run them. They run on Linux only; a change there adds no macOS or
 Windows `Test Native`. The consumer job runs the Flutter validation
 controller/app tests and is omitted when Web Chat, which runs all Flutter app
 tests, is selected.
+For DartPad GGUF, the root static job runs `public_entrypoints_test.dart` and
+`dartpad_examples_imports_test.dart` in place of the Linux VM shards.
+Markdown-only changes in the example run the docs jobs and Markdown Tests,
+including the link check for Markdown shipped in the package.
 Web Chat Contract installs no system packages, so an Ubuntu mirror outage cannot fail the required job.
 The private harness also checks APK integrity.
 
@@ -342,13 +347,15 @@ full-code speedup or local measurements as GitHub-hosted results.
 
 `flutter test --platform chrome` in Flutter 3.47.1 and 3.50.0 waits indefinitely
 for Chrome's DevTools `Browser.close` reply if Chrome exits before the reply
-arrives (#1702). Both CI lanes use `tool/ci/supervise_chrome_test.py` with a
-10-minute deadline and always upload their diagnostics.
+arrives (#1702). These CI lanes use `tool/ci/supervise_chrome_test.py` and
+always upload their diagnostics.
 
-| CI lane | Flutter pin | Diagnostics artifact |
-| --- | --- | --- |
-| Web Chat Contract | `.flutter-version` (3.47.1) | `chat-app-chrome-diagnostics` |
-| Studio UI browser tests | `packages/llamadart_studio/.flutter-version` (3.50.0) | `studio-ui-chrome-diagnostics` |
+| CI lane | Flutter pin | Deadline | Diagnostics artifact |
+| --- | --- | --- | --- |
+| Web Chat Contract | `.flutter-version` (3.47.1) | 10 minutes | `chat-app-chrome-diagnostics` |
+| Studio UI browser tests | `packages/llamadart_studio/.flutter-version` (3.50.0) | 10 minutes | `studio-ui-chrome-diagnostics` |
+| DartPad GGUF | `.flutter-version` (3.47.1) | 10 minutes | `dartpad-gguf-chrome-diagnostics` |
+| Genkit DartPad | `.flutter-version` (3.47.1) | 10 minutes | `genkit-dartpad-chrome-diagnostics` |
 
 If the command is still running 30 seconds after its JSON reporter's `done`
 event and no browser process remains, the supervisor stops it, warns, and

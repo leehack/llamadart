@@ -1511,16 +1511,40 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     expect(dartPad['if'], contains("matrix.part == 'local core'"));
     expect(
       dartPad['run'],
-      allOf(
+      allOf([
         contains('path: ../../../..'),
         contains('flutter pub get'),
         contains('flutter analyze --fatal-infos'),
         contains(r'TMPDIR="$(mktemp -d)" flutter test'),
+        contains('python3 ../../../../tool/ci/supervise_chrome_test.py'),
+        contains('--timeout-seconds 600 --'),
+        contains('flutter test --platform chrome --no-pub'),
         contains(
-          'flutter test --platform chrome test/bridge_bootstrap_web_test.dart',
+          r'--reporter-file "$RUNNER_TEMP/genkit-dartpad-chrome/reporter.jsonl"',
         ),
-      ),
+        contains(
+          r'--file-reporter "json:$RUNNER_TEMP/genkit-dartpad-chrome/reporter.jsonl"',
+        ),
+        contains(
+          'test/bridge_bootstrap_web_test.dart test/gemini_transport_test.dart',
+        ),
+      ]),
     );
+    expect(dartPad.containsKey('continue-on-error'), isFalse);
+    final diagnostics = steps.singleWhere(
+      (step) => step['name'] == 'Upload Genkit DartPad Chrome diagnostics',
+    );
+    expect(
+      diagnostics['if'],
+      r"${{ always() && matrix.part == 'local core' }}",
+    );
+    expect(diagnostics['uses'], startsWith('actions/upload-artifact@'));
+    expect(diagnostics['with'], {
+      'name': 'genkit-dartpad-chrome-diagnostics',
+      'path': r'${{ runner.temp }}/genkit-dartpad-chrome',
+      'if-no-files-found': 'ignore',
+      'retention-days': 7,
+    });
     final cleanup = steps.singleWhere(
       (step) => step['name'] == 'Remove local overrides',
     );
@@ -1784,10 +1808,12 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     for (final step in steps.cast<Map>()) {
       expect(step.containsKey('continue-on-error'), isFalse, reason: '$step');
     }
-    final tested = {
-      for (final step in steps.cast<Map>())
-        if (step['working-directory'] case final String dir) dir: step,
-    };
+    final tested = <String, List<Map>>{};
+    for (final step in steps.cast<Map>()) {
+      if (step['working-directory'] case final String dir) {
+        tested.putIfAbsent(dir, () => []).add(step);
+      }
+    }
     final packages = Directory('example')
         .listSync()
         .whereType<Directory>()
@@ -1797,18 +1823,94 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
         .toSet();
     expect(packages, contains('example/chat_app'));
     expect(tested.keys.toSet(), packages.difference({'example/chat_app'}));
-    for (final MapEntry(key: dir, value: step) in tested.entries) {
+    for (final MapEntry(key: dir, value: packageSteps) in tested.entries) {
       final pubspec = File('$dir/pubspec.yaml').readAsStringSync();
       final runner =
           pubspec.contains(RegExp(r'^\s+sdk: flutter$', multiLine: true))
           ? 'flutter'
           : 'dart';
-      expect(step['if'], r'${{ !cancelled() }}', reason: dir);
-      expect('${step['run']}'.trim().split('\n'), [
+      final vm = packageSteps.singleWhere(
+        (step) => step['name'] == 'Test ${dir.split('/').last}',
+      );
+      expect(vm['if'], r'${{ !cancelled() }}', reason: dir);
+      expect('${vm['run']}'.trim().split('\n'), [
         'flutter pub get',
         'TMPDIR="\$(mktemp -d)" $runner test --exclude-tags local-only',
       ], reason: dir);
     }
+  });
+
+  test('DartPad GGUF source selects only static and example guards', () async {
+    final plan = await selected(['example/dartpad_gguf/lib/main.dart']);
+    final jobs = plan['jobs'] as Map;
+    expect(
+      {
+        for (final entry in jobs.entries)
+          if (entry.value == true) entry.key,
+      },
+      {'analyze', 'example-packages', 'markdown-tests'},
+    );
+    expect(plan['desktops'], isEmpty);
+    expect(plan['apps'], isEmpty);
+  });
+
+  test('Analyze runs both root DartPad GGUF readers', () {
+    final analyze = readWorkflow('ci')['jobs']['analyze'] as Map;
+    final gate =
+        (analyze['steps'] as List).singleWhere(
+              (step) =>
+                  step['name'] ==
+                  'Verify example public entrypoints and DartPad imports',
+            )
+            as Map;
+    expect(
+      gate['run'],
+      'dart test -p vm '
+      'test/unit/public_entrypoints_test.dart '
+      'test/unit/tooling/dartpad_examples_imports_test.dart',
+    );
+    expect(gate.containsKey('if'), isFalse);
+    expect(gate.containsKey('continue-on-error'), isFalse);
+  });
+
+  test('Example Package Tests require supervised DartPad GGUF Chrome tests', () {
+    final job = readWorkflow('ci')['jobs']['example-packages'] as Map;
+    final steps = job['steps'] as List;
+    final chrome =
+        steps.singleWhere(
+              (step) => step['name'] == 'Test dartpad_gguf (Chrome)',
+            )
+            as Map;
+    expect(chrome['working-directory'], 'example/dartpad_gguf');
+    expect(chrome['if'], r'${{ !cancelled() }}');
+    expect(chrome.containsKey('continue-on-error'), isFalse);
+    expect(
+      chrome['run'],
+      allOf(
+        startsWith('python3 ../../tool/ci/supervise_chrome_test.py '),
+        contains(
+          r'--reporter-file "$RUNNER_TEMP/dartpad-gguf-chrome/reporter.jsonl"',
+        ),
+        contains(
+          '--timeout-seconds 600 -- flutter test --platform chrome --no-pub',
+        ),
+        contains(
+          r'--file-reporter "json:$RUNNER_TEMP/dartpad-gguf-chrome/reporter.jsonl"',
+        ),
+        endsWith('--exclude-tags local-only'),
+      ),
+    );
+    final upload = steps.singleWhere(
+      (step) => step['name'] == 'Upload dartpad_gguf Chrome diagnostics',
+    );
+    expect(upload['if'], 'always()');
+    expect(upload['uses'], startsWith('actions/upload-artifact@'));
+    expect(upload['with'], {
+      'name': 'dartpad-gguf-chrome-diagnostics',
+      'path': r'${{ runner.temp }}/dartpad-gguf-chrome',
+      'if-no-files-found': 'ignore',
+      'retention-days': 7,
+    });
   });
 
   test('Web Chat Contract installs no system packages', () {
