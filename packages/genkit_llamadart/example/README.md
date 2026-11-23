@@ -1,9 +1,15 @@
 # Runnable examples
 
-Run these commands from the repository root after `dart pub get`. The examples
-are native Dart CLIs. CPU defaults avoid GPU setup; they do not qualify a
+Run these commands from the repository root after `dart pub get`. The commands below
+run native Dart CLIs. CPU defaults avoid GPU setup; they do not qualify a
 Flutter Web deployment. The first run downloads weights when a default source
 is listed; later runs reuse llamadart's cache.
+
+## Try it in Chrome
+
+The [DartPad Preview example](https://preview.dartpad.dev/?package=genkit_llamadart&root=example/dartpad&file=example/dartpad/lib/main.dart)
+streams from GGUF, LiteRT-LM and Gemini starting in genkit_llamadart 3.10.0. See the
+[model requirements and local setup](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/dartpad/README.md).
 
 ## Start here
 
