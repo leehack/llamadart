@@ -4,6 +4,7 @@ library;
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
@@ -47,6 +48,57 @@ void main() {
       log: log,
     );
   }
+
+  group('Stable Diffusion Windows archive', () {
+    final spec = stableDiffusionBundleSpecs.singleWhere(
+      (spec) => spec.bundle == 'windows-x64',
+    );
+    const windowsDlls = [
+      'msvcp140.dll',
+      'msvcp140_codecvt_ids.dll',
+      'stable-diffusion.dll',
+      'vcruntime140.dll',
+      'vcruntime140_1.dll',
+    ];
+
+    Future<void> extractStableDiffusion(List<String> files) async {
+      final archivePath = await writeArchive([
+        for (final name in files) _regularFile('lib/$name', 'fixture-$name'),
+        _regularFile('lib/stable-diffusion.lib', 'import-library'),
+      ]);
+      await build_hook.extractStableDiffusionLibrariesForTesting(
+        archiveFile: File(archivePath),
+        extractedDir: outputDir,
+        bundleSpec: spec,
+      );
+    }
+
+    test('extracts the five DLLs and ignores the import library', () async {
+      await extractStableDiffusion(windowsDlls);
+      expect(
+        outputDir.listSync().map((entry) => path.basename(entry.path)),
+        unorderedEquals(windowsDlls),
+      );
+    });
+
+    test('rejects an archive missing a required VC++ DLL', () async {
+      await expectLater(
+        extractStableDiffusion(
+          windowsDlls
+              .where((name) => name != 'msvcp140_codecvt_ids.dll')
+              .toList(),
+        ),
+        throwsA(
+          isA<Exception>().having(
+            (error) => '$error',
+            'message',
+            contains('missing required libraries: msvcp140_codecvt_ids.dll'),
+          ),
+        ),
+      );
+      expect(outputDir.existsSync(), isFalse);
+    });
+  });
 
   test(
     'resolves relative shared library symlink chains to target bytes',

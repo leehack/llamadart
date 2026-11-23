@@ -4,6 +4,7 @@ packages/llamadart_validation/assets/decision/laya_0_3_5_reference.json -text
 
 # The SD consumer verifies the SHA-256 of the published manifest bytes.
 test/fixtures/native/stable_diffusion_v0_4_0_manifest.json -text
+test/fixtures/native/stable_diffusion_v0_4_0_1_manifest.json -text
 
 # Flint captures must match their upstream hashes and browser fixture bytes.
 test/fixtures/flint/Flint.jinja -text

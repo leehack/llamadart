@@ -388,7 +388,9 @@ python3 tool/native/sync_stable_diffusion_bindings.py
 The pin sync reads the release `manifest.json`, requires it to match its GitHub
 asset digest, requires every runtime archive's manifest SHA-256 to match its
 GitHub digest, and rewrites `stableDiffusionReleaseTag`,
-`stableDiffusionVersion` and each pinned bundle's checksum and library. It
+`stableDiffusionVersion` and each pinned bundle's checksum and library
+inventory. The optional `libraries` list includes the primary `library` and
+any companion libraries, such as the Windows Visual C++ runtime DLLs. It
 also rewrites the `llamadart_stable_diffusion_flutter` `Package.swift` tag and
 checksum from the manifest's `xcframework` artifact, after checking that
 artifact against its GitHub digest, and records the pin in the companion

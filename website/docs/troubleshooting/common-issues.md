@@ -81,11 +81,11 @@ tools of the bundled DLLs.
 
 ### Image generation fails to load on Windows
 
-The opt-in `stable_diffusion` runtime does not ship the Visual C++ runtime
-DLLs, and its load error names the DLLs that failed to load. Install the latest
-Microsoft Visual C++ v14 Redistributable (x64), which stock Windows Server
-lacks ([`vc_redist.x64.exe`](https://aka.ms/vc14/vc_redist.x64.exe)); see the
-[support matrix](../platforms/support-matrix#at-a-glance).
+The opt-in `stable_diffusion` bundle ships its Visual C++ runtime DLLs.
+If the load error names one of these DLLs, rebuild the app and restore its
+bundled copies. For an older build without those DLLs, install the latest
+Microsoft Visual C++ v14 Redistributable (x64)
+([`vc_redist.x64.exe`](https://aka.ms/vc14/vc_redist.x64.exe)).
 
 ### `Failed to load dynamic library 'libCLiteRTLM_mac.dylib'`
 
