@@ -141,8 +141,10 @@ environments, credentials and repository protections remain owner-controlled.
    [Dart's official procedure](https://dart.dev/tools/pub/automated-publishing).
 4. With separate release approval, prepare a new adapter version only. Keep
    the canonical repository URL above and date the matching changelog entry.
-   Review its two-file prep PR, then merge it to authorize package-specific
-   automation. Never reuse a published version or manually push release tags.
+   Review its two-file prep PR, then use **Squash and merge** to authorize
+   package-specific automation. Keep the `(#N)` subject suffix for core
+   release note collection. Never reuse a published version or manually
+   push release tags.
 5. Verify exact tag-to-merge SHA, publisher verify/lower-bound/publish jobs,
    pub.dev version/archive SHA/metadata, clean hosted installation, package skills
    and GitHub Release. Confirm core/companion publishers did not run.

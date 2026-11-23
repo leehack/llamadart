@@ -504,6 +504,28 @@ authored description through the verified merged-main PR association. The
 description uses one physical line per entry. Missing or conflicting
 provenance blocks generation.
 
+Land individual PRs, including independent package release preps, with
+**Squash and merge**. Keep the `(#N)` subject suffix and the `## Changelog`
+section in the squash message. Reserve rebase merges for batch integration
+PRs whose constituent commits already carry both.
+
+To resolve an already-landed, single-commit PR without a trailing `(#N)`,
+commit a reviewed record at `tool/release/pr_resolutions/<40-hex-sha>.json`.
+Use one compact JSON line with the keys in the order below and a final LF.
+Run `dart tool/release/collect_pr_changelog.dart --section-sha256 PR_BODY.md`
+on the reviewed PR description to compute the digest.
+
+```json
+{"version":"0.20.7","sha":"48af8ec5bc294620bd63a1e1818f6c6593afb5d3","pr":2180,"sectionSha256":"c99db03b6bdb4ef1bc771c35d31d2c766d52dd77f21fe94896266271ceb0a14e"}
+```
+
+Land the record on `main` before pinning `--through`. The collector reads
+the regular non-executable file from that commit and requires the record's
+version to match the release being prepared. It verifies through GitHub
+that the PR merged a single commit to this repository's `main`, that its
+merge SHA matches the record, and that its changelog still has the reviewed
+digest. The ledger records the resolution path.
+
 Review the entire ledger including legacy seed, package-only notes, N/A
 entries, duplicates, fallbacks and reversals. Keep the ledger with the PR.
 Copy the emitted `## Release notes input` into the prep body beside its

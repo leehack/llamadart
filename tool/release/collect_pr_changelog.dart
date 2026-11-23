@@ -10,6 +10,7 @@ import 'pr_changelog.dart';
 
 const _repository = 'leehack/llamadart';
 const _cutoverPath = 'tool/release/changelog_pr_cutover.json';
+const _resolutionsDir = 'tool/release/pr_resolutions';
 const _nativePins = 'lib/src/hook/native_release_pins.dart';
 const _bridgePins = 'tool/testing/check_webgpu_bridge_tag.dart';
 const _manifestPin = 'lib/src/web_setup/web_bridge_setup.dart';
@@ -21,6 +22,7 @@ const _archive = 'doc/changelog_archive.md';
 const _sizeLimit = 256 * 1024;
 
 final _sha = RegExp(r'^[a-f0-9]{40}$');
+final _sha256 = RegExp(r'^[a-f0-9]{64}$');
 final _prNumber = RegExp(r'\(#([1-9][0-9]*)\)$');
 final _reverts = RegExp(
   r'^(?:This reverts commit ([a-f0-9]{40})\.|Reverts-Commit: ([a-f0-9]{40}))$',
@@ -141,6 +143,8 @@ Future<String> runPrChangelogCollector(
       chain,
       window,
       activation,
+      through,
+      options.version,
       lookup ?? recoveryGithubGet,
     );
     final entries = await collector.collect();
@@ -519,6 +523,19 @@ class _Git {
   bool hasBlob(String sha, String path) =>
       run(['cat-file', '-e', '$sha:$path']).exitCode == 0;
 
+  ({String mode, String type})? treeEntry(String sha, String path) {
+    final row = text(['ls-tree', '-z', sha, '--', path]);
+    if (row.isEmpty) return null;
+    final fields = row.split('\t');
+    final header = fields.first.split(' ');
+    if (fields.length != 2 ||
+        fields.last != '$path\x00' ||
+        header.length != 3) {
+      throw FormatException('$sha: invalid Git tree entry for $path.');
+    }
+    return (mode: header[0], type: header[1]);
+  }
+
   String receiptBody(String input, String? candidate) {
     if (candidate == null) return input;
     final raw = text(['show', '-s', '--format=%B', candidate]);
@@ -697,6 +714,7 @@ class _Entry {
     this.targets = const [],
     this.failure,
     this.recovery,
+    this.resolution,
   });
 
   final String sha;
@@ -707,6 +725,7 @@ class _Entry {
   final List<String> targets;
   final String? failure;
   final String? recovery;
+  final String? resolution;
   late final String? sectionSha256 = switch (section) {
     final section? => _sectionDigest(section),
     null => null,
@@ -721,6 +740,7 @@ class _Entry {
       'disposition': disposition,
       if (failure != null) 'reason': failure,
       if (recovery != null) 'recovery': recovery,
+      if (resolution != null) 'resolution': resolution,
       if (section != null) ...{
         'sectionSha256': sectionSha256,
         if (section.reason != null) 'reason': section.reason,
@@ -774,6 +794,7 @@ class _Diagnostic {
 }
 
 typedef _Pull = ({int number, String mergeSha});
+typedef _PrResolution = ({String path, int pr, String sectionSha256});
 
 _Pull? _mergedMainPull(Object? data) {
   if (data
@@ -793,8 +814,15 @@ _Pull? _mergedMainPull(Object? data) {
 }
 
 class _Collector {
-  _Collector(this.git, this.chain, this.window, this.activation, this.lookup)
-    : positions = Map.fromEntries(
+  _Collector(
+    this.git,
+    this.chain,
+    this.window,
+    this.activation,
+    this.through,
+    this.version,
+    this.lookup,
+  ) : positions = Map.fromEntries(
         chain.indexed.map((entry) => MapEntry(entry.$2, entry.$1)),
       );
 
@@ -802,6 +830,8 @@ class _Collector {
   final List<String> chain;
   final List<String> window;
   final String activation;
+  final String through;
+  final String version;
   final GithubLookup lookup;
   final Map<String, int> positions;
   final diagnostics = <_Diagnostic>[];
@@ -871,21 +901,17 @@ class _Collector {
       if (ambiguity != null) _warn(sha, number, ambiguity);
       if (landed != null && number != null) {
         rows.add(_row(sha, number, 'git', landed, commit.trailers, seen));
-      } else if (number != null) {
-        try {
-          final (section, reason) = await _fallback(sha, number);
-          rows.add(
-            section != null
-                ? _row(sha, number, 'api', section, '', seen)
-                : _unresolved(sha, number, 'api', reason!),
-          );
-        } on FormatException catch (error) {
-          if (ambiguity == null) rethrow;
-          throw FormatException('${error.message} $ambiguity');
-        }
-      } else if (landed == null && _generatedDocs(sha, commit.subject)) {
+        continue;
+      }
+      if (number == null &&
+          landed == null &&
+          _generatedDocs(sha, commit.subject)) {
         rows.add(_Entry(sha, null, 'git', 'generated-docs'));
-      } else {
+        continue;
+      }
+      final resolution = number == null ? _readPrResolution(sha) : null;
+      final associatedNumber = number ?? resolution?.pr;
+      if (associatedNumber == null) {
         rows.add(
           _unresolved(
             sha,
@@ -894,6 +920,30 @@ class _Collector {
             'missing final PR number in commit subject.',
           ),
         );
+        continue;
+      }
+      try {
+        final (section, reason) = await _fallback(
+          sha,
+          associatedNumber,
+          resolution: resolution,
+        );
+        rows.add(
+          section != null
+              ? _row(
+                  sha,
+                  associatedNumber,
+                  'api',
+                  section,
+                  '',
+                  seen,
+                  resolution: resolution?.path,
+                )
+              : _unresolved(sha, associatedNumber, 'api', reason!),
+        );
+      } on FormatException catch (error) {
+        if (ambiguity == null) rethrow;
+        throw FormatException('${error.message} $ambiguity');
       }
     }
     _reviewGitHubReverts(rows);
@@ -907,8 +957,9 @@ class _Collector {
     String source,
     PrChangelog section,
     String trailers,
-    Map<int, _Entry> seen,
-  ) {
+    Map<int, _Entry> seen, {
+    String? resolution,
+  }) {
     final first = seen[number];
     final disposition = first != null
         ? 'duplicate-pr'
@@ -930,6 +981,7 @@ class _Collector {
       disposition,
       section: section,
       targets: targets,
+      resolution: resolution,
     );
     if (first == null) {
       seen[number] = row;
@@ -1061,7 +1113,58 @@ class _Collector {
         );
   }
 
-  Future<(PrChangelog?, String?)> _fallback(String sha, int number) async {
+  _PrResolution? _readPrResolution(String sha) {
+    final path = '$_resolutionsDir/$sha.json';
+    final entry = git.treeEntry(through, path);
+    if (entry == null) return null;
+    if (entry.mode != '100644' || entry.type != 'blob') {
+      throw FormatException(
+        '$sha: PR resolution must be a regular non-executable file.',
+      );
+    }
+    final source = git.blob(through, path);
+    final Object? record;
+    try {
+      record = jsonDecode(source);
+    } on FormatException {
+      throw FormatException('$sha: invalid PR resolution JSON in $path.');
+    }
+    if (record
+        case {
+          'version': final String recordVersion,
+          'sha': final String recordSha,
+          'pr': final int pr,
+          'sectionSha256': final String digest,
+        }
+        when coreReleaseVersion.hasMatch(recordVersion) &&
+            recordSha == sha &&
+            pr > 0 &&
+            _sha256.hasMatch(digest)) {
+      final canonical = jsonEncode({
+        'version': recordVersion,
+        'sha': recordSha,
+        'pr': pr,
+        'sectionSha256': digest,
+      });
+      if (source == '$canonical\n') {
+        if (recordVersion != version) {
+          throw FormatException(
+            '$sha: PR resolution version $recordVersion does not match $version.',
+          );
+        }
+        return (path: path, pr: pr, sectionSha256: digest);
+      }
+    }
+    throw FormatException(
+      '$sha: invalid canonical PR resolution record in $path.',
+    );
+  }
+
+  Future<(PrChangelog?, String?)> _fallback(
+    String sha,
+    int number, {
+    _PrResolution? resolution,
+  }) async {
     final candidates = await _associated(sha, number);
     final numbered = candidates.where((pull) => pull.number == number).toList();
     if (numbered.length > 1) {
@@ -1112,11 +1215,26 @@ class _Collector {
         '${_location(sha, pull.number)}: PR detail conflicts with the commit association.',
       );
     }
+    if (resolution != null &&
+        (detail is! Map ||
+            detail['commits'] is! int ||
+            detail['commits'] != 1)) {
+      throw FormatException(
+        '${_location(sha, pull.number)}: resolved PR must contain exactly one commit.',
+      );
+    }
     final body = detail is Map ? detail['body'] : null;
     final section = body is String ? _readChangelog(body) : null;
-    return section == null
-        ? (null, 'associated PR has no valid Changelog section.')
-        : (section, null);
+    if (section == null) {
+      return (null, 'associated PR has no valid Changelog section.');
+    }
+    if (resolution != null &&
+        _sectionDigest(section) != resolution.sectionSha256) {
+      throw FormatException(
+        '${_location(sha, pull.number)}: associated PR Changelog digest conflicts with the reviewed resolution.',
+      );
+    }
+    return (section, null);
   }
 
   Future<bool> _sharedAssociation(String sha, _Pull candidate) async {
