@@ -388,6 +388,7 @@ void main() {
       'BackendLoraSupport',
       'BackendModelFileTypeDiagnostics',
       'BackendModelFormatRouting',
+      'BackendUrlModelLoadCancellation',
       'BackendMultimodalSupport',
       'BackendNativeChatGeneration',
       'BackendNextTokenScoring',
