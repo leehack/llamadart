@@ -1,12 +1,10 @@
-## Unreleased
+## 3.11.0 - 2026-11-24
 
-- Report WebGPU or WASM for GGUF Web bridge labels in model inspection and the DartPad playground.
-- Update the DartPad playground to WebGPU bridge 0.1.94 and refresh the Gemma 4 E2B GGUF memory guidance.
-- Add a LiteRT-LM model selector (Qwen3 0.6B by default and Gemma 4 E2B with desktop WebGPU) to the DartPad playground.
-- Polish the DartPad playground: auto-scroll while streaming and clear the prompt on Send, bound local GGUF history to fit the 2,048-token context, isolate streaming/timer rebuilds, add an elapsed local load timer, improve narrow-pane layout and accessibility labels, and update Gemma 4 E2B memory guidance.
-- Add a GGUF model selector (SmolLM2 135M default, Qwen3.5 0.8B, and desktop-flagged Gemma 4 E2B) to the DartPad playground.
-- Add multi-turn chat, generation settings, live stats, and prompt presets to the DartPad playground, and use the automatic single-thread GGUF bridge default.
-- Migrate the DartPad playground from deprecated `package:flutter/material.dart` to `package:material_ui` and `package:flutter/widgets.dart`.
+- Add multi-turn chat, generation settings, live stats, prompt presets, and GGUF and LiteRT-LM model pickers to the DartPad playground. Use the automatic single-thread GGUF bridge default and bound local GGUF history to the 2,048-token context.
+- Improve the playground's streaming auto-scroll, prompt clearing, load timing, responsive layout, and accessibility.
+- Migrate the playground to `package:material_ui` and `package:flutter/widgets.dart`.
+- Update the playground to WebGPU bridge 0.1.94 and refresh the Gemma 4 E2B GGUF memory guidance.
+- Identify the active GGUF Web backend as WebGPU or WASM in model inspection and the playground.
 
 ## 3.10.0 - 2026-11-22
 

@@ -2932,8 +2932,8 @@ void main() {
         ]) {
           await engine.generate('hello', params: params).drain<void>();
         }
-        expect(fake.modes.whereType<int>().take(3), [7, 7, 11]);
-        expect(fake.modes.reversed.take(3).toList().reversed, [11, 11, 7]);
+        expect(fake.modes.skip(fake.modes.length - 3), [11, 11, 7]);
+        expect(fake.modes.take(3), [7, 7, 11]);
         await engine.unloadModel();
         await engine.loadModel(url);
         expect(

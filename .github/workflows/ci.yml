@@ -594,6 +594,7 @@ jobs:
         run: flutter pub get
 
       - name: Isolate system temp with a LiteRT-LM cache canary
+        id: litert_canary_seed
         shell: bash
         run: bash tool/ci/litert_lm_temp_canary.sh seed
 
@@ -601,7 +602,7 @@ jobs:
         run: xargs dart test -p vm -j 1 --exclude-tags local-only < tool/ci/markdown_test_suites.txt
 
       - name: Check the LiteRT-LM cache canary
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.litert_canary_seed.outcome == 'success' }}
         shell: bash
         run: bash tool/ci/litert_lm_temp_canary.sh check
 
@@ -675,6 +676,7 @@ jobs:
               "llama.cpp-$ref/models/templates"
 
       - name: Isolate system temp with a LiteRT-LM cache canary
+        id: litert_canary_seed
         shell: bash
         run: bash tool/ci/litert_lm_temp_canary.sh seed
 
@@ -703,7 +705,7 @@ jobs:
         run: dart test -p vm -j 1 --exclude-tags local-only ${{ needs.changes.outputs.coverage == 'true' && '--coverage=coverage' || '' }} --file-reporter=json:.dart_tool/test_events.jsonl ${{ steps.shard.outputs.files }}
 
       - name: Check the LiteRT-LM cache canary
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.litert_canary_seed.outcome == 'success' }}
         shell: bash
         run: bash tool/ci/litert_lm_temp_canary.sh check
 
@@ -1245,6 +1247,7 @@ jobs:
             --output .dart_tool/test_models/stories15M.gguf
 
       - name: Isolate system temp with a LiteRT-LM cache canary
+        id: litert_canary_seed
         shell: bash
         run: bash tool/ci/litert_lm_temp_canary.sh seed
 
@@ -1266,7 +1269,7 @@ jobs:
         run: dart test -p vm -j 1 --exclude-tags local-only --file-reporter=json:.dart_tool/test_events.jsonl ${{ steps.shard.outputs.files }}
 
       - name: Check the LiteRT-LM cache canary
-        if: ${{ !cancelled() && (steps.shard.outcome == 'success' || steps.shard.outcome == 'failure') }}
+        if: ${{ !cancelled() && steps.litert_canary_seed.outcome == 'success' }}
         shell: bash
         run: bash tool/ci/litert_lm_temp_canary.sh check
 
