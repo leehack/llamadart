@@ -102,6 +102,25 @@ final class LiteRtLmV1RuntimeClient implements LiteRtLmRuntimeClientContract {
       _hasSymbols(const ['litert_lm_conversation_render_message_to_string']);
 
   @override
+  String? get textLoraUnsupportedReason {
+    _live();
+    const abiSymbol = 'litert_lm_native_text_lora_abi_version';
+    const supportSymbol = 'litert_lm_native_supports_text_lora';
+    final library = _runtime._library;
+    for (final symbol in const [abiSymbol, supportSymbol]) {
+      if (!library.providesSymbol(symbol)) return 'is missing $symbol';
+    }
+    final abi = library.lookupFunction<Int32 Function(), int Function()>(
+      abiSymbol,
+    )();
+    if (abi != 1) return 'reports text LoRA probe ABI $abi';
+    final support = library.lookupFunction<Int32 Function(), int Function()>(
+      supportSymbol,
+    )();
+    return support == 1 ? null : 'reports text LoRA support $support';
+  }
+
+  @override
   int? resolveDefaultVisualTokenBudget(int preferredBudget) =>
       _runtime._inspectMediaSupport().visualBudget ? preferredBudget : null;
 

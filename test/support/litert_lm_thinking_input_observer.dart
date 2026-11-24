@@ -38,6 +38,8 @@ final class ThinkingInputObserver implements LiteRtLmRuntimeClientContract {
   @override
   bool get supportsMessageRendering => _client.supportsMessageRendering;
   @override
+  String? get textLoraUnsupportedReason => _client.textLoraUnsupportedReason;
+  @override
   int? resolveDefaultVisualTokenBudget(int preferredBudget) =>
       _client.resolveDefaultVisualTokenBudget(preferredBudget);
   @override

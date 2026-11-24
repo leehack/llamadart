@@ -380,7 +380,7 @@
       ],
       "exemption": {
         "id": "lora",
-        "reason": "Runtime adapter loading, scaling, removal and unsupported/version-skew paths need a dedicated LoRA pack. Current LiteRT-LM advanced engines reject text LoRA; the internal v1 refusal is covered by compiled native fixtures. Runtime support remains tracked at https://github.com/leehack/litert-lm-native/issues/99.",
+        "reason": "Runtime adapter loading, scaling and removal need a dedicated LoRA pack. Compiled native fixtures cover load-time LiteRT-LM text LoRA refusal for missing probe exports, probe ABI skew and the v0.20.0 support value of 0. Runtime support remains tracked at https://github.com/leehack/litert-lm-native/issues/99.",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },

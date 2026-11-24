@@ -11,10 +11,13 @@ final class LiteRtLmLegacyServiceClient
   LiteRtLmLegacyServiceClient(
     this._client, {
     int? Function(int)? resolveVisualTokenBudget,
-  }) : _resolveVisualTokenBudget = resolveVisualTokenBudget;
+    String? Function()? probeTextLora,
+  }) : _resolveVisualTokenBudget = resolveVisualTokenBudget,
+       _probeTextLora = probeTextLora;
 
   final LiteRtLmRuntimeClient _client;
   final int? Function(int)? _resolveVisualTokenBudget;
+  final String? Function()? _probeTextLora;
 
   @override
   void configureResponseThinkingTags({
@@ -37,6 +40,10 @@ final class LiteRtLmLegacyServiceClient
   bool get supportsJsonSchemaThinking => _client.supportsJsonSchemaThinking;
   @override
   bool get supportsMessageRendering => _client.supportsMessageRendering;
+  @override
+  String? get textLoraUnsupportedReason => _probeTextLora == null
+      ? 'uses the legacy C API without a text LoRA capability probe'
+      : _probeTextLora();
   @override
   int? resolveDefaultVisualTokenBudget(int preferredBudget) =>
       _resolveVisualTokenBudget == null

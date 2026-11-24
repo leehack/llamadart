@@ -19,7 +19,7 @@ LiteRtLmRuntimeClient createLiteRtLmSelectedRuntimeClient({
   return client;
 }
 
-/// Internal service adapter whose visual hints follow the selected runtime.
+/// Internal service adapter whose capability probes follow the selected runtime.
 LiteRtLmRuntimeClientContract createLiteRtLmSelectedServiceClient({
   String? libraryPath,
   bool allowV1 = _liteRtLmV1ProductionSelection,
@@ -36,6 +36,7 @@ LiteRtLmRuntimeClientContract createLiteRtLmSelectedServiceClient({
     client,
     resolveVisualTokenBudget: (preferred) =>
         client._runtime.resolveDefaultVisualTokenBudget(preferred),
+    probeTextLora: () => client._runtime.textLoraUnsupportedReason,
   );
 }
 

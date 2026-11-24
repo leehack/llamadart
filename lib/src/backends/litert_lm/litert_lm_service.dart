@@ -2076,16 +2076,33 @@ class LiteRtLmService {
       if (params.loras.length > 1) 'loras.length=${params.loras.length}',
       if (params.loras.any((lora) => lora.scale != 1.0)) 'loras.scale',
     ];
-    if (unsupported.isEmpty) {
-      return;
+    if (unsupported.isNotEmpty) {
+      throw LlamaUnsupportedException(
+        unsupportedModelParamsMessage(
+          unsupported,
+          LlamaRuntime.liteRtLm,
+          web: false,
+        ),
+      );
     }
-    throw LlamaUnsupportedException(
-      unsupportedModelParamsMessage(
-        unsupported,
-        LlamaRuntime.liteRtLm,
-        web: false,
-      ),
-    );
+    if (params.loras.isNotEmpty) {
+      final activeClient = _client;
+      final client = activeClient ?? _clientFactory();
+      try {
+        final reason = client.textLoraUnsupportedReason;
+        if (reason != null) {
+          throw LlamaUnsupportedException(
+            'LiteRT-LM text LoRA is unavailable because the loaded runtime '
+            '$reason. It requires a compatible litert-lm-native runtime with '
+            'text LoRA probe ABI 1 (introduced in v0.20.0) reporting support 1. '
+            'Use a compatible llama.cpp model and adapter. '
+            'See litert-lm-native#99 and llamadart#264.',
+          );
+        }
+      } finally {
+        if (activeClient == null) client.dispose();
+      }
+    }
   }
 
   String? _activeTextLoraPath() {

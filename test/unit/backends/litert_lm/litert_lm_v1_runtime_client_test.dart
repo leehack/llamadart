@@ -21,6 +21,7 @@ void main() {
   late DynamicLibrary library;
   late String libraryPath;
   final variants = <String, DynamicLibrary>{};
+  final variantPaths = <String, String>{};
   int nativeInt(String name) =>
       library.lookupFunction<Int Function(), int Function()>('fixture_$name')();
   void set(String name, int value) =>
@@ -99,12 +100,19 @@ void main() {
     ]);
     expect(result.exitCode, 0, reason: '${result.stderr}');
     library = DynamicLibrary.open(libraryPath);
-    for (final entry in <String, String>{
-      'callback': 'PROXY_ABI=1',
-      'allocation': 'ALLOCATION_FAILURE_ABI=2',
-      'finish': 'FINISH_ABI=0',
-      'penalty': 'OMIT_TURN_PRESENCE',
-      'logging': 'OMIT_LOG_LEVEL',
+    for (final entry in <String, List<String>>{
+      'callback': ['PROXY_ABI=1'],
+      'allocation': ['ALLOCATION_FAILURE_ABI=2'],
+      'finish': ['FINISH_ABI=0'],
+      'penalty': ['OMIT_TURN_PRESENCE'],
+      'logging': ['OMIT_LOG_LEVEL'],
+      'lora-abi-only': ['TEXT_LORA_ABI=1'],
+      'lora-support-only': ['TEXT_LORA_SUPPORT=1'],
+      'lora-abi-0': ['TEXT_LORA_ABI=0', 'TEXT_LORA_SUPPORT=1'],
+      'lora-abi-2': ['TEXT_LORA_ABI=2', 'TEXT_LORA_SUPPORT=1'],
+      'lora-support-0': ['TEXT_LORA_ABI=1', 'TEXT_LORA_SUPPORT=0'],
+      'lora-support-2': ['TEXT_LORA_ABI=1', 'TEXT_LORA_SUPPORT=2'],
+      'lora-supported': ['TEXT_LORA_ABI=1', 'TEXT_LORA_SUPPORT=1'],
     }.entries) {
       final path =
           '${directory.path}/${entry.key}.${Platform.isMacOS ? 'dylib' : 'so'}';
@@ -112,13 +120,14 @@ void main() {
         '-shared',
         '-fPIC',
         '-pthread',
-        '-D${entry.value}',
+        for (final define in entry.value) '-D$define',
         'test/fixtures/litert_lm/c_api_v1_client.c',
         '-o',
         path,
       ]);
       expect(result.exitCode, 0, reason: '${result.stderr}');
       variants[entry.key] = DynamicLibrary.open(path);
+      variantPaths[entry.key] = path;
     }
   });
   tearDownAll(() => directory.delete(recursive: true));
@@ -723,6 +732,96 @@ void main() {
       expect(adapter.nativeSettlement, LiteRtLmNativeSettlement.settled);
     },
   );
+  group('text LoRA load probe', () {
+    const plain = ModelParams(preferredBackend: GpuBackend.cpu);
+    const adapted = ModelParams(
+      preferredBackend: GpuBackend.cpu,
+      loras: [LoraAdapterConfig(path: '/private/adapter.lora')],
+    );
+    for (final (variant, condition, supportCalls) in const [
+      // The shipped v0.19.1-7 library predates both probe exports.
+      (null, 'missing litert_lm_native_text_lora_abi_version', 0),
+      ('lora-abi-only', 'missing litert_lm_native_supports_text_lora', 0),
+      (
+        'lora-support-only',
+        'missing litert_lm_native_text_lora_abi_version',
+        0,
+      ),
+      ('lora-abi-0', 'reports text LoRA probe ABI 0', 0),
+      ('lora-abi-2', 'reports text LoRA probe ABI 2', 0),
+      // The v0.20.0 build exports ABI 1 and reports support 0.
+      ('lora-support-0', 'reports text LoRA support 0', 1),
+      ('lora-support-2', 'reports text LoRA support 2', 1),
+    ]) {
+      test(
+        'preserves the loaded model on ${variant ?? 'lora-no-probes'}',
+        () async {
+          final selected = variants[variant] ?? library;
+          final calls = selected.lookupFunction<Int Function(), int Function()>(
+            'fixture_text_lora_support_calls',
+          );
+          final before = calls();
+          final service = LiteRtLmService(
+            runtimeClientFactory: () => createLiteRtLmSelectedServiceClient(
+              libraryPath: variantPaths[variant] ?? libraryPath,
+            ),
+            linkParentDirectory: directory,
+            useTempCacheDir: false,
+          );
+          addTearDown(service.dispose);
+          final model = File('${directory.path}/lora.litertlm')
+            ..writeAsStringSync('fake model');
+          final modelHandle = await service.loadModel(model.path, plain);
+          final contextHandle = service.createContext(modelHandle, plain);
+          expect(calls(), before);
+
+          await expectLater(
+            service.loadModel(model.path, adapted),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'capability and runtime condition',
+                allOf(
+                  contains('LiteRT-LM text LoRA'),
+                  contains(condition),
+                  contains('v0.20.0'),
+                  contains('ABI 1'),
+                  contains('litert-lm-native#99'),
+                  contains('llamadart#264'),
+                  isNot(contains('/private/')),
+                ),
+              ),
+            ),
+          );
+          expect(calls(), before + supportCalls);
+          expect(service.getContextSize(contextHandle), plain.contextSize);
+          service.freeModel(modelHandle);
+        },
+      );
+    }
+
+    test('admits probe ABI 1 with support 1 at load', () async {
+      final selected = variants['lora-supported']!;
+      final calls = selected.lookupFunction<Int Function(), int Function()>(
+        'fixture_text_lora_support_calls',
+      );
+      final before = calls();
+      final service = LiteRtLmService(
+        runtimeClientFactory: () => createLiteRtLmSelectedServiceClient(
+          libraryPath: variantPaths['lora-supported']!,
+        ),
+        linkParentDirectory: directory,
+        useTempCacheDir: false,
+      );
+      addTearDown(service.dispose);
+      final model = File('${directory.path}/lora.litertlm')
+        ..writeAsStringSync('fake model');
+
+      final modelHandle = await service.loadModel(model.path, adapted);
+      expect(calls(), before + 1);
+      service.freeModel(modelHandle);
+    });
+  });
   test(
     'real service injection reaches v1 text generation, limits and metrics',
     () async {

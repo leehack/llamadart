@@ -46,6 +46,10 @@ abstract interface class LiteRtLmRuntimeClientContract {
   /// Whether native message rendering is available on the selected runtime.
   bool get supportsMessageRendering;
 
+  /// Why the selected runtime's text LoRA probe refuses admission, or null
+  /// when the probe reports support.
+  String? get textLoraUnsupportedReason;
+
   /// Resolves the service's automatic image-preprocessing hint for this model.
   /// This is separate from an explicitly requested per-send visual constraint.
   int? resolveDefaultVisualTokenBudget(int preferredBudget);

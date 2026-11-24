@@ -7483,7 +7483,6 @@ void main() {
       liteRtLmPrefillChunkSize: 128,
       liteRtLmParallelFileSectionLoading: false,
       liteRtLmDispatchLibDir: '/vendor/litert-dispatch',
-      loras: [LoraAdapterConfig(path: '/tmp/adapter.lora')],
       numberOfThreads: 4,
     );
 
@@ -7511,7 +7510,6 @@ void main() {
       expect(fakeClient.lastPrefillChunkSize, 128);
       expect(fakeClient.lastParallelFileSectionLoading, isFalse);
       expect(fakeClient.lastDispatchLibDir, '/vendor/litert-dispatch');
-      expect(fakeClient.lastLoraPath, '/tmp/adapter.lora');
       expect(fakeClient.lastNumberOfThreads, 4);
     } finally {
       service.dispose();
@@ -9256,7 +9254,6 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   double? lastTopP;
   int? lastSeed;
   bool? lastNpuBackend;
-  String? lastLoraPath;
   String? lastSystemMessage;
   List<Map<String, dynamic>>? lastMessages;
   List<Map<String, dynamic>>? lastTools;
@@ -9389,7 +9386,6 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     lastTopP = topP;
     lastSeed = seed;
     lastNpuBackend = npuBackend;
-    lastLoraPath = loraPath;
     lastSystemMessage = systemMessage;
     lastPromptTemplate = promptTemplate;
     conversations.add((
