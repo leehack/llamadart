@@ -487,11 +487,8 @@ void main() {
       expect(runtime.definition, isNull);
       expect(find.text('Load Gemma 4 E2B to begin.'), findsOneWidget);
       expect(
-        find.text(
-          'Large download (~3 GB; can take several minutes). Measured ~11 GB '
-          'peak browser memory — requires desktop Chrome with WebAssembly '
-          'memory64 and 16+ GB RAM recommended; not supported on Safari or '
-          'mobile browsers.',
+        find.textContaining(
+          'Desktop Chrome with WebAssembly memory64 is required',
         ),
         findsOneWidget,
       );
@@ -959,11 +956,12 @@ void main() {
 
       await _selectLocalModel(tester, 'Gemma 4 E2B (desktop Chrome, ~3 GB)');
       expect(tester.takeException(), isNull);
+      expect(find.textContaining('~4–6 GiB peak browser RSS'), findsOneWidget);
+      expect(find.textContaining('~3.5 GiB steady'), findsOneWidget);
       expect(
-        find.textContaining('Measured ~11 GB peak browser memory'),
+        find.textContaining('Chrome 158 on Apple silicon macOS'),
         findsOneWidget,
       );
-      expect(find.textContaining('16+ GB RAM recommended'), findsOneWidget);
       expect(
         tester.getSize(find.byType(ListView)).height,
         greaterThanOrEqualTo(200),

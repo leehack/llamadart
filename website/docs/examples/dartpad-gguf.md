@@ -10,12 +10,16 @@ The example is available starting in 0.20.7.
 
 Choose a model from the **Model** selector and select **Load** to download it:
 **SmolLM2 135M** (~105 MB, default), **Qwen3.5 0.8B** (~533 MB, thinking
-disabled), or **Gemma 4 E2B** (~3 GB; download can take several minutes,
-measured ~11 GB peak browser memory — desktop Chrome with WebAssembly `memory64`
-and 16+ GB RAM recommended, flagged with a pre-download warning, and not
-supported on Safari or mobile browsers). Switching models disposes the active
-engine, clears the conversation, and waits for **Load**. Enter a prompt or
-choose a preset and select **Send**. The app streams a reply, and the model gets
+disabled), or **Gemma 4 E2B** (~3 GB). Gemma can take several minutes to download
+and requires desktop Chrome with WebAssembly `memory64`. Safari and mobile
+browsers are unsupported. The lower memory usage needs bridge assets v0.1.94+
+and automatic staging. Gemma 4 E2B Q4_K_S used ~3.5 GiB steady and ~4–6 GiB
+peak browser RSS in Chrome 158 on Apple silicon macOS. Usage varies by device
+and can be higher on older runtimes.
+
+Switching models disposes the active engine, clears the conversation, and waits
+for **Load**. Enter a prompt or choose a preset and select **Send**. The app
+streams a reply, and the model gets
 the conversation history on each follow-up. **Stop** keeps the partial reply,
 including text flushed during cancellation. **Clear** starts a new conversation.
 

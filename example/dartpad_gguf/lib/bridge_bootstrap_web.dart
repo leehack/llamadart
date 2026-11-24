@@ -3,7 +3,7 @@ import 'dart:js_interop_unsafe';
 
 import 'package:llamadart/llamadart.dart';
 
-const String defaultBridgeAssetsTag = 'v0.1.93';
+const String defaultBridgeAssetsTag = 'v0.1.94';
 final _assetBase =
     'https://cdn.jsdelivr.net/npm/llama-web-bridge@'
     '${defaultBridgeAssetsTag.substring(1)}/dist/';

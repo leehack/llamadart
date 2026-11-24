@@ -62,10 +62,12 @@ const ggufModels = <GgufModelOption>[
     contextSize: 2048,
     note: 'Higher quality; thinking disabled for quick replies.',
     warning:
-        'Large download (~3 GB) — can take several minutes. Measured ~11 GB '
-        'peak browser memory; requires desktop Chrome with WebAssembly '
-        'memory64 and 16+ GB RAM recommended. Not supported on Safari or '
-        'mobile browsers.',
+        'Large download (~3 GB). Allow several minutes. Desktop Chrome '
+        'with WebAssembly memory64 is required. With the updated bridge and '
+        'automatic staging, Gemma 4 E2B Q4_K_S used ~3.5 GiB steady and '
+        '~4–6 GiB peak browser RSS in Chrome 158 on Apple silicon macOS. '
+        'Usage varies by device and can be higher on older runtimes. '
+        'Safari and mobile browsers are unsupported.',
   ),
 ];
 
