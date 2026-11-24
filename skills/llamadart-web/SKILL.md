@@ -109,9 +109,9 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   private-mode policy. URLs with userinfo, a fragment, or credential-like query
   keys (`token`, `sig`, `key`, `X-Amz-*`, ...) are loaded without a persistent
   cache entry. Projector loads do not use the model cache.
-- Pass `ModelParams.modelBytesHint` (web-only) when the size is known: at 2 GiB
-  or more llamadart picks the memory64 core up front instead of retrying after
-  an out-of-memory failure. `preferMemory64: true`/`false` forces the choice.
+- Pass `ModelParams.modelBytesHint` (web-only) as the total GGUF size in bytes
+  across all shards. At 2 GiB or more llamadart picks the memory64 core up
+  front. `preferMemory64: true`/`false` forces the choice.
   Both are GGUF-on-Web only: native and LiteRT-LM loads throw
   `LlamaUnsupportedException` when either is set, so set them only under
   `kIsWeb` for a GGUF model.
@@ -119,7 +119,10 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   on Chromium with a confirmed memory64 core (v0.1.93+ assets and a positive
   `modelBytesHint` up to 4 GiB). On a confirmed wasm32 single-thread core,
   hints above 960 MiB through 3.75 GiB use staging with capable assets.
-  Larger hints on that core fail before download. Other loads follow the
+  Larger total hints on that core fail before download. Sharding can reduce
+  per-file or tensor allocations, and the 3.75 GiB check still applies to the
+  total hint. If `preferMemory64` is `false`, unset it or set it to `true` on
+  a browser with memory64, or choose a smaller GGUF. Other loads follow the
   bridge policy, including staging on supported WebKit cores. Set
   `true` to require it with matching v0.1.92+ assets or `false` to opt out.
   Staging reduces Wasm memory pressure by holding downloads in JavaScript

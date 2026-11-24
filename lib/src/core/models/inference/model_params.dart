@@ -585,8 +585,14 @@ class ModelParams {
   /// reject a non-null value.
   final bool? preferMemory64;
 
-  /// Web/WebGPU only: approximate model size in bytes, used for memory64 core
-  /// selection and automatic [jsBackedModelStaging]. `null` when unknown.
+  /// Web/WebGPU only: approximate total GGUF size in bytes, summed across all
+  /// shards. Used for memory64 core selection and automatic
+  /// [jsBackedModelStaging]. `null` when unknown.
+  ///
+  /// Sharding can help when it reduces per-file or tensor allocations. A total
+  /// hint above 3.75 GiB still fails on the wasm32 single-thread core when
+  /// automatic staging applies.
+  ///
   /// Native llama.cpp and LiteRT-LM reject a non-null value.
   final int? modelBytesHint;
 
