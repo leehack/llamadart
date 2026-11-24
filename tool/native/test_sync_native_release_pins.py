@@ -4343,6 +4343,34 @@ class StableDiffusionPinSyncTest(unittest.TestCase):
             self.pins.read_text(encoding="utf-8"),
         )
 
+    def test_rejects_renamed_runtime_primary_library_before_writing(self) -> None:
+        original = self.pins.read_bytes()
+        for target, renamed in (
+            ("windows-x64", "renamed.dll"),
+            ("windows-x64-vulkan", "renamed.dll"),
+            ("android-arm64", "librenamed.so"),
+            ("linux-x64", "librenamed.so"),
+            ("macos-arm64", "librenamed.dylib"),
+        ):
+            with self.subTest(target=target):
+                manifest, release = _sd_fixture("v0.2.0", SD_BUNDLES)
+                artifact = next(
+                    item for item in manifest["artifacts"]
+                    if item["kind"] == "runtime" and item["target"] == target
+                )
+                artifact["library"] = renamed
+                if target.startswith("windows-"):
+                    artifact["libraries"] = [renamed, "msvcp140.dll"]
+
+                result = self.run_sync("v0.2.0", manifest, release)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn(
+                    f"stable_diffusion {target} primary library must be "
+                    f"{SD_BUNDLES[target]}",
+                    result.stderr,
+                )
+                self.assertEqual(self.pins.read_bytes(), original)
+
     def test_rejects_malformed_windows_runtime_libraries_before_writing(self) -> None:
         original = self.pins.read_bytes()
         for libraries, reason in (
