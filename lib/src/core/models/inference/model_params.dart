@@ -585,18 +585,20 @@ class ModelParams {
   /// reject a non-null value.
   final bool? preferMemory64;
 
-  /// Web/WebGPU only: approximate model size in bytes, used to decide whether
-  /// to load the mem64 core up front (instead of waiting for an out-of-memory
-  /// failure and retrying). `null` when unknown. Native llama.cpp and
-  /// LiteRT-LM reject a non-null value.
+  /// Web/WebGPU only: approximate model size in bytes, used for memory64 core
+  /// selection and automatic [jsBackedModelStaging]. `null` when unknown.
+  /// Native llama.cpp and LiteRT-LM reject a non-null value.
   final int? modelBytesHint;
 
   /// Controls JavaScript-backed GGUF and projector staging on Web llama.cpp.
   ///
   /// `null` enables staging on Chromium when v0.1.93+ bridge assets confirm
   /// a memory64 core, [modelBytesHint] is positive and at most 4 GiB, and
-  /// fetch-backed loading is not opted in. Other loads follow the bridge's
-  /// browser policy, including automatic staging on supported WebKit cores.
+  /// fetch-backed loading is not opted in. On a confirmed wasm32 single-thread
+  /// core, a size hint above 960 MiB and up to 3.75 GiB enables staging with
+  /// staging-capable assets. A larger hint throws [LlamaUnsupportedException]
+  /// before downloading. Other loads follow the bridge's browser policy,
+  /// including automatic staging on supported WebKit cores.
   /// `true` requires staging-capable bridge assets
   /// (v0.1.92+), worker and Wasm core, and prohibits fetch-backed model loading.
   /// `false` explicitly disables JavaScript-backed staging.

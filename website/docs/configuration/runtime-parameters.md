@@ -259,7 +259,9 @@ const params = LlamaCppModelParams(
 - `jsBackedModelStaging` (Web llama.cpp only) defaults to JavaScript-backed
   staging on Chromium with a confirmed memory64 core, a positive
   `modelBytesHint` up to 4 GiB, v0.1.93+ assets, and no fetch-backed loading
-  opt-in. Other loads follow the bridge's browser policy.
+  opt-in. On confirmed wasm32 single-thread cores, hints above 960 MiB
+  through 3.75 GiB enable staging with capable assets. Larger hints on that
+  core fail before download. Other loads follow the bridge's browser policy.
   `true` requires staging on v0.1.92+ assets.
   `false` disables it, including on WebKit. Native llama.cpp and LiteRT-LM
   reject explicit values. See

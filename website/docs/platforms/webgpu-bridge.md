@@ -278,10 +278,15 @@ Use `ModelParams.jsBackedModelStaging` or `LlamaCppModelParams.jsBackedModelStag
   v0.1.93+ assets confirm a memory64 core and you supply a positive
   `modelBytesHint` of at most 4 GiB. Both single-thread and threaded cores
   support this default with or without Cache Storage. Use the actual GGUF
-  byte size when available. Chromium follows the bridge's policy for
-  wasm32, unknown or larger model sizes, unsupported assets, and explicit
-  fetch-backed loading opt-in. Supported WebKit cores retain the bridge's
-  automatic staging policy.
+  byte size when available. On a confirmed wasm32 single-thread core with
+  staging-capable assets, hints above 960 MiB through 3.75 GiB also enable
+  JavaScript-backed staging. A hint above 3.75 GiB on that core raises
+  `LlamaUnsupportedException` before downloading. Use a browser with
+  memory64 or a smaller or suitably sharded GGUF. These thresholds guide
+  staging. Actual load capacity also depends on tensor sizes, memory and
+  context settings.
+  Other loads use the bridge's browser policy, including automatic staging on
+  supported WebKit cores.
 - Pass `true` to require JavaScript-backed staging for the GGUF and projector.
   This needs matching v0.1.92+ bridge and worker scripts and a core with
   staging ABI v3 or later.

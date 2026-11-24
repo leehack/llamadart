@@ -418,7 +418,7 @@ void main() {
 
       expect(find.text(_gemma4Item), findsOneWidget);
       expect(find.textContaining('Large download (~3 GB)'), findsOneWidget);
-      expect(find.textContaining('memory64'), findsOneWidget);
+      expect(find.textContaining('Use desktop Chrome'), findsOneWidget);
       expect(find.textContaining('Safari'), findsOneWidget);
       expect(engine.source, isNull);
 

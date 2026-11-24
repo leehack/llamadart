@@ -70,11 +70,9 @@ const ggufModels = <LocalModelOption>[
     contextSize: 2048,
     note: 'Higher quality responses; thinking disabled for quick replies.',
     warning:
-        'Large download (~3 GB). Allow several minutes. Desktop Chrome '
-        'with WebAssembly memory64 is required. With the updated bridge and '
-        'automatic staging, Gemma 4 E2B Q4_K_S used ~3.5 GiB steady and '
-        '~4–6 GiB peak browser RSS in Chrome 158 on Apple silicon macOS. '
-        'Usage varies by device and can be higher on older runtimes. '
+        'Large download (~3 GB). Allow several minutes. Use desktop Chrome '
+        'and budget several gigabytes of browser memory. '
+        'Usage varies by device and WebAssembly core. '
         'Safari and mobile browsers are unsupported.',
   ),
 ];
