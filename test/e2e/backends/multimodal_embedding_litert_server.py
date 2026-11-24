@@ -71,12 +71,15 @@ def main():
                 pass
 
         def do_POST(self):
-            if self.path != '/results' or int(self.headers.get('Content-Length', '0')) > 1024 * 1024:
+            route = re.fullmatch(r'/results(?:/(cpu|gpu))?', self.path)
+            if route is None or int(self.headers.get('Content-Length', '0')) > 1024 * 1024:
                 self.send_error(400)
                 return
             body = self.rfile.read(int(self.headers['Content-Length']))
             values = json.loads(body)
-            (output / 'web.json').write_text(json.dumps(values))
+            backend = route.group(1)
+            receipt = f'web-{backend}.json' if backend else 'web.json'
+            (output / receipt).write_text(json.dumps(values))
             self.send_response(204)
             self.end_headers()
 

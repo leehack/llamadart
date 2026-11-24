@@ -162,6 +162,30 @@ further from native than on `0.18.0`:
 `Backend.CPU=3` engine creation still fails with the same `Failed to get
 external weight for buffer id 2147483863 (tensor 1451)`.
 
+### Web comparison on `@litert-lm/core@0.20.0`
+
+The maintained local-only diagnostic ran in headed Chrome 158.0.8127.88 on an
+Apple M4 Max (WebGPU adapter `apple` / `metal-3`). Both routes created an engine
+with CPU vision/audio processors and produced 768-dimensional vectors on the
+same model bytes. The text encoder ran on `Backend.CPU=2` or `Backend.GPU=3`.
+The reference uses native CPU vectors on the same model and inputs from the
+local v0.20.0 build of
+[litert-lm-native#127](https://github.com/leehack/litert-lm-native/pull/127)
+(`a550b0a`).
+
+| Input | Web CPU cosine | Relative L2 | WebGPU cosine | Relative L2 |
+| --- | ---: | ---: | ---: | ---: |
+| `hello world` | 1.00000000 | 0.00001% | 0.99814153 | 6.10% |
+| `The quick brown fox jumps over the lazy dog.` | 0.99906059 | 4.33% | 0.99180168 | 12.80% |
+| Black PNG | 0.99884418 | 4.81% | 0.99850686 | 5.46% |
+| Checkerboard PNG | 0.99901968 | 4.43% | 0.99812088 | 6.13% |
+| One-second 16 kHz silence | 0.99611501 | 8.81% | 0.99529214 | 9.70% |
+| One-second 440 Hz tone | 0.99686971 | 7.91% | 0.99636927 | 8.52% |
+| Interleaved text/image/audio | 0.99879385 | 4.91% | 0.99733360 | 7.30% |
+
+The gate requires cosine **>= 0.9998** and relative L2 **< 2%** for every input.
+Web CPU missed it on six of seven inputs. WebGPU missed it on all seven.
+
 ## Unsupported paths and upstream gaps
 
 - **Android x86_64:** fails at load, before any native call, whichever runtime
@@ -187,12 +211,11 @@ external weight for buffer id 2147483863 (tensor 1451)`.
   WebGPU accelerator, and EmbeddingGemma 2 still crashed on GPU there. No later
   runtime has been requalified on GPU; no unsafe accelerator call or silent CPU
   fallback is made. NPU embeddings are unqualified.
-- **Web CPU host weights:** fail before I/O. The pinned source streams text-encoder
-  weights only for WebGPU ([upstream lines 794–818](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/runtime/core/embedding_engine_impl.cc#L794-L818)).
-  The upstream-only CPU creation error is `Failed to get external weight for
-  buffer id 2147483863 (tensor 1451)`.
-- **WebGPU:** fail before I/O because the tables above miss the parity gate.
-  No modality is advertised, including text, despite successful vector production.
+- **Web CPU and WebGPU:** llamadart refuses embedding loads before I/O
+  because both routes miss the native CPU parity gate. Upstream fixed
+  Web CPU external-weight loading in
+  [`3e24a71425`](https://github.com/google-ai-edge/LiteRT-LM/commit/3e24a71425),
+  included in `@litert-lm/core@0.20.0`.
 - **Token-count API:** the [C API](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/c/embedding_engine.h)
   and pinned Web API expose compute but no embedding token-count preflight.
   A future API could avoid wasted work in
@@ -245,5 +268,7 @@ In another terminal use a task-local `CHROME_EXECUTABLE` wrapper which removes
 dart test -p chrome --run-skipped test/e2e/backends/multimodal_embedding_litert_web_e2e_test.dart
 ```
 
-This diagnostic is expected to fail the parity gate on the pinned package and
-must stay local-only. It persists every vector before asserting thresholds.
+The local-only diagnostic runs Web CPU and WebGPU separately and writes
+`web-cpu.json` and `web-gpu.json` before asserting parity. Both routes are
+expected to fail the gate on the pinned package. Use a `native-cpu.json` with
+all seven inputs from the native reference you intend to compare.

@@ -1361,6 +1361,7 @@ void main() {
       'test/e2e/backends/litert_lm_text_history_web_e2e_test.dart',
       'test/e2e/backends/litert_lm_tool_calling_web_e2e_test.dart',
       'test/e2e/backends/litert_lm_truncation_web_e2e_test.dart',
+      'test/e2e/backends/multimodal_embedding_litert_web_e2e_test.dart',
       'tool/testing/playwright_chat_app_real_model_smoke.py',
       'tool/testing/playwright_chat_app_benchmark.py',
     ]) {

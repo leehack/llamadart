@@ -104,7 +104,7 @@ void main() {
         isA<LlamaUnsupportedException>().having(
           (e) => e.message,
           'condition',
-          contains('Failed to get external weight'),
+          contains('LiteRT-LM Web CPU embeddings'),
         ),
       ),
     );
@@ -128,10 +128,10 @@ void main() {
             isA<LlamaUnsupportedException>().having(
               (e) => e.message,
               'condition',
-              contains(
-                device == ComputeDevice.cpu
-                    ? 'Failed to get external weight'
-                    : 'parity',
+              allOf(
+                contains(device == ComputeDevice.cpu ? 'Web CPU' : 'WebGPU'),
+                contains('@litert-lm/core@0.20.0'),
+                contains('missed native CPU parity'),
               ),
             ),
           ),

@@ -2182,15 +2182,20 @@ extension type _LiteRtLmStreamReadResult._(JSObject _) implements JSObject {
 
 /// Throws [LlamaUnsupportedException] for what a LiteRT-LM Web load rejects
 /// from [params] alone, before it fetches the model: an NPU, and the
-/// embedding engine, pending Web qualification.
+/// embedding engine, which missed native CPU parity on both Web backends in
+/// `@litert-lm/core@0.20.0`.
 /// [preferredBackend] is the backend's deprecated preferred backend.
 void liteRtLmWebCheckLoad(ModelParams params, {String? preferredBackend}) {
   if (params.liteRtLmEmbeddingEngine) {
+    final device =
+        liteRtLmWebBackendName(params, preferredBackend: preferredBackend) ==
+            'cpu'
+        ? 'Web CPU'
+        : 'WebGPU';
     throw LlamaUnsupportedException(
-      liteRtLmWebBackendName(params, preferredBackend: preferredBackend) ==
-              'cpu'
-          ? 'LiteRT-LM Web CPU embeddings are unavailable. Prior qualification failed to load external text-encoder weights (Failed to get external weight).'
-          : 'LiteRT-LM WebGPU embeddings are unavailable. Prior EmbeddingGemma-2 qualification missed native CPU parity (cosine >= 0.9998 and relative L2 < 2%).',
+      'LiteRT-LM $device embeddings are unavailable in @litert-lm/core@0.20.0: '
+      'EmbeddingGemma-2 qualification missed native CPU parity '
+      '(cosine >= 0.9998 and relative L2 < 2%). A qualified runtime is required.',
     );
   }
   _liteRtLmWebDeviceBackendName(params, preferredBackend);
