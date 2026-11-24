@@ -1388,7 +1388,7 @@ unsupported roles/options.
 `litert-lm-web-tool-calling` runs the same local server and Chrome
 configuration with `test/e2e/backends/litert_lm_tool_calling_web_e2e_test.dart`.
 It downloads no model. The published runtime alone must parse a `get_weather`
-call into `tool_calls`, emit none without tools, and answer from a 0.19.0 tool
+call into `tool_calls`, emit none without tools, and answer from a tool
 message; the adapter must then return that call from `ChatSession.create`,
 answer from the `LlamaToolResultContent`, and pass cancel-after-first-chunk,
 reset and reuse. Dry-run before execution:

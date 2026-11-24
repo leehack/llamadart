@@ -311,6 +311,15 @@ def _require_visible_page(session: SafariSession) -> None:
         )
 
 
+def reset_litert_generation_state(page) -> None:
+    # The model-load capability probe sends turns, including a rejected prompt.
+    page.evaluate("""() => {
+      window.__llamadartRealLiteRtLmLastResponse = null;
+      window.__llamadartRealLiteRtLmLastError = null;
+      window.__llamadartRealLiteRtLmLastChunks = [];
+    }""")
+
+
 def run_webdriver(
     args, init_script: str, *, started_at: float, remote_fetch_mode: str
 ) -> int:
@@ -345,6 +354,8 @@ def run_webdriver(
             body_tail=body_after_load[-500:],
         )
 
+        if args.response_source in ("litert", "auto"):
+            reset_litert_generation_state(page)
         session.click(_find_semantics(session, "textarea, input", "", 30))
         session.type_text(args.prompt)
         send_button = _find_semantics(
@@ -1004,7 +1015,7 @@ def main() -> int:
             typeof window.__llamadartLiteRtLmModuleUrl === 'string' &&
             window.__llamadartLiteRtLmModuleUrl.length > 0
               ? window.__llamadartLiteRtLmModuleUrl
-              : 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm';
+              : 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm';
           window.__llamadartLiteRtLmOriginalModuleUrl = originalModuleUrl;
           const moduleSource = [
             'import * as mod from ' + JSON.stringify(originalModuleUrl) + ';',
@@ -1221,6 +1232,8 @@ def main() -> int:
             body_tail=body_after_load[-500:],
         )
 
+        if args.response_source in ("litert", "auto"):
+            reset_litert_generation_state(page)
         if args.speech_audio_path:
             attachment_button = page.get_by_role("button", name="Add attachment")
             attachment_box = attachment_button.bounding_box()

@@ -250,7 +250,7 @@ description: >-
   reports why generation stopped; a reply cut off at `maxTokens` returns
   `LlamaToolLoopStopReason.truncated` and runs no tools. Native LiteRT-LM
   reports it from litert-lm-native `v0.18.0-3` (the default pin does).
-  LiteRT-LM Web infers it from `@litert-lm/core@0.19.0` token counts through
+  LiteRT-LM Web infers it from `@litert-lm/core@0.20.0` token counts through
   `LlamaBackend.withTextHistory()` once a load probe passes; a reply ending
   exactly at `maxTokens` also counts as truncated, so leave headroom. Older
   native runtimes, Web runtimes that fail the probe and the default Web

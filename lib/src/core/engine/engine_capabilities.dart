@@ -92,7 +92,7 @@ class LlamaEngineCapabilities implements EngineCapabilities {
   /// output is parsed for tool calls.
   ///
   /// On LiteRT-LM Web, true only for explicit `withTextHistory` factories
-  /// whose loaded runtime reads `preface.tools` (`@litert-lm/core@0.19.0`);
+  /// whose loaded runtime reads `preface.tools` (`@litert-lm/core@0.20.0`);
   /// calls come from the runtime's `tool_calls`. Automatic tool loops run
   /// there only when the load-time token-count probes succeed, and
   /// `ToolChoice.required` and `parallelToolCalls` are rejected. Original

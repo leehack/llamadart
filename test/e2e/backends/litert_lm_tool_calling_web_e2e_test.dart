@@ -18,7 +18,7 @@ import 'package:web/web.dart';
 void main() {
   test('manual tool calls match the published JS runtime', () async {
     const moduleUrl =
-        'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm';
+        'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm';
     final manifestResponse = await window
         .fetch('http://127.0.0.1:5198/manifest.json'.toJS)
         .toDart;
@@ -54,6 +54,14 @@ void main() {
     final constructor = globalContext.getProperty<JSObject>(
       'LiteRtLmEngine'.toJS,
     );
+    final backends = globalContext.getProperty<JSObject>(
+      'LiteRtLmBackendEnum'.toJS,
+    );
+    int backendId(String name) =>
+        backends.getProperty<JSNumber>(name.toJS).toDartInt;
+    final cpuBackend = backendId('CPU');
+    final gpuBackend = backendId('GPU');
+    final artisanBackend = backendId('GPU_ARTISAN');
 
     const params = GenerationParams(
       maxTokens: 1024,
@@ -91,14 +99,14 @@ void main() {
     print('LITERT_TOOLS_IDENTITY ${jsonEncode(identity)}');
 
     // The published runtime alone: its conversation parses the model's call
-    // into `tool_calls` and answers from a 0.19.0 tool message.
+    // into `tool_calls` and answers from a tool message.
     final direct = await constructor
         .callMethod<JSPromise<JSObject>>(
           'create'.toJS,
           <String, Object>{
             'model': model,
             // GPU keeps the runtime default, as the adapter does.
-            if (device == ComputeDevice.cpu) 'backend': 3,
+            if (device == ComputeDevice.cpu) 'backend': cpuBackend,
             'mainExecutorSettings': {'maxNumTokens': contextSize},
           }.jsify(),
         )
@@ -214,7 +222,8 @@ void main() {
     await direct.callMethod<JSPromise<JSAny?>>('delete'.toJS).toDart;
     print(
       'LITERT_TOOLS_DIRECT ${jsonEncode({
-        'execution': const {2: 'WebGPU_ARTISAN', 3: 'WASM CPU', 4: 'WebGPU'}[directBackend],
+        'execution': {artisanBackend: 'WebGPU_ARTISAN', cpuBackend: 'WASM CPU', gpuBackend: 'WebGPU'}[directBackend],
+        'backendId': directBackend,
         'callChunks': directCall.where((chunk) => chunk.containsKey('tool_calls')).toList(),
         'callText': textOf(directCall),
         'noToolsCalls': callsOf(directNoTools),

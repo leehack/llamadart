@@ -17,7 +17,7 @@ CI and independent review of the equivalent `457` tree. Historical release head
 embedding/signature checks for all three Apple companions. Core and the three
 companions shipped C API 1 in `0.18.0`
 ([#1677](https://github.com/leehack/llamadart/issues/1677)).
-Web uses `@litert-lm/core@0.19.0`. The internal
+Web uses `@litert-lm/core@0.20.0`. The internal
 `createLiteRtLmSelectedRuntimeClient(allowV1: true)` entry point exercises that
 same facade with admitted C API 1.0.x fixtures, retaining selected core and
 companion handles and paths. `LiteRtLmV1RuntimeClient` also remains injectable. Its fixtures prove ABI,

@@ -63,7 +63,7 @@ an earlier `<script>`:
 | `__llamadartBridgeEnableMem64` | `true` sets `__llamadartBridgePreferMemory64`; default off |
 | `__llamadartBridgeThreadPoolSize` | Thread hint; chat app default 1 when the page is not cross-origin isolated, else `hardwareConcurrency` clamped to 2..4 |
 | `__llamadartBridgeSpeechToTextSupported` | Defaults to `true` only for the official repository at `v0.1.30` or newer |
-| `__llamadartLiteRtLmModuleUrl` | `@litert-lm/core` module; default `@litert-lm/core@0.19.0` from jsDelivr |
+| `__llamadartLiteRtLmModuleUrl` | `@litert-lm/core` module; the chat app and Studio default to `@litert-lm/core@0.20.0` from jsDelivr |
 | `__llamadartBridgeBootstrapVerbose` | `true` enables bootstrap `console.*` logs |
 
 A custom LiteRT-LM preload sets `window.LiteRtLmEngine = module.Engine` and

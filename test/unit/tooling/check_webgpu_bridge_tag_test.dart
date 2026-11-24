@@ -1347,20 +1347,24 @@ void main() {
     },
   );
 
-  test('Playwright helpers wrap the LiteRT-LM module the chat app loads', () {
+  test('Web consumers and smoke tests use the chat app LiteRT-LM module', () {
     List<String> moduleUrls(String path) => RegExp(
-      r"'(https://cdn\.jsdelivr\.net/npm/@litert-lm/core@[^']+)'",
+      r"'(https://cdn\.jsdelivr\.net/npm/@litert-lm/core@[^/']+/\+esm)'",
     ).allMatches(File(path).readAsStringSync()).map((m) => m[1]!).toList();
 
     final chatAppDefault = moduleUrls('example/chat_app/web/index.html');
     expect(chatAppDefault, hasLength(1));
     // The helpers install their wrapper before index.html runs, so their own
     // default is the module a smoke or benchmark loads.
-    for (final helper in const <String>[
+    for (final path in const <String>[
+      'packages/llamadart_studio/web/index.html',
+      'test/e2e/backends/litert_lm_text_history_web_e2e_test.dart',
+      'test/e2e/backends/litert_lm_tool_calling_web_e2e_test.dart',
+      'test/e2e/backends/litert_lm_truncation_web_e2e_test.dart',
       'tool/testing/playwright_chat_app_real_model_smoke.py',
       'tool/testing/playwright_chat_app_benchmark.py',
     ]) {
-      expect(moduleUrls(helper), chatAppDefault, reason: helper);
+      expect(moduleUrls(path), chatAppDefault, reason: path);
     }
   });
 

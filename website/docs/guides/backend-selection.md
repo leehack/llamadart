@@ -68,7 +68,7 @@ on LiteRT-LM, and GGUF files run on llama.cpp. The `LlamaEngine` API is the
 same for both, including `ChatSession` on native.
 
 On LiteRT-LM Web, keep handling `LlamaInferenceException` after
-`cancelGeneration()`. Only the pinned `@litert-lm/core@0.19.0` runtime's exact
+`cancelGeneration()`. Only the pinned `@litert-lm/core@0.20.0` runtime's exact
 `Task cancelled` error following a cancel request ends normally. Other errors,
 including abort errors, still surface; `Task cancelled` without a cancel request
 also remains a failure.
@@ -338,7 +338,7 @@ The same factories run manual tool calling. Tools are sent as
 `preface.tools`, the runtime renders them with its own template and parses
 the model's calls into `tool_calls`, and `create` returns them as `toolCalls`.
 Assistant calls and `LlamaToolResultContent` results are replayed in the
-`@litert-lm/core@0.19.0` message shape, and a final tool result message is
+`@litert-lm/core@0.20.0` message shape, and a final tool result message is
 sent as the request's message. Check `supportsToolCalling`: the adapter probes
 that `createConversation` reads `preface.tools`, and a runtime that does not
 rejects tools and tool messages with `LlamaUnsupportedException`. A reply cut
@@ -349,7 +349,7 @@ see [Tool calling](./tool-calling#runtime-notes).
 Use a browser-compatible bundle; the JS package documents its
 [Web LLM Models](https://huggingface.co/collections/litert-community/web-llm-models)
 collection, such as Gemma 4 E2B/E4B `-web.litertlm` files. A WebGPU load keeps
-the runtime's default backend: `@litert-lm/core@0.19.0` runs `-web.litertlm`
+the runtime's default backend: `@litert-lm/core@0.20.0` runs `-web.litertlm`
 bundles on its GPU_ARTISAN path and can also load standard bundles on GPU
 (Qwen3 0.6B matched direct JS but is otherwise unqualified there). WASM CPU
 runs Qwen3 0.6B; the Gemma 4 bundles do not load on CPU.

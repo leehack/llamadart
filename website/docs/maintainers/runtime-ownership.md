@@ -34,6 +34,13 @@ Clear boundaries keep the publishing pipelines, the runtime contracts and the
 consumer-facing Dart API from drifting apart, and keep this repo focused on
 integration correctness.
 
+## LiteRT-LM Web package
+
+The chat app and Studio load [`@litert-lm/core@0.20.0`](https://registry.npmjs.org/@litert-lm%2fcore/0.20.0)
+from jsDelivr. The npm tarball's integrity is
+`sha512-F89VykxY1aIGeB5TzkASMwaYPGgOd8AFxURPHvnnz4CoRm9yLn/IMJvtnCxsuBOCsIKClnheJz+NmwtEDXSOBg==`.
+The Chrome smoke records the jsDelivr module and Wasm request URLs.
+
 ## LiteRT-LM termination reporting
 
 Native runtimes from `v0.18.0-3`
@@ -60,7 +67,7 @@ report why a conversation stream turn ended, and llamadart reads it
   `generationLimitUnsupportedReason` is null only after a load on a reporting
   runtime.
 
-Web `@litert-lm/core@0.19.0` exposes no cause, but its counts bound one.
+Web `@litert-lm/core@0.20.0` exposes no cause, but its counts bound one.
 `withTextHistory()` loads set `benchmarkEnabled`, and after each turn
 `litert_lm_backend_web.dart` reads `getBenchmarkInfo().lastDecodeTokenCount`
 (the turn's decode steps, end-of-turn token included) and `getTokenCount()`

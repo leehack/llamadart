@@ -659,7 +659,7 @@ LiteRT-LM reports why a reply ended on runtimes whose
 `stream_proxy_finish_reason_abi_version` export returns 1: litert-lm-native
 `v0.18.0-3` and later, including the default pin.
 
-LiteRT-LM Web `@litert-lm/core@0.19.0` reports no cause, so
+LiteRT-LM Web `@litert-lm/core@0.20.0` reports no cause, so
 `LlamaBackend.withTextHistory()` (or `LiteRtLmBackend.withTextHistory()`)
 reads the runtime's token counts instead
 ([#919](https://github.com/leehack/llamadart/issues/919)). The load enables
@@ -684,7 +684,7 @@ finish reason does not prove the model reached EOS. Do not execute calls
 automatically based on that value or infer truncation from output length.
 
 LiteRT-LM Web runs manual tool calling through `LlamaBackend.withTextHistory()`
-(or `LiteRtLmBackend.withTextHistory()`) on `@litert-lm/core@0.19.0`, when the
+(or `LiteRtLmBackend.withTextHistory()`) on `@litert-lm/core@0.20.0`, when the
 loaded runtime reads `preface.tools`; `supportsToolCalling` reports it, and the
 default constructors report `false`. Tools go to the runtime's own template, the
 runtime parses the model's calls into `tool_calls`, and `create` returns them as

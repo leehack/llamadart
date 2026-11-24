@@ -186,7 +186,7 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   loaded`. It needs a `.litertlm` URL and supports CPU or GPU (NPU is
   rejected); any other `ModelParams` field, such as `batchSize`, throws
   `LlamaUnsupportedException`. GPU loads keep the runtime's default backend,
-  so `@litert-lm/core@0.19.0` runs `-web.litertlm` bundles and can load
+  so `@litert-lm/core@0.20.0` runs `-web.litertlm` bundles and can load
   standard bundles on WebGPU; Gemma 4 bundles do not load on CPU.
 - LiteRT-LM web is single-turn text by default: it sends only the last
   message's text, so `ChatSession` history, system prompts and tools are not
@@ -247,7 +247,7 @@ Without the tool, load the bridge (and optionally LiteRT-LM) in
     window.__llamadartBridgeLoadError = String(error);
   }
   window.__llamadartLiteRtLmModuleUrl =
-    'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm';
+    'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm';
 </script>
 <script src="flutter_bootstrap.js" async></script>
 ```

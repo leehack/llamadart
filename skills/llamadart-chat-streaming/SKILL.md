@@ -38,7 +38,7 @@ modalities and speculative strategies before offering them.
     every call and append the assistant reply yourself.
   - `engine.generate(prompt)` only for an already-rendered raw prompt; it skips
     the chat template, except on LiteRT-LM Web, which sends the prompt as one
-    user turn through the bundle's template (`@litert-lm/core@0.19.0` has no
+    user turn through the bundle's template (`@litert-lm/core@0.20.0` has no
     raw streaming route), so never pass it a `chatTemplate()`-rendered prompt.
 - Opt in with the portable `LlamaBackend.withTextHistory()` factory, or the
   direct Web `LiteRtLmBackend.withTextHistory()` factory, for ordered
@@ -170,7 +170,7 @@ modalities and speculative strategies before offering them.
   `ModelParams(chatTemplate: liteRtLmQwen3ChatTemplate)` override. Import it
   from `package:llamadart/llamadart.dart`; get the string from this accessor
   when constructing parameters, rather than copying or persisting Jinja across
-  upgrades. Web `@litert-lm/core@0.19.0` has no template setter and rejects
+  upgrades. Web `@litert-lm/core@0.20.0` has no template setter and rejects
   this canonical override with `LlamaUnsupportedException` at load; use native
   LiteRT-LM for this contract. Otherwise disabled thinking
   can still return empty content after renaming. Generic thinking markers are

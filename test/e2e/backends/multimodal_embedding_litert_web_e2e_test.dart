@@ -47,6 +47,7 @@ void main() {
       ..type = 'module'
       ..text =
           '''
+// Keep the version and backend IDs used in doc/multimodal_embeddings_litert.md.
 import {EmbeddingEngine} from 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm';
 window.__llamadartEmbeddingReference = EmbeddingEngine;
 window.$callback();
