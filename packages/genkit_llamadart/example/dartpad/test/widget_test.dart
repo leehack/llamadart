@@ -260,7 +260,7 @@ void main() {
   ) async {
     final runtime = _LocalRuntime(backendName: 'WebGPU, CPU');
     await _openLocal(tester, 'GGUF', runtime);
-    expect(find.text('Model ready (GGUF).'), findsOneWidget);
+    expect(find.text('Model ready (WebGPU).'), findsOneWidget);
     await _send(tester, 'Hello');
     await _reply(tester, runtime, 'Hi there');
     await _tap(tester, 'Gemini');

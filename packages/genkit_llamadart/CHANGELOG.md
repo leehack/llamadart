@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Report WebGPU or WASM for GGUF Web bridge labels in model inspection and the DartPad playground.
 - Update the DartPad playground to WebGPU bridge 0.1.94 and refresh the Gemma 4 E2B GGUF memory guidance.
 - Add a LiteRT-LM model selector (Qwen3 0.6B by default and Gemma 4 E2B with desktop WebGPU) to the DartPad playground.
 - Polish the DartPad playground: auto-scroll while streaming and clear the prompt on Send, bound local GGUF history to fit the 2,048-token context, isolate streaming/timer rebuilds, add an elapsed local load timer, improve narrow-pane layout and accessibility labels, and update Gemma 4 E2B memory guidance.

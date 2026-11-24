@@ -76,6 +76,14 @@ llama.LlamaEngineCapabilities _copyCapabilities(
 
 String? _safeBackendName(String? name) {
   if (name == null) return null;
+  final normalizedName = name.toLowerCase();
+  switch (normalizedName) {
+    case 'webgpu, cpu':
+    case 'webgpu (prototype bridge)':
+      return 'WebGPU';
+    case 'wasm (prototype bridge)':
+      return 'WASM';
+  }
   const labels = <String>[
     'CPU',
     'Metal',
@@ -97,7 +105,7 @@ String? _safeBackendName(String? name) {
     'LiteRT-LM Web auto',
   ];
   for (final label in labels) {
-    if (name.toLowerCase() == label.toLowerCase()) return label;
+    if (normalizedName == label.toLowerCase()) return label;
   }
   return null;
 }
