@@ -235,6 +235,25 @@ void main() {
     },
   );
 
+  for (final entry in const <String, String?>{
+    'WebGPU, CPU': 'WebGPU',
+    'WebGPU (Prototype bridge)': 'WebGPU',
+    'WASM (Prototype bridge)': 'WASM',
+    'WebGPU, CPU (/private/models/local.gguf)': null,
+  }.entries) {
+    test('inspection reports ${entry.value} for ${entry.key}', () async {
+      final runtime = _InspectionRuntime()
+        ..capabilitySnapshot = LlamaEngineCapabilities(
+          isSupported: true,
+          backendName: entry.key,
+        );
+      final plugin = _plugin(runtime);
+      addTearDown(plugin.dispose);
+      final result = await plugin.inspectModel('local');
+      expect(result.capabilities!.backendName, entry.value);
+    });
+  }
+
   test('unknown model cannot construct or load a runtime', () async {
     var factories = 0;
     final plugin = LlamaDartPlugin(

@@ -207,7 +207,9 @@ must not be presented as complete conversation budgets. Unsupported tokenizers
 throw `LlamaUnsupportedException`; unknown context capacity remains null.
 Web and LiteRT-LM actual context measurement is unavailable in this adapter. For direct
 plugins use `inspectModel(name)`, `countTokens(name, text)` and
-`tokenize(name, text)` instead. Registration and listing remain lazy.
+`tokenize(name, text)` instead. GGUF Web bridge names in
+`capabilities.backendName` are normalized to `WebGPU` or `WASM`; unknown labels
+remain null. Registration and listing remain lazy.
 
 ## More
 
