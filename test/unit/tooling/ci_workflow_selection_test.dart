@@ -2288,23 +2288,15 @@ runs:
       expect(seed, greaterThanOrEqualTo(0), reason: job);
       expect(tests, greaterThan(seed), reason: job);
       expect(check, greaterThan(tests), reason: job);
-      expect((steps[seed] as Map).containsKey('if'), isFalse, reason: job);
-      if (job == 'test-other-os') {
-        final shard = steps[seed + 1] as Map;
-        expect(shard['id'], 'shard');
-        expect(shard['name'], 'Select shard test files');
-        // The shard step starts only after the canary is seeded successfully.
-        for (final step in [steps[seed] as Map, shard]) {
-          expect(step.containsKey('if'), isFalse);
-          expect(step.containsKey('continue-on-error'), isFalse);
-        }
-        expect(
-          steps[check]['if'],
-          r"${{ !cancelled() && (steps.shard.outcome == 'success' || steps.shard.outcome == 'failure') }}",
-        );
-      } else {
-        expect(steps[check]['if'], r'${{ !cancelled() }}', reason: job);
-      }
+      final seedStep = steps[seed] as Map;
+      expect(seedStep['id'], 'litert_canary_seed', reason: job);
+      expect(seedStep.containsKey('if'), isFalse, reason: job);
+      expect(seedStep.containsKey('continue-on-error'), isFalse, reason: job);
+      expect(
+        steps[check]['if'],
+        r"${{ !cancelled() && steps.litert_canary_seed.outcome == 'success' }}",
+        reason: job,
+      );
     }
   });
 
