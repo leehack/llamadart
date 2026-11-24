@@ -235,6 +235,14 @@ void main() {
       );
     });
 
+    test('loadMtp is a Web-only LiteRT-LM load option', () {
+      const params = ModelParams(loadMtp: true);
+      expect(unsupported(params, LlamaRuntime.liteRtLm, web: true), isEmpty);
+      expect(unsupported(params, LlamaRuntime.liteRtLm, web: false), [
+        'loadMtp',
+      ]);
+    });
+
     test('takes the deprecated runtime selector', () {
       expect(
         unsupported(

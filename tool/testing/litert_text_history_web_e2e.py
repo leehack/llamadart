@@ -15,6 +15,8 @@ SUITES = {
                      'LITERT_TOOLS_INPUT'),
     'truncation': ('test/e2e/backends/litert_lm_truncation_web_e2e_test.dart',
                    'LITERT_TRUNCATION_INPUT'),
+    'speculative': ('test/e2e/backends/litert_lm_speculative_web_e2e_test.dart',
+                    'LITERT_SPECULATIVE_INPUT'),
 }
 
 from serve_static_with_headers import CoiStaticHandler, ThreadingTcpServer
@@ -27,12 +29,15 @@ def main():
     # `dart test -p safari` drives the Safari app through safaridriver.
     parser.add_argument('--browser', choices=['chrome', 'safari'], default='chrome')
     parser.add_argument('--suite', choices=sorted(SUITES), default='text-history')
+    parser.add_argument('--expect-unsupported')
     args = parser.parse_args()
     model = pathlib.Path(args.model_path).resolve(strict=True)
     with model.open('rb') as source:
         digest = hashlib.file_digest(source, 'sha256').hexdigest()
     manifest = dict(model='http://127.0.0.1:5198/model.litertlm',
                     sha256=digest, bytes=model.stat().st_size, backend=args.backend)
+    if args.expect_unsupported is not None:
+        manifest['expectUnsupported'] = args.expect_unsupported
 
     class Handler(CoiStaticHandler):
         cors_origin = '*'
@@ -71,9 +76,10 @@ def main():
         try:
             test_file, marker = SUITES[args.suite]
             print(marker + ' ' + json.dumps(manifest), flush=True)
+            platform = ('chrome-webgpu-headed' if args.suite == 'speculative' else
+                        'safari' if args.browser == 'safari' else 'chrome-webgpu')
             return subprocess.call([
-                'dart', 'test', '-p',
-                'safari' if args.browser == 'safari' else 'chrome-webgpu',
+                'dart', 'test', '-p', platform,
                 '--run-skipped',
                 '-t', 'local-only',
                 test_file,

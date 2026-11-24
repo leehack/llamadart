@@ -3,6 +3,7 @@
 library;
 
 import 'package:llamadart/backend.dart';
+import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -41,6 +42,26 @@ void main() {
     expect(configureThinkingTags, isA<void Function(LiteRtLmRuntimeClient)>());
     expect(LiteRtLmRuntimeClient.new, throwsUnsupportedError);
   });
+
+  test(
+    'Web CPU load check reports the MTP refusal through the public API',
+    () async {
+      final engine = LlamaEngine(LlamaBackend.withTextHistory());
+      addTearDown(engine.dispose);
+      final report = await engine.checkLoad(
+        LlamaModel(ModelSource.path('model.litertlm')),
+        params: const LiteRtLmModelParams(
+          device: ComputeDevice.cpu,
+          loadMtp: true,
+        ),
+      );
+      expect(report.status, LlamaLoadCheckStatus.unsupported);
+      expect(
+        report.error?.message,
+        allOf(contains('loadMtp'), contains('Web CPU')),
+      );
+    },
+  );
 
   test('exports LiteRT-LM web backend constructor on web', () async {
     final backend = LiteRtLmBackend(

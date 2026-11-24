@@ -48,7 +48,7 @@ List<String> modelParamsUnsupportedBy(
     if (params.speculativeRollbackTokenMax != 0) 'speculativeRollbackTokenMax',
     if (!params.useMmap) 'useMmap=false',
     if (params.useMlock) 'useMlock',
-    if (params.loadMtp) 'loadMtp',
+    if (!web && params.loadMtp) 'loadMtp',
     if (params.flashAttention != FlashAttention.auto) 'flashAttention',
     if (params.cacheTypeK != KvCacheType.f16) 'cacheTypeK',
     if (params.cacheTypeV != KvCacheType.f16) 'cacheTypeV',
@@ -144,7 +144,7 @@ String unsupportedModelParamsMessage(
           'llama.cpp-specific ModelParams: $fields. Supported LiteRT-LM web '
           'load options are contextSize, chatTemplate, device or the '
           'deprecated liteRtLmBackend for CPU/GPU selection, '
-          'preferredBackend, and all-or-CPU gpuLayers hints.',
+          'preferredBackend, all-or-CPU gpuLayers hints, and loadMtp on WebGPU.',
   };
 }
 

@@ -2371,6 +2371,34 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'litert-lm-web-speculative',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Compare WebGPU plain and MTP turns with the pinned JS runtime on '
+          'a local drafter-bearing bundle, or test a load refusal with --expect.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/litert_text_history_web_e2e.py',
+            '--model-path',
+            context.modelPath!,
+            '--backend',
+            'gpu',
+            '--suite',
+            'speculative',
+            if (context.expectProvided) ...[
+              '--expect-unsupported',
+              context.expect,
+            ],
+          ],
+          description: 'LiteRT-LM Web MTP, headed Chrome (local port 5198)',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-multimodal-embedding',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -3642,6 +3670,12 @@ Future<LocalE2eResult> runLocalE2e(
       stderr: '--backend cpu or gpu is required for ${scenario.name}.\n',
     );
   }
+  if (scenario.name == 'litert-lm-web-speculative' && parsed.backend != 'gpu') {
+    return const LocalE2eResult(
+      64,
+      stderr: '--backend gpu is required for litert-lm-web-speculative.\n',
+    );
+  }
   if (parsed.mmprojPath != null && parsed.modelPath == null) {
     return LocalE2eResult(64, stderr: '--mmproj-path requires --model-path.\n');
   }
@@ -4008,6 +4042,7 @@ Future<LocalE2eResult> runLocalE2e(
           scenario.name == 'litert-lm-web-text-history' ||
           scenario.name == 'litert-lm-web-tool-calling' ||
           scenario.name == 'litert-lm-web-truncation' ||
+          scenario.name == 'litert-lm-web-speculative' ||
           scenario.name == 'litert-lm-chat-features-smoke' ||
           scenario.name == 'qwen3-litert-cpu-unicode' ||
           scenario.name == 'qwen3-litert-gpu-unicode' ||
@@ -4451,7 +4486,7 @@ Options:
                                  Build a static ngram-cache file before speculative benchmark.
   --ngram-cache-build-text <txt> Optional source text for generated ngram-cache static file
                                  (defaults to the resolved benchmark prompt).
-  --expect <text>                Exact expected transcript/answer, or expected real-model Web response.
+  --expect <text>                Expected transcript, Web response, or MTP load refusal substring.
   --allow-any-response           Accept any non-empty real-model Web response.
   --skip-build                   Reuse an existing Flutter web build where supported.
   -h, --help                     Show this help.

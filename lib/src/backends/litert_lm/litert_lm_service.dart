@@ -39,6 +39,7 @@ import 'litert_lm_runtime.dart';
 import 'litert_lm_runtime_client_contract.dart';
 import 'litert_lm_legacy_service_client.dart';
 import 'litert_lm_sampler_params.dart';
+import 'litert_lm_speculative_options.dart';
 
 const int _gemma4DefaultVisualTokenBudget = 280;
 
@@ -2172,7 +2173,7 @@ class LiteRtLmService {
     if (params.grammarRoot != defaults.grammarRoot) {
       unsupported.add('grammarRoot');
     }
-    _addUnsupportedSpeculativeDecodingOptions(params, unsupported);
+    unsupported.addAll(liteRtLmUnsupportedSpeculativeOptions(params));
 
     if (unsupported.isEmpty) {
       return;
@@ -2354,72 +2355,6 @@ class LiteRtLmService {
       presencePenalty: appliesPresencePenalty ? presencePenalty : null,
       thinkingTokenBudget: thinkingTokenBudget,
     );
-  }
-
-  void _addUnsupportedSpeculativeDecodingOptions(
-    GenerationParams params,
-    List<String> unsupported,
-  ) {
-    final config = params.resolvedSpeculativeDecodingConfig;
-    if (config == null) {
-      return;
-    }
-    final strategies = config.effectiveStrategies;
-    final unsupportedStrategy =
-        strategies.length > 1 ||
-        strategies.any(
-          (strategy) =>
-              strategy != SpeculativeDecodingStrategy.backendDefault &&
-              strategy != SpeculativeDecodingStrategy.mtp,
-        );
-    if (unsupportedStrategy) {
-      unsupported.add('speculativeDecodingConfig.strategy');
-    }
-    if (config.draftTokenMax != null) {
-      unsupported.add('speculativeDecodingConfig.draftTokenMax');
-    }
-    if (config.draftTokenMin != null) {
-      unsupported.add('speculativeDecodingConfig.draftTokenMin');
-    }
-    if (config.minProbability != null) {
-      unsupported.add('speculativeDecodingConfig.minProbability');
-    }
-    if (config.draftSplitProbability != null) {
-      unsupported.add('speculativeDecodingConfig.draftSplitProbability');
-    }
-    if (config.draftMicroBatchSize != null) {
-      unsupported.add('speculativeDecodingConfig.draftMicroBatchSize');
-    }
-    if (config.draftModelPath != null) {
-      unsupported.add('speculativeDecodingConfig.draftModel');
-    }
-    if (config.ngramSize != null) {
-      unsupported.add('speculativeDecodingConfig.ngramSize');
-    }
-    if (config.ngramSizeN != null) {
-      unsupported.add('speculativeDecodingConfig.ngramSizeN');
-    }
-    if (config.ngramSizeM != null) {
-      unsupported.add('speculativeDecodingConfig.ngramSizeM');
-    }
-    if (config.ngramMinHits != null) {
-      unsupported.add('speculativeDecodingConfig.ngramMinHits');
-    }
-    if (config.ngramMatch != null) {
-      unsupported.add('speculativeDecodingConfig.ngramMatch');
-    }
-    if (config.ngramTokenMin != null) {
-      unsupported.add('speculativeDecodingConfig.ngramTokenMin');
-    }
-    if (config.ngramTokenMax != null) {
-      unsupported.add('speculativeDecodingConfig.ngramTokenMax');
-    }
-    if (config.ngramCacheStaticPath != null) {
-      unsupported.add('speculativeDecodingConfig.ngramCacheStaticPath');
-    }
-    if (config.ngramCacheDynamicPath != null) {
-      unsupported.add('speculativeDecodingConfig.ngramCacheDynamicPath');
-    }
   }
 
   int _defaultSamplerSeed() {

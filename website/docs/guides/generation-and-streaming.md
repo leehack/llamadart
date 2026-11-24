@@ -33,6 +33,13 @@ per call, with no streaming or stop cause, so `generate()` does not use it
 `chatTemplate()` to Web LiteRT-LM `generate()`: the bundle would template it
 again.
 
+On LiteRT-LM WebGPU, load a bundle with an MTP drafter using `loadMtp: true`,
+then set `GenerationParams(speculativeDecoding: true)` or use
+`SpeculativeDecodingConfig.mtp()` for the turn. Plain turns on the same engine
+keep speculation off. The load probe must pass before the model reports
+speculative decoding capabilities. Speculative output can differ from plain
+output. See [LiteRT-LM Web MTP](./performance-tuning#litert-lm-web-mtp).
+
 For one-shot instructions, prefer `engine.create(...)`: it applies the chat
 template without session state, and a follow-up turn sees only the messages you
 pass again. For chat apps, prefer `ChatSession` unless your app already stores

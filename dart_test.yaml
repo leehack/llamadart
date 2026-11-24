@@ -21,3 +21,11 @@ define_platforms:
       arguments: >-
         --headless=new --enable-unsafe-webgpu
         --enable-features=SharedArrayBuffer,SharedArrayBufferUnrestrictedAccessAllowed
+  chrome-webgpu-headed:
+    name: Headed Chrome WebGPU
+    extends: chrome
+    settings:
+      headless: false
+      arguments: >-
+        --enable-unsafe-webgpu
+        --enable-features=SharedArrayBuffer,SharedArrayBufferUnrestrictedAccessAllowed

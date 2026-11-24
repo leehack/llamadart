@@ -480,13 +480,15 @@ class ModelParams {
   /// The WebGPU bridge and LiteRT-LM reject `true`.
   final bool useMlock;
 
-  /// Whether llama.cpp should load bundled multi-token prediction tensors.
+  /// Whether to load the target model's bundled multi-token prediction drafter.
   ///
-  /// Defaults to `false` to avoid the additional memory cost for callers that
-  /// do not use MTP speculative decoding. Set this before loading a model when
-  /// `SpeculativeDecodingStrategy.mtp` will use MTP tensors embedded in the
-  /// target GGUF. Explicit external MTP draft models are loaded as MTP
-  /// automatically.
+  /// Defaults to `false` to avoid the additional memory cost. For llama.cpp,
+  /// enable this for MTP tensors embedded in the target GGUF. Explicit external
+  /// MTP draft models are loaded as MTP automatically.
+  ///
+  /// On LiteRT-LM WebGPU, requires `@litert-lm/core` 0.20.0 or later and a bundle
+  /// whose drafter passes the load probe. Enable speculative decoding separately
+  /// on each generation that should use it.
   final bool loadMtp;
 
   /// `llama_context_params.flash_attn_type`. User-explicit values override
@@ -1557,6 +1559,7 @@ class LiteRtLmModelParams extends ModelParams {
     super.loras,
     super.chatTemplate,
     super.numberOfThreads,
+    super.loadMtp,
     bool embeddingEngine = false,
     LiteRtLmActivationDataType? activationDataType,
     int? prefillChunkSize,
@@ -1748,7 +1751,6 @@ class LiteRtLmModelParams extends ModelParams {
       'speculativeRollbackTokenMax': speculativeRollbackTokenMax,
       'useMmap': useMmap,
       'useMlock': useMlock,
-      'loadMtp': loadMtp,
       'flashAttention': flashAttention,
       'cacheTypeK': cacheTypeK,
       'cacheTypeV': cacheTypeV,
@@ -1804,6 +1806,7 @@ class LiteRtLmModelParams extends ModelParams {
         chatTemplate: chatTemplate,
         clearChatTemplate: clearChatTemplate,
         numberOfThreads: numberOfThreads,
+        loadMtp: loadMtp,
       ),
     );
   }

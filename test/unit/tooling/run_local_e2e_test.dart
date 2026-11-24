@@ -656,6 +656,37 @@ Future<void> main(List<String> args) async {
     expect(result.stdout, isNot(contains('download')));
   });
 
+  test('LiteRT Web MTP requires a local bundle and GPU', () async {
+    const scenario = ['--scenario', 'litert-lm-web-speculative', '--dry-run'];
+    for (final args in [
+      [...scenario, '--backend', 'gpu'],
+      [...scenario, '--model-path', 'model.litertlm', '--backend', 'cpu'],
+    ]) {
+      expect((await runLocalE2e(args, projectRoot: '/repo')).exitCode, 64);
+    }
+    final result = await runLocalE2e(
+      [
+        ...scenario,
+        '--model-path',
+        'model.litertlm',
+        '--backend',
+        'gpu',
+        '--expect',
+        'speculative round',
+      ],
+      projectRoot: '/repo',
+      displayShell: LocalE2eDisplayShell.posix,
+    );
+    expect(result.exitCode, 0);
+    expect(
+      result.stdout,
+      contains(
+        'tool/testing/litert_text_history_web_e2e.py --model-path model.litertlm '
+        "--backend gpu --suite speculative --expect-unsupported 'speculative round'",
+      ),
+    );
+  });
+
   test(
     'LiteRT Web scenarios leave the browser to the Chrome default',
     () async {
