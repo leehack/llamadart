@@ -15,6 +15,7 @@ Future<JSString> _run(JSObject options) async {
   final mmprojUrl = (options['mmprojUrl'] as JSString?)?.toDart;
   final staging = (options['jsBackedModelStaging'] as JSBoolean?)?.toDart;
   final preferMemory64 = (options['preferMemory64'] as JSBoolean).toDart;
+  final modelBytesHint = (options['modelBytesHint'] as JSNumber?)?.toDartInt;
   final gpu = (options['gpu'] as JSBoolean).toDart;
   final reuse = (options['reuse'] as JSBoolean).toDart;
   final model = LlamaModel(ModelSource.parse(modelUrl));
@@ -25,6 +26,7 @@ Future<JSString> _run(JSObject options) async {
     numberOfThreads: 2,
     numberOfThreadsBatch: 2,
     preferMemory64: preferMemory64,
+    modelBytesHint: modelBytesHint,
     jsBackedModelStaging: staging,
   );
 

@@ -3430,6 +3430,212 @@ void main() {
         }).toJS;
       });
 
+      group('automatic Chromium memory64 policy', () {
+        const modelBytes = 3 * 1024 * 1024 * 1024;
+        const automatic = LlamaCppModelParams(
+          gpuLayers: 0,
+          modelBytesHint: modelBytes,
+        );
+        const chromiumUa = 'Mozilla/5.0 AppleWebKit/537.36 Chrome/158.0.0.0';
+        const safariUa = 'Mozilla/5.0 AppleWebKit/605.1.15 Safari/605.1.15';
+        const iosChromeUa = 'Mozilla/5.0 AppleWebKit/605.1.15 CriOS/158.0.0.0';
+        late JSObject preflight;
+        late List<bool?> loadStaging;
+        late List<bool?> loadCache;
+        late int probes;
+
+        setUp(() {
+          globalContext['__llamadartBridgeUserAgent'] = chromiumUa.toJS;
+          addTearDown(fakeCrossOriginIsolation(isolated: true));
+          constructor['supportsCorePreflight'] = true.toJS;
+          loadStaging = [];
+          loadCache = [];
+          probes = 0;
+          preflight = JSObject()
+            ..['variant'] = 'memory64'.toJS
+            ..['threading'] = 'threaded'.toJS
+            ..['fallback'] = false.toJS;
+          bridge['preflightCore'] = (() {
+            probes++;
+            return Future<JSObject>.value(preflight).toJS;
+          }).toJS;
+          bridge['loadModelFromUrl'] = ((String url, JSObject? options) {
+            final staging =
+                lastBridgeConfig?['jsBackedModelStaging'].dartify() as bool?;
+            loadStaging.add(staging);
+            loadCache.add(options?['useCache'].dartify() as bool?);
+            bridgeRuntimeHints[notesKey] = staging == true
+                ? 'model_staging_js_backed'
+                : '';
+            return Future<void>.value().toJS;
+          }).toJS;
+        });
+
+        for (final singleThread in [false, true]) {
+          test('stages on a confirmed memory64 core (single thread: '
+              '$singleThread)', () async {
+            if (singleThread) {
+              addTearDown(fakeCrossOriginIsolation(isolated: false));
+              addTearDown(
+                overrideBrowserProperty(
+                  globalContext['WebAssembly'] as JSObject,
+                  'Memory',
+                  _jsFunction(
+                    'descriptor',
+                    'return function uncloneable() {};',
+                  ),
+                ),
+              );
+              globalContext['__llamadartBridgeCoreModuleUrlSt'] = 'st.js'.toJS;
+              preflight['threading'] = 'single-thread'.toJS;
+            }
+            await backend.modelLoadFromUrl(url, automatic);
+            expect(probes, 1);
+            expect(loadStaging, [true]);
+            expect(loadCache, [true]);
+            expect(
+              lastBridgeConfig?['allowAutoRemoteFetchBackend'].dartify(),
+              isFalse,
+            );
+          });
+        }
+
+        test(
+          'leaves the default unset when memory64 falls back to wasm32',
+          () async {
+            preflight
+              ..['variant'] = 'wasm32'.toJS
+              ..['fallback'] = true.toJS
+              ..['fallbackReason'] = 'unsupported'.toJS;
+            await backend.modelLoadFromUrl(
+              url,
+              automatic.copyWith(preferMemory64: true),
+            );
+            expect(probes, 1);
+            expect(loadStaging, [null]);
+          },
+        );
+
+        test(
+          'loads with standard staging if the bridge changes core mid-load',
+          () async {
+            final load = bridge['loadModelFromUrl'] as JSFunction;
+            bridge['loadModelFromUrl'] = ((String url, JSObject? options) {
+              bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
+              return load.callAsFunction(bridge, url.toJS, options);
+            }).toJS;
+            await backend.modelLoadFromUrl(url, automatic);
+            expect(probes, 1);
+            expect(loadStaging, [true, null]);
+            expect(loadCache, [true, true]);
+          },
+        );
+
+        for (final ua in [safariUa, iosChromeUa]) {
+          test('defers to the bridge policy on $ua', () async {
+            globalContext['__llamadartBridgeUserAgent'] = ua.toJS;
+            await backend.modelLoadFromUrl(url, automatic);
+            expect(probes, 0);
+            expect(loadStaging, [null]);
+          });
+        }
+
+        test('keeps automatic staging off on requested wasm32', () async {
+          await backend.modelLoadFromUrl(
+            url,
+            automatic.copyWith(preferMemory64: false),
+          );
+          expect(probes, 0);
+          expect(loadStaging, [null]);
+        });
+
+        for (final params in [optIn, optOut]) {
+          test(
+            'honors explicit staging value ${params.jsBackedModelStaging}',
+            () async {
+              await backend.modelLoadFromUrl(
+                url,
+                params.copyWith(modelBytesHint: modelBytes),
+              );
+              expect(probes, 0);
+              expect(loadStaging, [params.jsBackedModelStaging]);
+            },
+          );
+        }
+
+        for (final flag in [
+          'supportsCorePreflight',
+          'supportsJsBackedModelStaging',
+        ]) {
+          test('keeps legacy loading when the bridge lacks $flag', () async {
+            constructor.delete(flag.toJS);
+            await backend.modelLoadFromUrl(url, automatic);
+            expect(probes, 0);
+            expect(loadStaging, [null]);
+          });
+        }
+
+        test('keeps legacy loading when the worker lacks preflight', () async {
+          bridge['preflightCore'] = (() {
+            probes++;
+            return _rejectPromise(
+              JSObject()
+                ..['name'] = 'CoreAssetError'.toJS
+                ..['code'] = 'CORE_PREFLIGHT_UNSUPPORTED'.toJS,
+            );
+          }).toJS;
+          await backend.modelLoadFromUrl(url, automatic);
+          expect(probes, 1);
+          expect(loadStaging, [null]);
+        });
+
+        test(
+          'retries the same settings when staging ABI is unavailable',
+          () async {
+            final load = bridge['loadModelFromUrl'] as JSFunction;
+            bridge['loadModelFromUrl'] = ((String url, JSObject? options) {
+              if (lastBridgeConfig?['jsBackedModelStaging'].dartify() == true) {
+                loadStaging.add(true);
+                return _rejectPromise(
+                  JSObject()
+                    ..['name'] = 'ModelStagingError'.toJS
+                    ..['code'] = 'MODEL_STAGING_UNSUPPORTED'.toJS,
+                );
+              }
+              return load.callAsFunction(bridge, url.toJS, options);
+            }).toJS;
+            await backend.modelLoadFromUrl(url, automatic);
+            expect(probes, 1);
+            expect(loadStaging, [true, null]);
+          },
+        );
+
+        test('keeps forced fetch-backed model loading available', () async {
+          globalContext['__llamadartBridgeForceRemoteFetchBackend'] = true.toJS;
+          await backend.modelLoadFromUrl(url, automatic);
+          expect(probes, 0);
+          expect(loadStaging, [null]);
+        });
+
+        for (final sizeHint in [null, 4 * 1024 * 1024 * 1024 + 1]) {
+          test(
+            'keeps the bridge default on memory64 with size hint $sizeHint',
+            () async {
+              await backend.modelLoadFromUrl(
+                url,
+                LlamaCppModelParams(
+                  preferMemory64: true,
+                  gpuLayers: 0,
+                  modelBytesHint: sizeHint,
+                ),
+              );
+              expect(probes, 0);
+              expect(loadStaging, [null]);
+            },
+          );
+        }
+      });
+
       test(
         'forwards true and disables opt-in automatic remote fetch',
         () async {

@@ -224,7 +224,7 @@ def assert_success(result, *, worker, mem64, staged, projector=False,
 def run_case(browser, origin, model_url, *, name, worker, stage=None, mem64=False,
              webkit=False, old_bridge=None, old_worker=False,
              old_core=False, forced_fetch=False, mmproj_url=None,
-             reuse=False, gpu=False, extra_control=False):
+             reuse=False, gpu=False, extra_control=False, model_bytes_hint=None):
     fixture = f"{origin}/{BUILD.as_posix()}/probe.html"
     context = browser.new_context(user_agent=WEBKIT_UA if webkit else None)
     requests = []
@@ -244,6 +244,7 @@ def run_case(browser, origin, model_url, *, name, worker, stage=None, mem64=Fals
             "oldBridge": old_bridge, "oldWorker": old_worker, "oldCore": old_core,
             "forcedFetch": forced_fetch, "config": {
                 "modelUrl": model_url, "jsBackedModelStaging": stage,
+                "modelBytesHint": model_bytes_hint,
                 "mmprojUrl": mmproj_url, "gpu": gpu, "reuse": reuse,
             },
         })
@@ -267,9 +268,13 @@ def run_case(browser, origin, model_url, *, name, worker, stage=None, mem64=Fals
         control_retried_on_wasm64 = (
             extra_control and not mem64 and result.get("core_variant") == "wasm64"
         )
-        expect = dict(worker=worker, mem64=mem64 or control_retried_on_wasm64,
-                      staged=stage is True or
-                      (stage is None and webkit), projector=mmproj_url is not None,
+        memory64 = mem64 or control_retried_on_wasm64
+        automatic = (
+            memory64 and model_bytes_hint is not None and 0 < model_bytes_hint <= (4 << 30)
+        )
+        expect = dict(worker=worker, mem64=memory64,
+                      staged=stage is True or (stage is None and (webkit or automatic)),
+                      projector=mmproj_url is not None,
                       gpu=gpu)
         assert_success(result, **expect)
         memory = result["coreMemory"]
@@ -307,16 +312,19 @@ def main():
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="chromium", args=launch)
         try:
+            model_receipt = asset_receipt(origin, model)
+            extra_model = asset_receipt(origin, args.model_url) if args.model_url else None
             print(json.dumps({
                 "browser": browser.version, "host": platform.platform(),
                 "processor": platform.machine(), "gpu_required": args.gpu,
-                "model": asset_receipt(origin, model),
-                "extra_model": asset_receipt(origin, args.model_url) if args.model_url else None,
+                "model": model_receipt,
+                "extra_model": extra_model,
                 "projector": asset_receipt(origin, args.mmproj_url) if args.mmproj_url else None,
             }), flush=True)
             for worker in (False, True):
                 for mem64 in (False, True):
-                    common = dict(worker=worker, mem64=mem64, gpu=args.gpu)
+                    common = dict(worker=worker, mem64=mem64, gpu=args.gpu,
+                                  model_bytes_hint=model_receipt["bytes"] if model_receipt else None)
                     control = run_case(browser, origin, model, name="chromium-default", **common)
                     staged = run_case(browser, origin, model, name="explicit-on",
                                       stage=True, reuse=True, **common)
@@ -325,7 +333,8 @@ def main():
                         run_case(browser, origin, model, name="webkit-ua-control",
                                  stage=stage, webkit=True, worker=worker, mem64=mem64)
                     if args.model_url:
-                        extra = dict(mmproj_url=args.mmproj_url, **common)
+                        extra = dict(common, mmproj_url=args.mmproj_url,
+                                     model_bytes_hint=extra_model["bytes"] if extra_model else None)
                         baseline = run_case(browser, origin, args.model_url,
                                             name="extra-default", extra_control=True, **extra)
                         staged = run_case(browser, origin, args.model_url,

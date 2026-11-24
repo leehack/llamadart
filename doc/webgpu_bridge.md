@@ -239,6 +239,14 @@ physical playback, intelligibility or speaker-reference fidelity.
   `ModelParams.jsBackedModelStaging` opt-in. The bridge also exposes
   `MODEL_TRANSFER_LENGTH_ERROR` on direct and worker rejections without
   retrying the transfer.
+- `v0.1.93+` also exposes `preflightCore()`. For automatic staging on
+  Chromium, Dart requires both capabilities and a preflight that selects
+  memory64. It limits the default to a positive `modelBytesHint` of at most
+  4 GiB because the pinned bridge can mmap a larger lazy tensor and
+  JS-backed WasmFS reads clamp to 2 GiB. The constructor takes the staging
+  setting, so Dart replaces the candidate bridge if preflight falls back to
+  wasm32, before loading the GGUF.
+  Explicit staging settings and fetch-backed loading opt-ins take precedence.
 - `v0.1.84+`: `getCompletionCapabilities()` reports
   `thinkingBudgetPauseGrammar`, and `thinkingBudget.pauseGrammar: false` keeps a
   grammar applied while the model reasons

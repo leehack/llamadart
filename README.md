@@ -75,9 +75,11 @@ memory for the threaded core and fetch-backed model loading. Set
 `window.__llamadartBridgeAllowSingleThreadCore = false` before the first model
 load to require the threaded core. Lazy tool-call grammars and
 custom grammar roots follow the loaded core's `lazyGrammar` capability.
-Set `ModelParams.jsBackedModelStaging` to opt into or out of JavaScript-backed
-GGUF and projector staging. Explicit opt-in requires bridge assets v0.1.92+
-and omission keeps the bridge's WebKit default.
+With bridge assets v0.1.93+, Chromium automatically uses JavaScript-backed
+GGUF and projector staging on confirmed memory64 cores when `modelBytesHint`
+is at most 4 GiB. Supported WebKit cores follow the bridge's browser policy.
+Set `ModelParams.jsBackedModelStaging: false` to disable staging or `true` to
+require it with staging-capable v0.1.92+ assets.
 
 llamadart also ships [agent skills](https://dart.dev/tools/pub/package-skills)
 that teach coding agents its APIs. Install them from your app's root:

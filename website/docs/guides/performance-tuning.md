@@ -106,7 +106,10 @@ inputs, even with memory64. A renamed Qwen model URL does not select the
 preset; set batch sizes explicitly in that case.
 
 Decoder-focused web apps can set `2048` / `512` explicitly after validating
-their model and browser.
+their model and browser. For a decoder that is constrained by WebGPU compute
+memory, try setting both `batchSize` and `microBatchSize` to `256` or `128`.
+Smaller batches can slow long prompts even when token generation stays as fast.
+Benchmark prompt processing on the target model and browser before choosing.
 
 Field reference: [Runtime parameters](../configuration/runtime-parameters).
 Native LiteRT-LM `.litertlm` loads have their own opt-in fields, listed in

@@ -256,8 +256,11 @@ const params = LlamaCppModelParams(
   (mem64) bridge core; see
   [Model size and memory64](../platforms/webgpu-bridge#model-size-and-memory64).
   Native loads reject them.
-- `jsBackedModelStaging` (Web llama.cpp only) defaults to the browser policy
-  when omitted. `true` requires JavaScript-backed staging on v0.1.92+ assets.
+- `jsBackedModelStaging` (Web llama.cpp only) defaults to JavaScript-backed
+  staging on Chromium with a confirmed memory64 core, a positive
+  `modelBytesHint` up to 4 GiB, v0.1.93+ assets, and no fetch-backed loading
+  opt-in. Other loads follow the bridge's browser policy.
+  `true` requires staging on v0.1.92+ assets.
   `false` disables it, including on WebKit. Native llama.cpp and LiteRT-LM
   reject explicit values. See
   [JS-backed model and projector staging](../platforms/webgpu-bridge#js-backed-model-and-projector-staging).
