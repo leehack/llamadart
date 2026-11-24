@@ -2697,8 +2697,10 @@ void main() {
       expect(capabilities.supportsMinP, isFalse);
       expect(capabilities.supportsThinkingBudget, isFalse);
       expect(capabilities.supportsStreamBatching, isFalse);
+      expect(capabilities.supportsIgnoreEos, isFalse);
       expect(capabilities.speculativeDecodingStrategies, isEmpty);
       for (final (option, params) in [
+        ('ignoreEos', const GenerationParams(ignoreEos: true)),
         ('penalty', const GenerationParams(penalty: 1.3)),
         ('presencePenalty', const GenerationParams(presencePenalty: 0.5)),
         ('grammar', const GenerationParams(grammar: 'root ::= "a"')),

@@ -2464,6 +2464,12 @@ class WebGpuLlamaBackend
         'assets do not.',
       );
     }
+    if (params.ignoreEos) {
+      throw LlamaUnsupportedException(
+        'WebGPU does not support GenerationParams.ignoreEos; it is available '
+        'on native llama.cpp only.',
+      );
+    }
     if (params.minP != 0.0 && !capabilities.minP) {
       throw LlamaUnsupportedException(
         'WebGPU Min-P needs bridge assets whose getCompletionCapabilities() '

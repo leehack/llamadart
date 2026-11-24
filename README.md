@@ -16,6 +16,11 @@ experimental. Native targets need no network once the model is on the device.
 - Image generation from text prompts on native platforms (Preview).
 - Runtime LoRA adapters for llama.cpp, observability hooks and typed capability checks.
 
+Native llama.cpp can keep generating past end-of-generation tokens with
+`GenerationParams(ignoreEos: true)`, as the `--ignore-eos` CLI option does,
+for benchmarks that need a fixed token count; it rejects a non-empty grammar,
+and the other runtimes reject it. See [runtime parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters).
+
 Choose [direct llamadart, Genkit, or Flutter Edge AI](https://llamadart.leehack.com/docs/integrations/choosing-an-api)
 for your application. Genkit is a
 [separate package](https://github.com/leehack/llamadart/tree/main/packages/genkit_llamadart);

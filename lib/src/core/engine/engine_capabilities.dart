@@ -152,6 +152,10 @@ class LlamaEngineCapabilities implements EngineCapabilities {
   /// them.
   final bool supportsStreamBatching;
 
+  /// Whether [GenerationParams.ignoreEos] is applied. True on native
+  /// llama.cpp only.
+  final bool supportsIgnoreEos;
+
   /// The strategies that [GenerationParams.speculativeDecodingConfig] can use.
   ///
   /// [SpeculativeDecodingStrategy.backendDefault] also stands for the
@@ -199,6 +203,7 @@ class LlamaEngineCapabilities implements EngineCapabilities {
     this.supportsMinP = false,
     this.supportsThinkingBudget = false,
     this.supportsStreamBatching = false,
+    this.supportsIgnoreEos = false,
     this.speculativeDecodingStrategies = const <SpeculativeDecodingStrategy>{},
     this.toolResultMedia = const <LlamaToolResultMedia>{},
   });

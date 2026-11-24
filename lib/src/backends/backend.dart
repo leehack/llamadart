@@ -1062,6 +1062,12 @@ class BackendGenerationCapabilities {
   /// claim it.
   final bool streamBatching;
 
+  /// Whether [GenerationParams.ignoreEos] is applied.
+  ///
+  /// Defaults to `false` so a backend that predates this field does not
+  /// claim it.
+  final bool ignoreEos;
+
   /// Creates a capability snapshot.
   const BackendGenerationCapabilities({
     required this.presencePenalty,
@@ -1070,6 +1076,7 @@ class BackendGenerationCapabilities {
     this.speculativeDecodingStrategies = const <SpeculativeDecodingStrategy>{},
     this.penalty = false,
     this.streamBatching = false,
+    this.ignoreEos = false,
   });
 }
 

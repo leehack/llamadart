@@ -953,6 +953,23 @@ class GenerationParams {
   /// to the native chat parser instead of acting as text stops.
   final List<String> stopSequences;
 
+  /// Whether to keep generating past the model's end-of-generation tokens, as
+  /// llama.cpp's `--ignore-eos` CLI option does.
+  ///
+  /// Native llama.cpp gives every end-of-generation token a bias of negative
+  /// infinity, so generation runs until [maxTokens], the context limit, a stop
+  /// sequence (including a chat template's own stop strings) or cancellation.
+  /// Speculative decoding verifies drafts with the same sampler, so a drafted
+  /// end-of-generation token is never accepted. Useful for benchmarks that
+  /// need a fixed number of generated tokens. End-of-generation tokens include
+  /// tool-call and fill-in-the-middle markers some vocabularies declare, so a
+  /// model cannot close a tool call with this set.
+  ///
+  /// A non-empty grammar, whether set through [grammar] or derived from tools
+  /// or a response format, throws `LlamaUnsupportedException` on native
+  /// llama.cpp. WebGPU and LiteRT-LM reject the option.
+  final bool ignoreEos;
+
   /// GBNF grammar string for structured output (e.g., "root ::= \"hello\" | \"world\"").
   final String? grammar;
 
@@ -1047,6 +1064,7 @@ class GenerationParams {
     this.presencePenalty = 0.0,
     this.seed,
     this.stopSequences = const [],
+    this.ignoreEos = false,
     this.grammar,
     this.grammarLazy = false,
     this.thinkingBudget,
@@ -1085,6 +1103,7 @@ class GenerationParams {
     double? presencePenalty,
     int? seed,
     List<String>? stopSequences,
+    bool? ignoreEos,
     String? grammar,
     bool? grammarLazy,
     ThinkingBudget? thinkingBudget,
@@ -1109,6 +1128,7 @@ class GenerationParams {
       presencePenalty: presencePenalty ?? this.presencePenalty,
       seed: seed ?? this.seed,
       stopSequences: stopSequences ?? this.stopSequences,
+      ignoreEos: ignoreEos ?? this.ignoreEos,
       grammar: grammar ?? this.grammar,
       grammarLazy: grammarLazy ?? this.grammarLazy,
       thinkingBudget: clearThinkingBudget

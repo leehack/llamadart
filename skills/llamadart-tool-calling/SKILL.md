@@ -259,6 +259,9 @@ description: >-
   `ChatSession.create`/`LlamaEngine.create` still work there, but their `stop`
   does not prove EOS. Do not infer truncation from output length or run tool
   handlers automatically from an unverified terminal result.
+- `GenerationParams(ignoreEos: true)` with tools throws
+  `LlamaUnsupportedException` for any `ToolChoice` but `none`: the tool-call
+  grammar cannot be combined with it.
 - Runtime limits: LiteRT-LM has no grammar enforcement, LiteRT-LM on web
   forwards tools only through `LlamaBackend.withTextHistory()`
   (`ToolChoice.required`, `parallelToolCalls` and tool-result `content`

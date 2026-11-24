@@ -9028,6 +9028,7 @@ void main() {
         expect(capabilities.supportsPresencePenalty, isFalse);
         expect(capabilities.supportsThinkingBudget, isFalse);
         expect(capabilities.supportsStreamBatching, isFalse);
+        expect(capabilities.supportsIgnoreEos, isFalse);
         expect(capabilities.supportsVision, isFalse);
 
         await engine.unloadModel();
@@ -9356,6 +9357,25 @@ void main() {
         expect(fake().completionOption('minP'), 0.05);
       });
 
+      test('rejects ignoreEos', () async {
+        await loadModel();
+        expect(
+          () => backend.generate(
+            1,
+            'Hello',
+            const GenerationParams(ignoreEos: true),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('GenerationParams.ignoreEos'),
+            ),
+          ),
+        );
+        expect(fake().completionCalls, 0);
+      });
+
       test('rejects every option after a failed or malformed probe', () async {
         final probes = <void Function(FakeFeatureBridge)>[
           (bridge) => bridge.completionProbeError = 'Bridge has been disposed.',
@@ -9407,6 +9427,7 @@ void main() {
         Future<List<bool>> reported() async {
           final capabilities = await backend.generationCapabilities();
           expect(capabilities.streamBatching, isFalse);
+          expect(capabilities.ignoreEos, isFalse);
           return <bool>[
             capabilities.penalty,
             capabilities.presencePenalty,

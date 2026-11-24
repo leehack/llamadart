@@ -6,6 +6,7 @@ import '../../core/exceptions.dart';
 import '../../hook/native_release_pins.dart';
 import '../isolate_shutdown_releases.dart';
 import 'bindings.dart';
+import 'load_param_helpers.dart';
 import 'native_barrier_api.dart';
 import 'llama_cpp_raw_bindings.dart' as raw_bindings;
 
@@ -568,6 +569,26 @@ final class LlamaCppObjectCalls {
   final LlamaCppMixedBatchApi? Function()? _mixedBatchResolver;
 
   final int Function(Pointer<llama_model>) _modelInputWidth;
+
+  /// Reads the vocabulary size and the model's suppress tokens, which
+  /// generation samplers need.
+  ({int vocabSize, List<int> suppressedTokens}) samplingModelInfo(
+    Pointer<llama_model> model,
+  ) {
+    failures.ensureUsable(model, 'This model');
+    final vocab = llama_model_get_vocab(model);
+    return (
+      vocabSize: llama_vocab_n_tokens(vocab),
+      suppressedTokens: readModelSuppressTokens(vocab),
+    );
+  }
+
+  /// Walks the vocabulary of [model] for every end-of-generation token.
+  List<int> endOfGenerationTokens(Pointer<llama_model> model) {
+    failures.ensureUsable(model, 'This model');
+    final vocab = llama_model_get_vocab(model);
+    return readModelEndOfGenerationTokens(vocab, llama_vocab_n_tokens(vocab));
+  }
 
   /// Reads model shape and pooling support without mutating inference state.
   ({
