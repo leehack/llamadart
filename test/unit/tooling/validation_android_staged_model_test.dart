@@ -120,78 +120,73 @@ void main() {
     'settings': {'device_model': 'caiman', 'device_version': '35'},
   };
 
-  test(
-    'Android build seals and submits the exact locked private payload',
-    () async {
-      await build();
-      final manifest = await verifyBundle(bundle);
-      expect(File(p.join(bundle.path, payload)).readAsBytesSync(), modelBytes);
-      expect((manifest['files'] as Map)[payload], {
-        'sha256': digest,
-        'bytes': modelBytes.length,
-      });
-      expect(jsonEncode(manifest), isNot(contains(model.path)));
-      const define = 'VALIDATION_ANDROID_STAGED_MODEL=true';
-      expect(
-        File(p.join(bundle.path, 'qa-app.apk')).readAsStringSync(),
-        isNot(contains(define)),
-      );
-      expect(
-        File(p.join(bundle.path, 'app.apk')).readAsStringSync(),
-        contains('--dart-define=$define'),
-      );
-      expect(
-        File(p.join(bundle.path, 'test.apk')).readAsStringSync(),
-        contains(base64Encode(utf8.encode(define))),
-      );
+  test('Android build seals and submits the exact locked private payload', () async {
+    await build();
+    final manifest = await verifyBundle(bundle);
+    expect(File(p.join(bundle.path, payload)).readAsBytesSync(), modelBytes);
+    expect((manifest['files'] as Map)[payload], {
+      'sha256': digest,
+      'bytes': modelBytes.length,
+    });
+    expect(jsonEncode(manifest), isNot(contains(model.path)));
+    const define = 'VALIDATION_ANDROID_STAGED_MODEL=true';
+    expect(
+      File(p.join(bundle.path, 'qa-app.apk')).readAsStringSync(),
+      isNot(contains(define)),
+    );
+    expect(
+      File(p.join(bundle.path, 'app.apk')).readAsStringSync(),
+      contains('--dart-define=$define'),
+    );
+    expect(
+      File(p.join(bundle.path, 'test.apk')).readAsStringSync(),
+      contains(base64Encode(utf8.encode(define))),
+    );
 
-      final plan = RemotePlan(planJson());
-      final submitted = <List<String>>[];
-      final provider = GcloudProvider(
-        execute: (binary, args, {directory, timeout, environment}) async {
-          if (args.first == 'auth') {
-            return const CommandResult(0, 'mock-token', '');
-          }
-          expect(directory, bundle.path);
-          submitted.add(args);
-          return const CommandResult(
-            0,
-            '',
-            'Test [matrix-one] has been created in the Google Cloud.\n',
-          );
-        },
-        createHttpClient: () => throw StateError('mock matrix lookup'),
-      );
-      await expectLater(provider.start(plan, (_) {}), throwsStateError);
-      expect(
-        submitted.single,
-        containsAll([
-          '--other-files=/data/local/tmp/llamadart-validation-model.litertlm=$payload',
-          '--environment-variables=validationStageModelName=$filename,validationStageModelSha256=$digest,validationStageModelBytes=${modelBytes.length}',
-        ]),
-      );
+    final plan = RemotePlan(planJson());
+    final submitted = <List<String>>[];
+    final provider = GcloudProvider(
+      execute: (binary, args, {directory, timeout, environment}) async {
+        if (args.first == 'auth') {
+          return const CommandResult(0, 'mock-token', '');
+        }
+        expect(directory, bundle.path);
+        submitted.add(args);
+        return const CommandResult(
+          0,
+          '',
+          'Test [matrix-one] has been created in the Google Cloud.\n',
+        );
+      },
+      createHttpClient: () => throw StateError('mock matrix lookup'),
+    );
+    await expectLater(provider.start(plan, (_) {}), throwsStateError);
+    expect(
+      submitted.single,
+      containsAll([
+        '--test-targets=class com.example.llamadart_chat_example.MainActivityTest',
+        '--other-files=/data/local/tmp/llamadart-validation-model.litertlm=$payload',
+        '--environment-variables=validationStageModelName=$filename,validationStageModelSha256=$digest,validationStageModelBytes=${modelBytes.length}',
+      ]),
+    );
 
-      File(p.join(bundle.path, payload)).writeAsBytesSync([0, 3, 5, 7]);
-      await expectLater(verifyBundle(bundle), throwsA(anything));
-      await expectLater(
-        writeBundleManifest(bundle, manifest),
-        throwsStateError,
-      );
-      final forgedFile = (manifest['files'] as Map)[payload] as Map;
-      forgedFile['sha256'] = sha256.convert([0, 3, 5, 7]).toString();
-      File(
-        p.join(bundle.path, 'bundle-manifest.json'),
-      ).writeAsStringSync(jsonEncode(manifest));
-      await expectLater(verifyBundle(bundle), throwsStateError);
-      expect(
-        () => requireRemoteBundleTarget(
-          RemotePlan(planJson()..remove('android_staged_model')),
-          manifest,
-        ),
-        throwsStateError,
-      );
-    },
-  );
+    File(p.join(bundle.path, payload)).writeAsBytesSync([0, 3, 5, 7]);
+    await expectLater(verifyBundle(bundle), throwsA(anything));
+    await expectLater(writeBundleManifest(bundle, manifest), throwsStateError);
+    final forgedFile = (manifest['files'] as Map)[payload] as Map;
+    forgedFile['sha256'] = sha256.convert([0, 3, 5, 7]).toString();
+    File(
+      p.join(bundle.path, 'bundle-manifest.json'),
+    ).writeAsStringSync(jsonEncode(manifest));
+    await expectLater(verifyBundle(bundle), throwsStateError);
+    expect(
+      () => requireRemoteBundleTarget(
+        RemotePlan(planJson()..remove('android_staged_model')),
+        manifest,
+      ),
+      throwsStateError,
+    );
+  });
 
   for (final (name, bytes) in [
     ('wrong digest at the locked size', [0, 3, 5, 7]),

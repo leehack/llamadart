@@ -2710,6 +2710,16 @@ void main() {
           expect(calls.single, contains('--async'));
           expect(calls.single, contains('--num-flaky-test-attempts=0'));
           expect(calls.single, contains('--timeout=${timeoutMinutes}m'));
+          const androidRunner =
+              '--test-targets=class com.example.llamadart_chat_example.MainActivityTest';
+          if (target == 'firebase-android') {
+            expect(
+              calls.single,
+              containsAll([androidRunner, '--no-use-orchestrator']),
+            );
+          } else {
+            expect(calls.single, isNot(contains(androidRunner)));
+          }
           expect(
             calls.single.where((arg) => arg.startsWith('--device=')),
             hasLength(1),

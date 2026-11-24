@@ -1164,6 +1164,11 @@ class GcloudProvider implements RemoteProvider {
       '--client-details=matrixLabel=${plan.runId}',
       '--results-dir=${plan.runId}',
       '--format=json',
+      if (!ios) ...[
+        // The APK also contains an independently admitted S24 runner.
+        '--test-targets=class com.example.llamadart_chat_example.MainActivityTest',
+        '--no-use-orchestrator',
+      ],
       if (stagedModel != null) ...[
         '--other-files=$_androidStagedModelDevicePath=$androidStagedModelPayload',
         '--environment-variables=validationStageModelName=${stagedModel['filename']},'
