@@ -97,16 +97,35 @@ void main() {
     return (limit, service.getPerformanceContext(context)!.evalTokens);
   }
 
-  test('suppresses every end-of-generation token, read at load', () {
-    expect(
-      service.debugSuppressedTokensForTesting(model, ignoreEos: true),
-      unorderedEquals(const <int>[_eos, _eot, _eom]),
-    );
-    expect(
-      service.debugSuppressedTokensForTesting(model, ignoreEos: false),
-      isEmpty,
-    );
-  });
+  test(
+    'walks the vocabulary only for the first ignoreEos generation',
+    () async {
+      await generate(_uniform.copyWith(maxTokens: 4));
+      expect(
+        service.debugSuppressedTokensForTesting(model, ignoreEos: true),
+        isNull,
+        reason: 'a load and a generation without ignoreEos skip the walk',
+      );
+
+      await generate(_uniform.copyWith(maxTokens: 4, ignoreEos: true));
+      final suppressed = service.debugSuppressedTokensForTesting(
+        model,
+        ignoreEos: true,
+      );
+      expect(suppressed, unorderedEquals(const <int>[_eos, _eot, _eom]));
+
+      await generate(_uniform.copyWith(maxTokens: 4, ignoreEos: true));
+      expect(
+        service.debugSuppressedTokensForTesting(model, ignoreEos: true),
+        same(suppressed),
+        reason: 'the list is cached on the model',
+      );
+      expect(
+        service.debugSuppressedTokensForTesting(model, ignoreEos: false),
+        isEmpty,
+      );
+    },
+  );
 
   test('runs to maxTokens where sampling would otherwise end', () async {
     final (limit, tokens) = await generate(_uniform);
@@ -146,7 +165,9 @@ void main() {
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,
             'message',
-            contains('ignoreEos'),
+            'GenerationParams.ignoreEos cannot be combined with a grammar '
+                '(including one from tools or responseFormat). Remove the '
+                'grammar, use ToolChoice.none, or set ignoreEos to false.',
           ),
         ),
       );

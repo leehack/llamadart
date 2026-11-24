@@ -8929,11 +8929,7 @@ int _registerNullModelForTesting(LlamaCppService service) {
       .newInstance(
         Symbol.empty,
         [nullptr, LlamaCppObjectCalls.upstream],
-        {
-          #vocabSize: 0,
-          #suppressedTokens: const <int>[],
-          #suppressedTokensIgnoringEos: const <int>[],
-        },
+        {#vocabSize: 0, #suppressedTokens: const <int>[]},
       )
       .reflectee;
   final handle = _invokePrivateForTesting<int>(service, '_getHandle', []);

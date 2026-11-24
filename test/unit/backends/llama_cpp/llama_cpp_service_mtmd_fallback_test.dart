@@ -219,11 +219,7 @@ void main() {
           .newInstance(
             Symbol.empty,
             [model, LlamaCppObjectCalls.upstream],
-            {
-              #vocabSize: 0,
-              #suppressedTokens: const <int>[],
-              #suppressedTokensIgnoringEos: const <int>[],
-            },
+            {#vocabSize: 0, #suppressedTokens: const <int>[]},
           )
           .reflectee;
       (mirror.getField(private('_modelToMtmd')).reflectee as Map)[modelHandle] =

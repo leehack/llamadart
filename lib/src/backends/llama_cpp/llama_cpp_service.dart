@@ -108,9 +108,9 @@ LlamaArgumentException _draftMicroBatchTooSmall(
 }
 
 const String _ignoreEosWithGrammar =
-    'GenerationParams.ignoreEos is not supported with a grammar, including '
-    'one derived from tools or a response format, as llama.cpp\'s '
-    '--ignore-eos CLI option does.';
+    'GenerationParams.ignoreEos cannot be combined with a grammar (including '
+    'one from tools or responseFormat). Remove the grammar, use '
+    'ToolChoice.none, or set ignoreEos to false.';
 
 const String _draftBlockRequirement =
     'for llama.cpp draft-dflash and draft-dspark, which decode a whole draft '
@@ -2995,10 +2995,6 @@ class LlamaCppService {
         sourcePath: sourcePath,
         vocabSize: info.vocabSize,
         suppressedTokens: info.suppressedTokens,
-        suppressedTokensIgnoringEos: List<int>.unmodifiable({
-          ...info.suppressedTokens,
-          ...info.endOfGenerationTokens,
-        }),
       );
     } catch (_) {
       IsolateShutdownReleases.current.release(modelPointer);
@@ -4135,7 +4131,6 @@ class LlamaCppService {
       calls,
       vocabSize: 0,
       suppressedTokens: const <int>[],
-      suppressedTokensIgnoringEos: const <int>[],
     );
     final ctxWrapper = _LlamaContextWrapper(
       Pointer<llama_context>.fromAddress(contextAddress),
@@ -5424,8 +5419,9 @@ class LlamaCppService {
     );
   }
 
-  /// The tokens a generation of [modelHandle] suppresses, for unit tests.
-  List<int> debugSuppressedTokensForTesting(
+  /// The tokens a generation of [modelHandle] suppresses, for unit tests;
+  /// with [ignoreEos], `null` until a generation has read them.
+  List<int>? debugSuppressedTokensForTesting(
     int modelHandle, {
     required bool ignoreEos,
   }) {
@@ -5768,7 +5764,10 @@ class LlamaCppService {
         vocab,
         model.vocabSize,
         params.ignoreEos
-            ? model.suppressedTokensIgnoringEos
+            ? model.suppressedTokensIgnoringEos ??= List<int>.unmodifiable({
+                ...model.suppressedTokens,
+                ..._calls.endOfGenerationTokens(model.pointer),
+              })
             : model.suppressedTokens,
         grammarPtr,
         rootPtr,
@@ -11638,8 +11637,9 @@ class _LlamaModelWrapper {
   final int vocabSize;
   final List<int> suppressedTokens;
 
-  /// [suppressedTokens] plus every end-of-generation token.
-  final List<int> suppressedTokensIgnoringEos;
+  /// [suppressedTokens] plus every end-of-generation token, read by the
+  /// first `ignoreEos` generation: other loads skip the vocabulary walk.
+  List<int>? suppressedTokensIgnoringEos;
   final LlamaCppObjectCalls _calls;
   _LlamaModelWrapper(
     this.pointer,
@@ -11647,7 +11647,6 @@ class _LlamaModelWrapper {
     this.sourcePath,
     required this.vocabSize,
     required this.suppressedTokens,
-    required this.suppressedTokensIgnoringEos,
   });
   void dispose() {
     IsolateShutdownReleases.current.release(pointer);

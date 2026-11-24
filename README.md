@@ -18,8 +18,8 @@ experimental. Native targets need no network once the model is on the device.
 
 Native llama.cpp can keep generating past end-of-generation tokens with
 `GenerationParams(ignoreEos: true)`, as the `--ignore-eos` CLI option does,
-for benchmarks that need a fixed token count; it rejects a grammar, and the
-other runtimes reject it. See [runtime parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters).
+for benchmarks that need a fixed token count; it rejects a non-empty grammar,
+and the other runtimes reject it. See [runtime parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters).
 
 Choose [direct llamadart, Genkit, or Flutter Edge AI](https://llamadart.leehack.com/docs/integrations/choosing-an-api)
 for your application. Genkit is a

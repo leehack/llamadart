@@ -37,11 +37,7 @@ void main(List<String> arguments) {
       .newInstance(
         const Symbol(''),
         [Pointer<llama_model>.fromAddress(0x1000), calls],
-        {
-          #vocabSize: 1,
-          #suppressedTokens: <int>[],
-          #suppressedTokensIgnoringEos: <int>[],
-        },
+        {#vocabSize: 1, #suppressedTokens: <int>[]},
       )
       .reflectee;
   (_read(service, '_models') as Map)[1] = model;

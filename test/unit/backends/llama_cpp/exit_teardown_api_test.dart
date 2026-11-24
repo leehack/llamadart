@@ -262,7 +262,7 @@ void main() {
     final info = calls.samplingModelInfo(model);
     expect(info.vocabSize, 259);
     expect(info.suppressedTokens, isEmpty);
-    expect(info.endOfGenerationTokens, const <int>[2]);
+    expect(calls.endOfGenerationTokens(model), const <int>[2]);
   });
 
   test('tracked calls use the exit API for every call', () {
@@ -572,16 +572,21 @@ void main() {
         () => calls.adapterLoraInit(model, nullptr),
         throwsA(isA<LlamaModelException>()),
       );
-      expect(
+      for (final read in [
         () => calls.samplingModelInfo(model),
-        throwsA(
-          isA<LlamaStateException>().having(
-            (error) => error.message,
-            'message',
-            startsWith('This model is unusable'),
+        () => calls.endOfGenerationTokens(model),
+      ]) {
+        expect(
+          read,
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              startsWith('This model is unusable'),
+            ),
           ),
-        ),
-      );
+        );
+      }
     });
 
     test('a failure value without a caught exception is returned', () {

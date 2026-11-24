@@ -570,18 +570,24 @@ final class LlamaCppObjectCalls {
 
   final int Function(Pointer<llama_model>) _modelInputWidth;
 
-  /// Reads the vocabulary size, the model's suppress tokens and every
-  /// end-of-generation token, which generation samplers need.
-  ({int vocabSize, List<int> suppressedTokens, List<int> endOfGenerationTokens})
-  samplingModelInfo(Pointer<llama_model> model) {
+  /// Reads the vocabulary size and the model's suppress tokens, which
+  /// generation samplers need.
+  ({int vocabSize, List<int> suppressedTokens}) samplingModelInfo(
+    Pointer<llama_model> model,
+  ) {
     failures.ensureUsable(model, 'This model');
     final vocab = llama_model_get_vocab(model);
-    final vocabSize = llama_vocab_n_tokens(vocab);
     return (
-      vocabSize: vocabSize,
+      vocabSize: llama_vocab_n_tokens(vocab),
       suppressedTokens: readModelSuppressTokens(vocab),
-      endOfGenerationTokens: readModelEndOfGenerationTokens(vocab, vocabSize),
     );
+  }
+
+  /// Walks the vocabulary of [model] for every end-of-generation token.
+  List<int> endOfGenerationTokens(Pointer<llama_model> model) {
+    failures.ensureUsable(model, 'This model');
+    final vocab = llama_model_get_vocab(model);
+    return readModelEndOfGenerationTokens(vocab, llama_vocab_n_tokens(vocab));
   }
 
   /// Reads model shape and pooling support without mutating inference state.
