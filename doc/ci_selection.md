@@ -33,9 +33,11 @@ PR. A path filter must not prevent a required workflow from reporting.
 | Other chat app implementation/dependencies (`lib/**`, `pubspec.*`, `integration_test/**`, `physical_ios_speech_e2e_support_test.dart`) | Static, Linux VM tests, private harness, Apple cache check, Web Chat | All app targets |
 | Chat app unit tests (other than `physical_ios_speech_e2e_support_test.dart`) | Static, Linux VM tests and Web Chat | None |
 | DartPad GGUF example (non-Markdown files under `example/dartpad_gguf/`) | Root static checks, Example Package Tests (VM and Chrome), and Markdown Tests | None |
+| Basic App, Laya Command Bar, Laya Tetris, llamadart CLI, llamadart Server, TUI Coding Agent | Root static checks, Example Package Tests and Markdown Tests. Basic App files imported or read by root suites also select Linux VM and those suites' Chrome or native lanes, including the smoke YAML and native C++ reference | None |
+| Training notebook (`example/training_notebook/`) | Root static checks including the package archive, and Markdown Tests | None |
 | Root `test/**` (extant Linux-only leaf suite on PR vs host-sensitive suite, helper/fixture, deleted/unknown, or push) | Static, all Linux VM tests, Chrome and Windows host tests; Mac native shards only when `test_shards.dart hosts-json` reports host-relevant or on helper/fixture/push/probe-failure; shared fixtures/helpers also run Studio, `studio-macos` and Apple cache | None |
 | Browser backend trees (`lib/src/backends/web/**`, `lib/src/backends/webgpu/**`) | Non-Mac full graph (Linux, Chrome, Windows native, Ubuntu Studio, Web Chat, Genkit, Model Store, examples) with zero Mac allocations | Linux, Windows desktops; apps (PR defers Android) |
-| Root runtime/hooks/dependencies, other example packages, conditional backend entrypoints | Full behavioral graph | All targets; a PR defers macOS desktop and Android unless it changes their build inputs (`.flutter-version` included for `macos-15`) |
+| Root runtime/hooks/dependencies, unclassified example inputs, conditional backend entrypoints | Full behavioral graph | All targets; a PR defers macOS desktop and Android unless it changes their build inputs (`.flutter-version` included for `macos-15`) |
 | Workflow/selector or unclassified paths | Full graph including synthetic artifact transport (workflows/selector) | All targets; a PR defers `macos-15` and `android` unless it changes their build inputs (`validation_bundles.yml`, `select_jobs.py`, `hook/`, `lib/src/hook/`, `pubspec.*`, `.flutter-version` for `macos-15`, `tool/testing/validation*`, or compiled `packages/llamadart_validation/`) |
 | Missing, empty or invalid diff; explicit manual bundle run | Full fallback | All targets (`macos-15` retained) |
 
@@ -67,8 +69,18 @@ templates under `lib/` select the full runtime graph.
 
 For DartPad GGUF, the root static job runs `public_entrypoints_test.dart` and
 `dartpad_examples_imports_test.dart` in place of the Linux VM shards.
-Markdown-only changes in the example run the docs jobs and Markdown Tests,
-including the link check for Markdown shipped in the package.
+Markdown-only changes in the listed examples run the docs jobs and Markdown
+Tests, including the link check for Markdown shipped in the package. Nested
+`.gitignore` files in the six other example packages and the notebook tree
+retain the full fallback for bundle clean-tree checks. Laya Tetris deployment
+has its own push filter.
+
+The selector tests inventory tracked root entries and immediate directories
+under `example/` and `tool/`. Classify additions explicitly in the test.
+Unknown paths still trigger the full fallback, including Markdown in a new
+example directory. The tests check every tracked file in the example rules,
+check that literal file references from tracked sources retain the readers'
+jobs, and pin the exact membership of the four narrow tooling groups.
 Web Chat Contract installs no system packages, so an Ubuntu mirror outage cannot fail the required job.
 The private harness also checks APK integrity.
 
