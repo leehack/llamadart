@@ -74,49 +74,49 @@ const String _approvedManifestJson = '''
       "size_bytes": 30299
     },
     "llama_webgpu_bridge.js": {
-      "sha256": "2af5bca8d17b77dd57cbd4abb3f6e02cfecb3e4ac86e221bd5fe68e66c5859cb",
-      "size_bytes": 238361
+      "sha256": "f8a9cdb32dc4e487f40f97cc79bf52622997f0860a5b96123a00dc4ad44a64df",
+      "size_bytes": 238494
     },
     "llama_webgpu_bridge_worker.js": {
-      "sha256": "ca54bb1e94043ade41519b1d156804140c0b70b7b166cfe493ab12f98dd9d45e",
-      "size_bytes": 237705
+      "sha256": "ac8cb639c778403701667fef5612920fd7cf67f13d46556c5f057e2858cc8b5e",
+      "size_bytes": 237838
     },
     "llama_webgpu_core.js": {
-      "sha256": "21803768c374c45296f14fc5781ed8517d6e3da9b40117f007081c2e2a734010",
-      "size_bytes": 135118
+      "sha256": "96fe793626afd42ea28f15161f54bfb91daf8a967fa6b9a603816424b2944085",
+      "size_bytes": 135467
     },
     "llama_webgpu_core.wasm": {
-      "sha256": "0035e4c9c7ef610155735cb52db019f0ccef3f3fd29c8ebe11254fb77890fa9f",
-      "size_bytes": 10034672
+      "sha256": "9ff34bc7aff8936700f70d97e61eed1f51003f6531674ed623e4a98680ccde78",
+      "size_bytes": 10035271
     },
     "llama_webgpu_core_mem64.js": {
-      "sha256": "b971d2e636797a89a0cdd4e23f521711cd4d4aecf8adc53157b1b0871e344d13",
-      "size_bytes": 157856
+      "sha256": "37a6b5aa0c31f1a8ec127b42495370c09b2ad5af1f6360581ef273131dbd4b19",
+      "size_bytes": 158350
     },
     "llama_webgpu_core_mem64.wasm": {
-      "sha256": "f5fd3f92124b594ce24e7b40ea467b3d615480ed50164372f139c4af89e17d24",
-      "size_bytes": 10315334
+      "sha256": "bd21af6f502f604ac28281ac375ec61669b26b549547b30c4dce574857bad9b6",
+      "size_bytes": 10316142
     },
     "llama_webgpu_core_mem64_st.js": {
-      "sha256": "dec1a1dd76a1adafcebc58beba8c59e03924d789b1f613f7b39d9ffa267eee15",
-      "size_bytes": 136637
+      "sha256": "24a01cc95b8678df52ff74806744ecba1a25f4f4de9249152c1d802cc5d5b410",
+      "size_bytes": 137114
     },
     "llama_webgpu_core_mem64_st.wasm": {
-      "sha256": "42872f136ef1d3b696424df033cdc60112f7303d68644fe1a7e003aa3070631d",
-      "size_bytes": 9741407
+      "sha256": "9445455f7b8bd18835bbd060768d0002e732387fc12c06734aa9cc9c69d0a515",
+      "size_bytes": 9742221
     },
     "llama_webgpu_core_st.js": {
-      "sha256": "aa4943d985c1b89ac7953430d74b82e4282b7700b008de4e129ceac34b58e19e",
-      "size_bytes": 115397
+      "sha256": "23f13bff6a363e96ae053426524048755048a8a0ce8ee7288216d2842c468bcf",
+      "size_bytes": 115746
     },
     "llama_webgpu_core_st.wasm": {
-      "sha256": "3a7c7e959dfb12ae87e5b0ba3d838d18712de6bd9a2a81d06c5065edf64b1ef7",
-      "size_bytes": 9445586
+      "sha256": "692db73210271254d69161e31054f81d30390887d6bd3d23eaf1658458faefcb",
+      "size_bytes": 9446192
     }
   },
   "assets_repository": "leehack/llama-web-bridge-assets",
-  "bridge_assets_tag": "v0.1.93",
-  "bridge_commit": "273fe3bb59e7dcbb419ab25409863bb39826709a",
+  "bridge_assets_tag": "v0.1.94",
+  "bridge_commit": "9ab421be07abe212f9ff070ad2b4eafa41559bc5",
   "bridge_repository": "leehack/llama-web-bridge",
   "capabilities": {
     "memory64": true,
@@ -151,55 +151,55 @@ const String _approvedManifestJson = '''
       "size_bytes": 30299
     },
     "llama_webgpu_bridge.js": {
-      "sha256": "2af5bca8d17b77dd57cbd4abb3f6e02cfecb3e4ac86e221bd5fe68e66c5859cb",
-      "size_bytes": 238361
+      "sha256": "f8a9cdb32dc4e487f40f97cc79bf52622997f0860a5b96123a00dc4ad44a64df",
+      "size_bytes": 238494
     },
     "llama_webgpu_bridge_worker.js": {
-      "sha256": "ca54bb1e94043ade41519b1d156804140c0b70b7b166cfe493ab12f98dd9d45e",
-      "size_bytes": 237705
+      "sha256": "ac8cb639c778403701667fef5612920fd7cf67f13d46556c5f057e2858cc8b5e",
+      "size_bytes": 237838
     },
     "llama_webgpu_core.js": {
-      "sha256": "21803768c374c45296f14fc5781ed8517d6e3da9b40117f007081c2e2a734010",
-      "size_bytes": 135118
+      "sha256": "96fe793626afd42ea28f15161f54bfb91daf8a967fa6b9a603816424b2944085",
+      "size_bytes": 135467
     },
     "llama_webgpu_core.wasm": {
-      "sha256": "0035e4c9c7ef610155735cb52db019f0ccef3f3fd29c8ebe11254fb77890fa9f",
-      "size_bytes": 10034672
+      "sha256": "9ff34bc7aff8936700f70d97e61eed1f51003f6531674ed623e4a98680ccde78",
+      "size_bytes": 10035271
     },
     "llama_webgpu_core_mem64.js": {
-      "sha256": "b971d2e636797a89a0cdd4e23f521711cd4d4aecf8adc53157b1b0871e344d13",
-      "size_bytes": 157856
+      "sha256": "37a6b5aa0c31f1a8ec127b42495370c09b2ad5af1f6360581ef273131dbd4b19",
+      "size_bytes": 158350
     },
     "llama_webgpu_core_mem64.wasm": {
-      "sha256": "f5fd3f92124b594ce24e7b40ea467b3d615480ed50164372f139c4af89e17d24",
-      "size_bytes": 10315334
+      "sha256": "bd21af6f502f604ac28281ac375ec61669b26b549547b30c4dce574857bad9b6",
+      "size_bytes": 10316142
     },
     "llama_webgpu_core_mem64_st.js": {
-      "sha256": "dec1a1dd76a1adafcebc58beba8c59e03924d789b1f613f7b39d9ffa267eee15",
-      "size_bytes": 136637
+      "sha256": "24a01cc95b8678df52ff74806744ecba1a25f4f4de9249152c1d802cc5d5b410",
+      "size_bytes": 137114
     },
     "llama_webgpu_core_mem64_st.wasm": {
-      "sha256": "42872f136ef1d3b696424df033cdc60112f7303d68644fe1a7e003aa3070631d",
-      "size_bytes": 9741407
+      "sha256": "9445455f7b8bd18835bbd060768d0002e732387fc12c06734aa9cc9c69d0a515",
+      "size_bytes": 9742221
     },
     "llama_webgpu_core_st.js": {
-      "sha256": "aa4943d985c1b89ac7953430d74b82e4282b7700b008de4e129ceac34b58e19e",
-      "size_bytes": 115397
+      "sha256": "23f13bff6a363e96ae053426524048755048a8a0ce8ee7288216d2842c468bcf",
+      "size_bytes": 115746
     },
     "llama_webgpu_core_st.wasm": {
-      "sha256": "3a7c7e959dfb12ae87e5b0ba3d838d18712de6bd9a2a81d06c5065edf64b1ef7",
-      "size_bytes": 9445586
+      "sha256": "692db73210271254d69161e31054f81d30390887d6bd3d23eaf1658458faefcb",
+      "size_bytes": 9446192
     }
   },
-  "github_run_id": "45082255964",
-  "github_run_url": "https://github.com/leehack/llama-web-bridge/actions/runs/45082255964",
+  "github_run_id": "45319046585",
+  "github_run_url": "https://github.com/leehack/llama-web-bridge/actions/runs/45319046585",
   "llama_cpp_commit": "b1b770d90d94cad9e9ea5b993bdbc383a522fb28",
   "llama_cpp_tag": "v1.0.0",
   "native_commit": "4b480fbf303d69c1f67416a25986bd0913728ede",
   "native_manifest_sha256": "7d8e69971e2e3bd73d258005c86d5f47d0cd96e1d7f08a23fdf44dd244ea1316",
   "native_release_tag": "v1.0.0-4",
   "native_repository": "leehack/llamadart-native",
-  "orchestrator_correlation_id": "manual-v0.1.93-273fe3b",
+  "orchestrator_correlation_id": "manual-v0.1.94-9ab421b",
   "qualification_gates": {
     "multimodal": "passed",
     "speech_to_text": "required-automated-qualification",
@@ -208,9 +208,9 @@ const String _approvedManifestJson = '''
   },
   "release_channel": "stable",
   "release_rebuild": 0,
-  "release_tag": "v0.1.93",
+  "release_tag": "v0.1.94",
   "schema_version": 2,
-  "source_commit": "273fe3bb59e7dcbb419ab25409863bb39826709a",
+  "source_commit": "9ab421be07abe212f9ff070ad2b4eafa41559bc5",
   "source_repository": "leehack/llama-web-bridge",
   "unproven_capabilities": {
     "hardware_gpu_acceleration": "unavailable-on-hosted-runners",
@@ -231,7 +231,7 @@ Future<List<String>> _verifyManifestJson(
 }) {
   final bytes = utf8.encode(manifestJson);
   return verifyManifest(
-    expectedTag: 'v0.1.93',
+    expectedTag: 'v0.1.94',
     expectedLlamaCppTag: bridgeLlamaCppTag,
     expectedLlamaCppCommit: bridgeLlamaCppCommit,
     expectedBridgeCommit: bridgeSourceCommit,
@@ -1235,7 +1235,7 @@ void main() {
   }
 
   test('default assets include the qualified media embedding API', () {
-    expect(readPinnedBridgeTag(Directory.current), 'v0.1.93');
+    expect(readPinnedBridgeTag(Directory.current), 'v0.1.94');
     expect(bridgeNativeReleaseTag, 'v1.0.0-4');
     expect(bridgeApprovedNativePin, 'v1.0.0-4');
     expect(
@@ -2363,8 +2363,8 @@ void main() {
     });
 
     test('immutable release identity stays pinned to the approved release', () {
-      expect(bridgeAssetsReleaseId, '454836373');
-      expect(bridgeAssetsTagCommit, '00866ed50f48ea4f9622c1b5e380f27405567033');
+      expect(bridgeAssetsReleaseId, '456284051');
+      expect(bridgeAssetsTagCommit, '618e05dd033cf82d8987c15cd72c19681dc7053f');
     });
 
     test('accepts equivalent CRLF documentation passages', () {

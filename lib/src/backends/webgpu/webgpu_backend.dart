@@ -1215,9 +1215,9 @@ class WebGpuLlamaBackend
   // intermediate buffers.
   static const int _wasm32SafeModelCeilingBytes = 2 * 1024 * 1024 * 1024;
 
-  // The pinned bridge can mmap a lazy tensor above 4 GiB, while JS-backed
-  // WasmFS reads clamp at INT32_MAX. A GGUF within this bound cannot contain
-  // such a tensor. Without a size hint, keep the bridge policy.
+  // Older compatible cores can mmap a lazy tensor above 4 GiB and clamp
+  // JS-backed WasmFS reads at INT32_MAX. Preflight does not identify the
+  // newer read path. Without a size hint, keep the bridge policy.
   static const int _automaticStagingMaxModelBytes = 4 * 1024 * 1024 * 1024;
 
   /// Resolves the effective mem64 preference for a load.

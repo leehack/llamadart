@@ -703,9 +703,12 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.textContaining('Large download (~3 GB)'), findsOneWidget);
-      expect(find.textContaining('~11 GB'), findsOneWidget);
-      expect(find.textContaining('16+ GB RAM'), findsOneWidget);
-      expect(find.textContaining('8+ GB RAM'), findsNothing);
+      expect(find.textContaining('~4–6 GiB peak browser RSS'), findsOneWidget);
+      expect(find.textContaining('~3.5 GiB steady'), findsOneWidget);
+      expect(
+        find.textContaining('Chrome 158 on Apple silicon macOS'),
+        findsOneWidget,
+      );
 
       final warningText = find.textContaining('Large download (~3 GB)');
       final warningContext = tester.element(warningText);
@@ -725,7 +728,7 @@ void main() {
       engine.loaded.complete();
       await tester.pump();
 
-      expect(find.textContaining('~11 GB'), findsNothing);
+      expect(find.textContaining('~4–6 GiB peak browser RSS'), findsNothing);
 
       await tester.ensureVisible(_prompt);
       await send(tester, 'Hi');

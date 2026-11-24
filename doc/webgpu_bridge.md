@@ -68,11 +68,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.93`.
+Default pinned tag in the example is `v0.1.94`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.93 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.94 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination.
@@ -95,17 +95,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.93';
+  window.__llamadartBridgeAssetsTag = 'v0.1.94';
 </script>
 ```
 
 That release embeds llama.cpp `v1.0.0`, matching the `hook/build.dart` native pin
 (`v1.0.0-4`, both built from upstream llama.cpp `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`)
-even though the bridge asset tag `v0.1.93` differs from the native runtime tag
-`v1.0.0-4`. Provenance for this immutable consumer artifact: release `454836373`,
-tag commit `00866ed50f48ea4f9622c1b5e380f27405567033`, bridge source
-`273fe3bb59e7dcbb419ab25409863bb39826709a`, and manifest SHA-256
-`d6200d9f467b20a942f4a77ff7041d98815ecb16acecd5176040b503f3544f95`.
+even though the bridge asset tag `v0.1.94` differs from the native runtime tag
+`v1.0.0-4`. Provenance for this immutable consumer artifact: release `456284051`,
+tag commit `618e05dd033cf82d8987c15cd72c19681dc7053f`, bridge source
+`9ab421be07abe212f9ff070ad2b4eafa41559bc5`, and manifest SHA-256
+`24d62c212338dda646a3b815d5883557a01b09997dee4f5b84245c5ab64fa5f6`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
@@ -242,11 +242,21 @@ physical playback, intelligibility or speaker-reference fidelity.
 - `v0.1.93+` also exposes `preflightCore()`. For automatic staging on
   Chromium, Dart requires both capabilities and a preflight that selects
   memory64. It limits the default to a positive `modelBytesHint` of at most
-  4 GiB because the pinned bridge can mmap a larger lazy tensor and
-  JS-backed WasmFS reads clamp to 2 GiB. The constructor takes the staging
+  4 GiB because older compatible cores can mmap a larger lazy tensor and
+  clamp JS-backed WasmFS reads to 2 GiB. Preflight does not distinguish those
+  cores from cores with the newer read path. The constructor takes the staging
   setting, so Dart replaces the candidate bridge if preflight falls back to
   wasm32, before loading the GGUF.
   Explicit staging settings and fetch-backed loading opt-ins take precedence.
+- `v0.1.94+`: JS-backed staging releases exclusively owned stream buffers
+  after copying them. Memory64 WasmFS downloads reserve capacity when the
+  length is known and fits the heap. Both core memory modes disable lazy
+  tensor reads, and large JS-backed reads copy in a loop. WebGPU weight uploads
+  use bounded batches with queue waits. Apps that share a core through
+  `coreModuleFactory` must serialize calls across its bridge instances.
+  [Bridge #341](https://github.com/leehack/llama-web-bridge/pull/341),
+  [#342](https://github.com/leehack/llama-web-bridge/pull/342),
+  [#343](https://github.com/leehack/llama-web-bridge/pull/343).
 - `v0.1.84+`: `getCompletionCapabilities()` reports
   `thinkingBudgetPauseGrammar`, and `thinkingBudget.pauseGrammar: false` keeps a
   grammar applied while the model reasons
