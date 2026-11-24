@@ -472,7 +472,7 @@
       ],
       "exemption": {
         "id": "speculative-decoding",
-        "reason": "Draft/MTP/ngram strategies need a dedicated pack with target/draft output and memory controls; ordinary text generation is insufficient. Model-free recording tests cover the native qwen35 Android Vulkan #948 restriction, which applies only to llama.cpp runtimes older than ggml 0.28.0 (bundled runtimes lift it), and the lift on newer runtimes. Device evidence for the lift is recorded on the issue, not by a pack. https://github.com/leehack/llamadart/issues/948",
+        "reason": "The local-only litert-lm-web-speculative scenario covers drafter admission and plain and speculative WebGPU turns against the pinned JS runtime, with bundle and browser identity. See https://github.com/leehack/llamadart/issues/1156. Draft/MTP/ngram strategies need a dedicated pack with target/draft output and memory controls; ordinary text generation is insufficient. Model-free recording tests cover the native qwen35 Android Vulkan #948 restriction, which applies only to llama.cpp runtimes older than ggml 0.28.0 (bundled runtimes lift it), and the lift on newer runtimes. Device evidence for the lift is recorded on the issue, not by a pack. https://github.com/leehack/llamadart/issues/948",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },

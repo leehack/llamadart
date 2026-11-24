@@ -1210,7 +1210,7 @@ void main() {
         () => liteRtLm.copyWith(batchSize: 256, loadMtp: false),
         rejectsArgument(
           'batchSize',
-          'LiteRtLmModelParams.copyWith does not take batchSize, loadMtp',
+          'LiteRtLmModelParams.copyWith does not take batchSize',
         ),
       );
     });
@@ -1293,6 +1293,7 @@ void main() {
     );
 
     const liteRtLm = LiteRtLmModelParams(
+      loadMtp: true,
       contextSize: 2002,
       device: ComputeDevice.cpu,
       gpuLayers: 0,
@@ -1316,6 +1317,7 @@ void main() {
 
     test('LiteRtLmModelParams getters read their own fields', () {
       expect(liteRtLm.embeddingEngine, isTrue);
+      expect(liteRtLm.loadMtp, isTrue);
       expect(liteRtLm.activationDataType, LiteRtLmActivationDataType.int8);
       expect(liteRtLm.prefillChunkSize, 64);
       expect(liteRtLm.parallelFileSectionLoading, isTrue);
@@ -1394,6 +1396,7 @@ void main() {
         loras: const [LoraAdapterConfig(path: '/b.bin')],
         chatTemplate: 'other',
         numberOfThreads: 6,
+        loadMtp: false,
         embeddingEngine: false,
         activationDataType: LiteRtLmActivationDataType.float32,
         prefillChunkSize: 32,
@@ -1434,7 +1437,6 @@ void main() {
         #clearTensorSplit: true,
         #useMmap: true,
         #useMlock: false,
-        #loadMtp: false,
         #flashAttention: FlashAttention.auto,
         #cacheTypeK: KvCacheType.f16,
         #cacheTypeV: KvCacheType.f16,

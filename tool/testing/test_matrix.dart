@@ -1467,6 +1467,20 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'LiteRT-LM Web generation-limit reporting, the token-count load probe, automatic tool loops or a @litert-lm/core pin change. Repeat with the affected model/backend.',
   ),
   TestMatrixRow(
+    id: 'litert-lm-web-speculative',
+    tier: 'targeted',
+    mode: 'local-only; headed Chrome WebGPU',
+    covers:
+        'Bundled MTP modes, pinned JS round counts, greedy repeats, '
+        'cancellation/reuse, tool calls, token limits and typed load refusals',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-web-speculative --model-path <drafter-bearing-model.litertlm> --backend gpu',
+    useWhen:
+        'LiteRT-LM Web drafter admission, speculation settings, token-limit '
+        'reporting or a Web runtime pin changes. Pass --expect with a refusal '
+        'substring for an existing drafter-free bundle.',
+  ),
+  TestMatrixRow(
     id: 'litert-lm-json-schema',
     tier: 'high-risk',
     mode: 'local-only; native host CPU or GPU',

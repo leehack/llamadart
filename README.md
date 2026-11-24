@@ -221,7 +221,9 @@ paths. Web LiteRT-LM uses `@litert-lm/core@0.20.0`; through
 `LlamaBackend.withTextHistory()` it forwards chat history, supports tool
 calling and reports replies cut off at a token limit. Web apps that preload
 `window.LiteRtLmEngine` must also expose `window.LiteRtLmBackendEnum = module.Backend`
-from the same package for CPU inference.
+from the same package for CPU inference. On WebGPU, a drafter-bearing bundle
+can use MTP with `loadMtp: true` and a per-request speculation flag. See the
+[LiteRT-LM Web MTP guide](https://llamadart.leehack.com/docs/guides/performance-tuning#litert-lm-web-mtp).
 
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and explicit
 historical or nightly `bNNNN` artifacts. New nightly wrapper rebuilds use

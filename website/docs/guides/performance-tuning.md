@@ -189,7 +189,8 @@ in production.
   URLs, and `mtp` uses
   only the model's own MTP layers. See
   [WebGPU bridge](../platforms/webgpu-bridge#what-differs-from-native).
-- LiteRT-LM web rejects speculative decoding.
+- LiteRT-LM WebGPU supports a bundled drafter. Load with `loadMtp: true`,
+  then opt in per turn. See [LiteRT-LM Web MTP](#litert-lm-web-mtp).
 - On llama.cpp, native or WebGPU, speculative decoding is text-only and cannot
   be combined with `thinkingBudget` or `grammar`.
 
@@ -291,6 +292,50 @@ Draftless n-gram strategies depend on the workload. On prompts with little
 repetition they can produce no drafts and run slower than baseline. A
 repeated-context prompt with small n-gram sizes was the clear speedup in
 local checks; short natural-language and code prompts were slower.
+
+### LiteRT-LM Web MTP
+
+Use `@litert-lm/core` 0.20.0 or later and a drafter-bearing bundle, such as the
+standard `gemma-4-E2B-it.litertlm`. The Artisan `-gpu.litertlm` and
+`-web.litertlm` variants have no drafter. The SDK checks that the loaded engine
+actually executes a speculative round. Web CPU, an older runtime without
+`SpeculativeDecodingMode`, and bundles that fail the probe report
+`LlamaUnsupportedException`.
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<LlamaCompletion> runWebMtp(Uri bundleUrl, String prompt) async {
+  final engine = LlamaEngine(LlamaBackend.withTextHistory());
+  try {
+    await engine.setModel(
+      LlamaModel(ModelSource.url(bundleUrl)),
+      params: const LiteRtLmModelParams(
+        device: ComputeDevice.gpu,
+        loadMtp: true,
+      ),
+    );
+    return await ChatSession(engine).send(
+      prompt,
+      params: const GenerationParams(
+        speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(),
+      ),
+    );
+  } finally {
+    await engine.dispose();
+  }
+}
+```
+
+Use `speculativeDecoding: true`, `SpeculativeDecodingConfig.backendDefault()`
+or `SpeculativeDecodingConfig.mtp()` without extra tuning or an external draft
+model. Other turns use plain decoding even when the drafter is loaded.
+Speculative output can differ from plain output, including with greedy sampling.
+
+Set `window.__llamadartLiteRtLmModuleUrl` to the module URL to let llamadart
+import it. If you preload it yourself, expose `window.LiteRtLmEngine`,
+`window.LiteRtLmBackendEnum` and `window.LiteRtLmSpeculativeDecodingMode` from
+the same module's `Engine`, `Backend` and `SpeculativeDecodingMode` exports.
 
 ### DSpark
 

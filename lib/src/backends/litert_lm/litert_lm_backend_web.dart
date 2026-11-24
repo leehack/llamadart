@@ -30,6 +30,7 @@ import '../../core/url_redaction.dart';
 import '../backend.dart';
 import '../web/webgpu_adapter_probe.dart';
 import 'litert_lm_sampler_params.dart';
+import 'litert_lm_speculative_options.dart';
 import 'litert_lm_templates.dart';
 
 /// Web LiteRT-LM backend for `.litertlm` models.
@@ -54,6 +55,7 @@ class LiteRtLmBackend
         BackendAvailability,
         BackendChatScope,
         BackendGenerationLimitSupport,
+        BackendGenerationCapabilitiesSupport,
         BackendGrammarConstraintsSupport,
         BackendEmbeddings,
         BackendEmbeddingsSupport,
@@ -102,6 +104,7 @@ class LiteRtLmBackend
   String? _modelCacheState;
   String? _activeBackend;
   int? _engineBackendValue;
+  ({int on, int off})? _speculativeModes;
   String? _chatTemplate;
 
   /// Creates a web LiteRT-LM backend.
@@ -186,6 +189,20 @@ class LiteRtLmBackend
   bool get supportsStatePersistence => false;
 
   @override
+  Future<BackendGenerationCapabilities> generationCapabilities() async =>
+      BackendGenerationCapabilities(
+        presencePenalty: false,
+        minP: false,
+        thinkingBudget: false,
+        speculativeDecodingStrategies: _isReady && _speculativeModes != null
+            ? const {
+                SpeculativeDecodingStrategy.backendDefault,
+                SpeculativeDecodingStrategy.mtp,
+              }
+            : const {},
+      );
+
+  @override
   bool get supportsGrammarConstraints => false;
 
   /// False for this legacy single-user-text constructor.
@@ -246,7 +263,15 @@ class LiteRtLmBackend
     liteRtLmWebCheckLoad(params, preferredBackend: _preferredBackend);
     _validateModelParams(params);
     final backend = _resolveBackendName(params);
-    if (params.device == ComputeDevice.gpu && !await webGpuAdapterAvailable()) {
+    if (params.loadMtp && !await webGpuAdapterAvailable()) {
+      throw LlamaUnsupportedException(
+        'LiteRT-LM Web MTP (loadMtp) needs WebGPU, but this browser grants no '
+        'WebGPU adapter. Use a browser with WebGPU enabled or omit loadMtp.',
+      );
+    }
+    if (!params.loadMtp &&
+        params.device == ComputeDevice.gpu &&
+        !await webGpuAdapterAvailable()) {
       throw LlamaUnsupportedException(
         'ComputeDevice.gpu needs WebGPU for LiteRT-LM on the Web, but this '
         'browser grants no WebGPU adapter. Use ComputeDevice.auto or cpu, or '
@@ -256,6 +281,9 @@ class LiteRtLmBackend
 
     onProgress?.call(0);
     final constructor = await _ensureEngineConstructor();
+    final speculativeModes = params.loadMtp
+        ? _readSpeculativeModes(constructor)
+        : null;
     final backendValue = _backendValueFromEnum(constructor, backend);
     if (backend == 'cpu' && backendValue == null) {
       throw LlamaUnsupportedException(
@@ -271,6 +299,7 @@ class LiteRtLmBackend
       model: modelValue,
       params: params,
       cpuBackend: backend == 'cpu' ? backendValue : null,
+      speculativeMode: speculativeModes?.on,
     );
 
     await _disposeEngine();
@@ -281,38 +310,73 @@ class LiteRtLmBackend
     _chatTemplate = params.chatTemplate;
     _activeBackend = backend;
     _hasContext = false;
+    _speculativeModes = speculativeModes;
 
     _setLiteRtLmConsoleLogLevel();
     final consoleGuard = _installScopedConsoleGuard();
     try {
-      _engine = await constructor.create(settings).toDart;
+      try {
+        _engine = await constructor.create(settings).toDart;
+      } catch (error) {
+        if (params.loadMtp &&
+            error.toString().contains(
+              'Model buffer not found for type: tf_lite_mtp_drafter',
+            )) {
+          throw LlamaUnsupportedException(
+            'LiteRT-LM Web MTP (loadMtp) requires a bundle with an MTP '
+            'drafter. This bundle has no MTP drafter. Load without loadMtp.',
+          );
+        }
+        throw StateError('LiteRT-LM web engine creation failed: $error');
+      }
       _engineBackendValue = _reportedBackendValue(_engine!) ?? backendValue;
       _supportsTextHistory =
           _textHistoryEnabled && await _probeTextHistory(_engine!);
       _supportsToolDeclarations =
           _supportsTextHistory && await _probeToolDeclarations(_engine!);
-      _reportedContextTokens = _supportsTextHistory
-          ? await _probeGenerationLimits(_engine!)
+      final resolvedContext = _supportsTextHistory
+          ? _resolvedContextTokens(_engine!)
+          : null;
+      final probe = resolvedContext != null || speculativeModes != null
+          ? await _probeOneTokenTurn(
+              _engine!,
+              speculative: speculativeModes != null,
+            )
+          : null;
+      if (speculativeModes != null) {
+        if (probe?.ranMtp != true) {
+          throw LlamaUnsupportedException(
+            'LiteRT-LM Web MTP (loadMtp) requires a bundle and runtime that '
+            'run a speculative round. The loaded engine reported none. '
+            'Artisan Web bundles carry no MTP drafter. Load without loadMtp '
+            'or use a drafter-bearing bundle with @litert-lm/core 0.20.0 or later.',
+          );
+        }
+        final gpu = _runtimeEnum(constructor, 'Backend', 'LiteRtLmBackendEnum');
+        final gpuValue = gpu == null ? null : _readBackendId(gpu, 'GPU');
+        if (gpuValue == null || _reportedBackendValue(_engine!) != gpuValue) {
+          throw LlamaUnsupportedException(
+            'LiteRT-LM Web MTP (loadMtp) requires the runtime to resolve '
+            'Backend.GPU. Preload its Backend enum as window.LiteRtLmBackendEnum '
+            'and use a WebGPU bundle with an MTP drafter, or omit loadMtp.',
+          );
+        }
+      }
+      final total = probe?.total;
+      _reportedContextTokens = resolvedContext != null && total != null
+          ? await _probeGenerationLimits(_engine!, resolvedContext, total)
           : null;
       _modelHandle = _nextModelHandle++;
       _isReady = true;
       onProgress?.call(1);
       return _modelHandle!;
-    } catch (error) {
-      _isReady = false;
-      _supportsTextHistory = false;
-      _supportsToolDeclarations = false;
-      _reportedContextTokens = null;
-      _modelHandle = null;
-      _contextHandle = null;
-      _modelUrl = null;
-      _modelSource = null;
-      _modelCacheState = null;
-      _modelParams = null;
-      _chatTemplate = null;
-      _activeBackend = null;
-      _engineBackendValue = null;
-      throw StateError('LiteRT-LM web engine creation failed: $error');
+    } catch (_) {
+      try {
+        await _disposeEngine();
+      } catch (_) {
+        // Preserve the primary error if deleting the failed engine rejects.
+      }
+      rethrow;
     } finally {
       consoleGuard?.restore();
     }
@@ -828,6 +892,7 @@ class LiteRtLmBackend
     required JSAny model,
     required ModelParams params,
     required int? cpuBackend,
+    required int? speculativeMode,
   }) {
     final settings = JSObject();
     settings.setProperty('model'.toJS, model);
@@ -842,8 +907,11 @@ class LiteRtLmBackend
     final executorSettings = JSObject();
     executorSettings.setProperty('maxNumTokens'.toJS, params.contextSize.toJS);
     settings.setProperty('mainExecutorSettings'.toJS, executorSettings);
-    // Per-turn decode token counts come only from the benchmark record.
-    if (_textHistoryEnabled) {
+    if (speculativeMode != null) {
+      _setSpeculativeMode(settings, speculativeMode);
+    }
+    // Generation-limit and MTP probes read the benchmark record.
+    if (_textHistoryEnabled || speculativeMode != null) {
       settings.setProperty('benchmarkEnabled'.toJS, true.toJS);
     }
     return settings;
@@ -867,6 +935,13 @@ class LiteRtLmBackend
     );
 
     final sessionConfig = JSObject();
+    final modes = _speculativeModes;
+    if (modes != null) {
+      _setSpeculativeMode(
+        sessionConfig,
+        params.isSpeculativeDecodingEnabled ? modes.on : modes.off,
+      );
+    }
     sessionConfig.setProperty('maxOutputTokens'.toJS, params.maxTokens.toJS);
     sessionConfig.setProperty('samplerParams'.toJS, samplerParams);
     final samplerBackend = _engineBackendValue;
@@ -976,38 +1051,51 @@ class LiteRtLmBackend
   /// The context size [engine]'s executor enforces, when its runtime reports
   /// the decode and context token counts of a turn and names that size; else
   /// null.
-  Future<int?> _probeGenerationLimits(_LiteRtLmWebEngine engine) async {
-    final resolved = _resolvedContextTokens(engine);
-    if (resolved == null) return null;
-    final total = await _probeOneTokenTurn(engine);
-    if (total == null) return null;
+  Future<int?> _probeGenerationLimits(
+    _LiteRtLmWebEngine engine,
+    int resolved,
+    int total,
+  ) async {
     final contextTokens = await _probeExecutorContextTokens(engine, resolved);
     return contextTokens != null && total < contextTokens
         ? contextTokens
         : null;
   }
 
-  /// The tokens a one-token turn leaves in its conversation, or null when the
-  /// runtime does not count that turn.
-  ///
-  /// At `maxOutputTokens` 1 a turn decodes exactly one token, so a runtime
-  /// that keeps no benchmark record or counts another turn fails.
-  Future<int?> _probeOneTokenTurn(_LiteRtLmWebEngine engine) async {
+  /// Counts the tokens left by a one-token turn and observes whether the
+  /// drafter actually ran. Artisan can accept the setting and silently ignore it.
+  Future<({int? total, bool ranMtp})?> _probeOneTokenTurn(
+    _LiteRtLmWebEngine engine, {
+    required bool speculative,
+  }) async {
     _LiteRtLmWebConversation? conversation;
     try {
       conversation = await engine
           .createConversation(
-            _createConversationConfig(const GenerationParams(maxTokens: 1)),
+            _createConversationConfig(
+              GenerationParams(maxTokens: 1, speculativeDecoding: speculative),
+            ),
           )
           .toDart;
+      final reportsContext = conversation.has('getTokenCount');
       if (!conversation.has('getBenchmarkInfo') ||
-          !conversation.has('getTokenCount')) {
+          (!speculative && !reportsContext)) {
         return null;
       }
       final reader = conversation.sendMessageStreaming('Hi'.toJS).getReader();
       while (!(await reader.read().toDart).done) {}
-      final counts = await _tokenCounts(conversation);
-      return counts != null && counts.decoded == 1 ? counts.total : null;
+      final info = await conversation.getBenchmarkInfo().toDart;
+      int? total;
+      if (reportsContext &&
+          _benchmarkCount(info, 'lastDecodeTokenCount') == 1) {
+        try {
+          final count = _positiveInt(await conversation.getTokenCount().toDart);
+          if (count != null && count > 1) total = count;
+        } catch (_) {
+          // A missing context count only disables the generation-limit probe.
+        }
+      }
+      return (total: total, ranMtp: _benchmarkCount(info, 'mtpRounds') != null);
     } catch (_) {
       return null;
     } finally {
@@ -1125,13 +1213,7 @@ class LiteRtLmBackend
   ) async {
     try {
       final info = await conversation.getBenchmarkInfo().toDart;
-      final decoded = info != null && info.isA<JSObject>()
-          ? _positiveInt(
-              (info as JSObject).getProperty<JSAny?>(
-                'lastDecodeTokenCount'.toJS,
-              ),
-            )
-          : null;
+      final decoded = _benchmarkCount(info, 'lastDecodeTokenCount');
       final total = _positiveInt(await conversation.getTokenCount().toDart);
       // A turn prefills at least one token before it decodes.
       if (decoded == null || total == null || total <= decoded) return null;
@@ -1140,6 +1222,11 @@ class LiteRtLmBackend
       return null;
     }
   }
+
+  static int? _benchmarkCount(JSAny? info, String key) =>
+      info != null && info.isA<JSObject>()
+      ? _positiveInt((info as JSObject).getProperty<JSAny?>(key.toJS))
+      : null;
 
   static int? _positiveInt(JSAny? value) {
     if (value == null || !value.isA<JSNumber>()) return null;
@@ -1451,6 +1538,7 @@ class LiteRtLmBackend
     _chatTemplate = null;
     _activeBackend = null;
     _engineBackendValue = null;
+    _speculativeModes = null;
     if (engine != null) {
       final result = engine.deleteEngine();
       if (result != null) {
@@ -1714,18 +1802,29 @@ class LiteRtLmBackend
     if (params.grammarRoot != defaults.grammarRoot) {
       unsupported.add('grammarRoot');
     }
-    if (params.speculativeDecoding) {
-      unsupported.add('speculativeDecoding');
-    }
-    if (params.speculativeDecodingConfig != null) {
-      unsupported.add('speculativeDecodingConfig');
-    }
     if (params.streamBatchTokenThreshold !=
         defaults.streamBatchTokenThreshold) {
       unsupported.add('streamBatchTokenThreshold');
     }
     if (params.streamBatchByteThreshold != defaults.streamBatchByteThreshold) {
       unsupported.add('streamBatchByteThreshold');
+    }
+
+    if (params.isSpeculativeDecodingEnabled) {
+      final speculative = liteRtLmUnsupportedSpeculativeOptions(params);
+      if (speculative.isNotEmpty) {
+        throw LlamaUnsupportedException(
+          'LiteRT-LM Web MTP does not apply these speculative settings: '
+          '${speculative.join(', ')}. Use backendDefault or mtp without tuning '
+          'fields or an external draftModel.',
+        );
+      }
+      if (_speculativeModes == null) {
+        throw LlamaUnsupportedException(
+          'LiteRT-LM Web speculativeDecoding needs a loaded MTP drafter. '
+          'Reload a drafter-bearing bundle on WebGPU with loadMtp: true.',
+        );
+      }
     }
 
     if (unsupported.isEmpty) {
@@ -1735,7 +1834,7 @@ class LiteRtLmBackend
       'LiteRtLmBackend web does not support llama.cpp-specific '
       'GenerationParams: ${unsupported.join(', ')}. Supported LiteRT-LM web '
       'generation options are maxTokens, temp, topK, topP, seed, and '
-      'stopSequences.',
+      'stopSequences, plus speculative decoding on a WebGPU load with loadMtp.',
     );
   }
 
@@ -1784,6 +1883,44 @@ class LiteRtLmBackend
     _LiteRtLmEngineConstructor constructor,
     String backend,
   ) {
+    final backendEnum = _runtimeEnum(
+      constructor,
+      'Backend',
+      'LiteRtLmBackendEnum',
+    );
+    if (backendEnum == null) return null;
+    return backend == 'cpu'
+        ? _readBackendId(backendEnum, 'CPU')
+        : _readBackendId(backendEnum, 'GPU_ARTISAN') ??
+              _readBackendId(backendEnum, 'GPU');
+  }
+
+  ({int on, int off}) _readSpeculativeModes(
+    _LiteRtLmEngineConstructor constructor,
+  ) {
+    final modes = _runtimeEnum(
+      constructor,
+      'SpeculativeDecodingMode',
+      'LiteRtLmSpeculativeDecodingMode',
+    );
+    final on = modes == null ? null : _readEnumValue(modes, 'ON');
+    final off = modes == null ? null : _readEnumValue(modes, 'OFF');
+    if (on == null || off == null || on == off) {
+      throw LlamaUnsupportedException(
+        'LiteRT-LM Web MTP (loadMtp) requires SpeculativeDecodingMode from '
+        '@litert-lm/core 0.20.0 or later. When preloading Engine, set '
+        'window.LiteRtLmSpeculativeDecodingMode = module.SpeculativeDecodingMode '
+        'from the same module, or load the runtime through the module URL.',
+      );
+    }
+    return (on: on, off: off);
+  }
+
+  JSObject? _runtimeEnum(
+    _LiteRtLmEngineConstructor constructor,
+    String export,
+    String global,
+  ) {
     final module = globalContext.getProperty('__llamadartLiteRtLmModule'.toJS);
     final loadedModule = module != null && module.isA<JSObject>()
         ? module as JSObject
@@ -1793,21 +1930,28 @@ class LiteRtLmBackend
         constructor
             .strictEquals(loadedModule?.getProperty('Engine'.toJS))
             .toDart
-        ? loadedModule?.getProperty<JSAny?>('Backend'.toJS)
-        : globalContext.getProperty<JSAny?>('LiteRtLmBackendEnum'.toJS);
-    if (raw == null || !raw.isA<JSObject>()) return null;
-    final backendEnum = raw as JSObject;
-    return backend == 'cpu'
-        ? _readBackendId(backendEnum, 'CPU')
-        : _readBackendId(backendEnum, 'GPU_ARTISAN') ??
-              _readBackendId(backendEnum, 'GPU');
+        ? loadedModule?.getProperty<JSAny?>(export.toJS)
+        : globalContext.getProperty<JSAny?>(global.toJS);
+    return raw != null && raw.isA<JSObject>() ? raw as JSObject : null;
+  }
+
+  static void _setSpeculativeMode(JSObject settings, int mode) {
+    settings.setProperty(
+      'speculativeDecodingConfig'.toJS,
+      JSObject()..setProperty('mode'.toJS, mode.toJS),
+    );
   }
 
   int? _readBackendId(JSObject object, String key) {
+    final id = _readEnumValue(object, key);
+    return id == 0 ? null : id;
+  }
+
+  int? _readEnumValue(JSObject object, String key) {
     final value = object.getProperty<JSAny?>(key.toJS);
     if (value == null || !value.isA<JSNumber>()) return null;
     final number = (value as JSNumber).toDartDouble;
-    if (!(number > 0 && number <= 0x7fffffff) ||
+    if (!(number >= 0 && number <= 0x7fffffff) ||
         number != number.truncateToDouble()) {
       return null;
     }
@@ -2184,7 +2328,7 @@ extension type _LiteRtLmStreamReadResult._(JSObject _) implements JSObject {
 }
 
 /// Throws [LlamaUnsupportedException] for what a LiteRT-LM Web load rejects
-/// from [params] alone, before it fetches the model: an NPU, and the
+/// from [params] alone, before it fetches the model: an NPU, MTP on CPU, and the
 /// embedding engine, which missed native CPU parity on both Web backends in
 /// `@litert-lm/core@0.20.0`.
 /// [preferredBackend] is the backend's deprecated preferred backend.
@@ -2199,6 +2343,14 @@ void liteRtLmWebCheckLoad(ModelParams params, {String? preferredBackend}) {
       'LiteRT-LM $device embeddings are unavailable in @litert-lm/core@0.20.0: '
       'EmbeddingGemma-2 qualification missed native CPU parity '
       '(cosine >= 0.9998 and relative L2 < 2%). A qualified runtime is required.',
+    );
+  }
+  if (params.loadMtp &&
+      liteRtLmWebBackendName(params, preferredBackend: preferredBackend) ==
+          'cpu') {
+    throw LlamaUnsupportedException(
+      'LiteRT-LM MTP (loadMtp) is unqualified on Web CPU. Use WebGPU with a '
+      'bundle containing an MTP drafter, or load without loadMtp.',
     );
   }
   _liteRtLmWebDeviceBackendName(params, preferredBackend);

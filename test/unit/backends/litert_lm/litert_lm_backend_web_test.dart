@@ -2656,38 +2656,35 @@ void main() {
     }
   });
 
-  test('rejects speculative decoding on LiteRT-LM web', () async {
-    _installFakeEngine(chunks: <JSAny?>[]);
+  test(
+    'rejects speculative decoding without loadMtp on LiteRT-LM Web',
+    () async {
+      _installFakeEngine(chunks: <JSAny?>[]);
 
-    final backend = LiteRtLmBackend();
-    try {
-      final modelHandle = await backend.modelLoadFromUrl(
-        'https://example.com/model.litertlm',
-        const ModelParams(),
-      );
-      final contextHandle = await backend.contextCreate(
-        modelHandle,
-        const ModelParams(),
-      );
+      final backend = LiteRtLmBackend();
+      try {
+        final modelHandle = await backend.modelLoadFromUrl(
+          'https://example.com/model.litertlm',
+          const ModelParams(),
+        );
+        final contextHandle = await backend.contextCreate(
+          modelHandle,
+          const ModelParams(),
+        );
 
-      await expectLater(
-        backend.generate(
-          contextHandle,
-          'hello',
-          const GenerationParams(speculativeDecoding: true),
-        ),
-        emitsError(
-          isA<UnsupportedError>().having(
-            (error) => error.message.toString(),
-            'message',
-            contains('speculativeDecoding'),
+        await expectLater(
+          backend.generate(
+            contextHandle,
+            'hello',
+            const GenerationParams(speculativeDecoding: true),
           ),
-        ),
-      );
-    } finally {
-      await backend.dispose();
-    }
-  });
+          emitsError(_mtpUnsupported('loadMtp: true')),
+        );
+      } finally {
+        await backend.dispose();
+      }
+    },
+  );
 
   test('rejects presence penalty on LiteRT-LM web', () async {
     _installFakeEngine(chunks: <JSAny?>[]);
@@ -2898,42 +2895,345 @@ void main() {
     }
   });
 
-  test('rejects speculative decoding config on LiteRT-LM web', () async {
-    _installFakeEngine(chunks: <JSAny?>[]);
+  group('Web MTP', () {
+    const url = 'https://example.com/model.litertlm';
+    const loadMtp = ModelParams(loadMtp: true);
 
-    final backend = LiteRtLmBackend();
-    try {
-      final modelHandle = await backend.modelLoadFromUrl(
-        'https://example.com/model.litertlm',
-        const ModelParams(),
+    setUp(() {
+      addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
+      globalContext.setProperty('LiteRtLmBackendEnum'.toJS, {'GPU': 3}.jsify());
+      globalContext.setProperty(
+        'LiteRtLmSpeculativeDecodingMode'.toJS,
+        {'OFF': 7, 'ON': 11}.jsify(),
       );
-      final contextHandle = await backend.contextCreate(
-        modelHandle,
-        const ModelParams(),
-      );
+    });
 
-      for (final config in const [
-        SpeculativeDecodingConfig.mtp(),
-        SpeculativeDecodingConfig.draftDspark(draftModelPath: 'draft.gguf'),
-      ]) {
-        await expectLater(
-          backend.generate(
-            contextHandle,
-            'hello',
-            GenerationParams(speculativeDecodingConfig: config),
+    test(
+      'uses the loaded mode enum and opts in separately for each turn',
+      () async {
+        final fake = _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: budget + 4),
+          mtpRounds: (mode) => mode == 11 ? 1 : 0,
+        );
+        final engine = LlamaEngine(WebAutoBackend.withTextHistory());
+        addTearDown(engine.dispose);
+        await engine.loadModel(url, modelParams: loadMtp);
+        expect(fake.settings.single['speculativeDecodingConfig'], {'mode': 11});
+        expect((await engine.capabilities).speculativeDecodingStrategies, {
+          SpeculativeDecodingStrategy.backendDefault,
+          SpeculativeDecodingStrategy.mtp,
+        });
+        for (final params in const [
+          GenerationParams(speculativeDecoding: true),
+          GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(),
           ),
-          emitsError(
-            isA<UnsupportedError>().having(
-              (error) => error.message.toString(),
-              'message',
-              contains('speculativeDecodingConfig'),
-            ),
+          GenerationParams(),
+        ]) {
+          await engine.generate('hello', params: params).drain<void>();
+        }
+        expect(fake.modes.skip(fake.modes.length - 3), [11, 11, 7]);
+        expect(fake.modes.take(3), [7, 7, 11]);
+        await engine.unloadModel();
+        await engine.loadModel(url);
+        expect(
+          fake.settings.last,
+          isNot(contains('speculativeDecodingConfig')),
+        );
+        expect(
+          (await engine.capabilities).speculativeDecodingStrategies,
+          isEmpty,
+        );
+      },
+    );
+
+    test(
+      'legacy load enables benchmarking for the speculative probe',
+      () async {
+        final fake = _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: budget + 4),
+          mtpRounds: (mode) => mode == 11 ? 1 : 0,
+        );
+        final backend = LiteRtLmBackend();
+        addTearDown(backend.dispose);
+        await backend.modelLoad(url, loadMtp);
+        expect(fake.settings.single['benchmarkEnabled'], isTrue);
+        expect(fake.modes, [11]);
+        expect(fake.prompts, hasLength(1));
+      },
+    );
+
+    test('refuses MTP without a WebGPU adapter before model I/O', () async {
+      addTearDown(fakeNavigatorGpu(FakeWebGpu.noAdapter));
+      final fake = _installCountingFakeEngine(
+        counts: (_, budget) => (decoded: budget, total: budget + 4),
+        mtpRounds: (mode) => mode == 11 ? 1 : 0,
+      );
+      final backend = LiteRtLmBackend();
+      addTearDown(backend.dispose);
+      await expectLater(
+        backend.modelLoad(url, loadMtp),
+        throwsA(_mtpUnsupported('no WebGPU adapter')),
+      );
+      expect(fake.settings, isEmpty);
+    });
+
+    test(
+      'refuses a non-GPU engine even when its MTP probe reports a round',
+      () async {
+        final fake = _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: budget + 4),
+          mtpRounds: (mode) => mode == 11 ? 1 : 0,
+          reportedBackend: 1,
+        );
+        final backend = LiteRtLmBackend();
+        addTearDown(backend.dispose);
+        await expectLater(
+          backend.modelLoad(url, loadMtp),
+          throwsA(_mtpUnsupported('Backend.GPU')),
+        );
+        expect(fake.countReads, 1);
+        expect(fake.enginesDeleted, 1);
+        expect(
+          (await backend.generationCapabilities())
+              .speculativeDecodingStrategies,
+          isEmpty,
+        );
+      },
+    );
+
+    test(
+      'missing mode export refuses before the runtime receives the model',
+      () async {
+        globalContext.delete('LiteRtLmSpeculativeDecodingMode'.toJS);
+        var creates = 0;
+        _installFakeEngine(chunks: [], onCreate: (_) => creates++);
+        final backend = LiteRtLmBackend();
+        addTearDown(backend.dispose);
+        await expectLater(
+          backend.modelLoad(url, loadMtp),
+          throwsA(_mtpUnsupported('0.20.0')),
+        );
+        expect(creates, 0);
+        await backend.modelLoad(url, const ModelParams());
+        expect(creates, 1);
+      },
+    );
+
+    for (final rounds in [null, 0]) {
+      test('refuses and disposes an engine with mtpRounds $rounds', () async {
+        final fake = _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: budget + 4),
+          mtpRounds: (_) => rounds,
+        );
+        final backend = LiteRtLmBackend.withTextHistory();
+        addTearDown(backend.dispose);
+        await expectLater(
+          backend.modelLoad(url, loadMtp),
+          throwsA(_mtpUnsupported('speculative round')),
+        );
+        expect(fake.enginesDeleted, 1);
+        expect(fake.deleted, fake.created);
+        expect(backend.isReady, isFalse);
+        await backend.modelLoad(url, const ModelParams());
+        expect(backend.isReady, isTrue);
+      });
+    }
+
+    for (final error in [
+      'Model buffer not found for type: tf_lite_mtp_drafter',
+      'Unexpected runtime failure',
+    ]) {
+      test('classifies creation failure $error', () async {
+        _installFakeEngine(
+          chunks: [],
+          onCreate: (_) => throw StateError(error),
+        );
+        final backend = LiteRtLmBackend();
+        addTearDown(backend.dispose);
+        await expectLater(
+          backend.modelLoad(url, loadMtp),
+          throwsA(
+            error.startsWith('Model buffer')
+                ? _mtpUnsupported('no MTP drafter')
+                : isA<StateError>().having(
+                    (e) => e.message,
+                    'message',
+                    'LiteRT-LM web engine creation failed: Bad state: $error',
+                  ),
           ),
         );
-      }
-    } finally {
-      await backend.dispose();
+      });
     }
+
+    test(
+      'rejects unsupported strategy, tuning and draft fields on a drafter engine',
+      () async {
+        _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: budget + 4),
+          mtpRounds: (_) => 1,
+        );
+        final backend = LiteRtLmBackend();
+        addTearDown(backend.dispose);
+        final model = await backend.modelLoad(url, loadMtp);
+        final context = await backend.contextCreate(model, loadMtp);
+        for (final (name, config) in [
+          (
+            'strategy',
+            SpeculativeDecodingConfig(
+              strategy: SpeculativeDecodingStrategy.ngramSimple,
+            ),
+          ),
+          (
+            'strategy',
+            SpeculativeDecodingConfig(
+              strategies: [
+                SpeculativeDecodingStrategy.backendDefault,
+                SpeculativeDecodingStrategy.mtp,
+              ],
+            ),
+          ),
+          ('draftTokenMax', SpeculativeDecodingConfig(draftTokenMax: 1)),
+          ('draftTokenMin', SpeculativeDecodingConfig(draftTokenMin: 1)),
+          ('minProbability', SpeculativeDecodingConfig(minProbability: 0.5)),
+          (
+            'draftSplitProbability',
+            SpeculativeDecodingConfig(draftSplitProbability: 0.5),
+          ),
+          (
+            'draftMicroBatchSize',
+            SpeculativeDecodingConfig(draftMicroBatchSize: 1),
+          ),
+          (
+            'draftModel',
+            SpeculativeDecodingConfig(
+              draftModel: api.ModelSource.path('draft.litertlm'),
+            ),
+          ),
+          ('ngramSize', SpeculativeDecodingConfig(ngramSize: 1)),
+          ('ngramSizeN', SpeculativeDecodingConfig(ngramSizeN: 1)),
+          ('ngramSizeM', SpeculativeDecodingConfig(ngramSizeM: 1)),
+          ('ngramMinHits', SpeculativeDecodingConfig(ngramMinHits: 1)),
+          ('ngramMatch', SpeculativeDecodingConfig(ngramMatch: 1)),
+          ('ngramTokenMin', SpeculativeDecodingConfig(ngramTokenMin: 1)),
+          ('ngramTokenMax', SpeculativeDecodingConfig(ngramTokenMax: 1)),
+          (
+            'ngramCacheStaticPath',
+            SpeculativeDecodingConfig(ngramCacheStaticPath: 'static'),
+          ),
+          (
+            'ngramCacheDynamicPath',
+            SpeculativeDecodingConfig(ngramCacheDynamicPath: 'dynamic'),
+          ),
+        ]) {
+          await expectLater(
+            backend.generate(
+              context,
+              'hello',
+              GenerationParams(speculativeDecodingConfig: config),
+            ),
+            emitsError(_mtpUnsupported('speculativeDecodingConfig.$name')),
+          );
+        }
+      },
+    );
+
+    test('reports limits with multiple tokens emitted in each chunk', () async {
+      _installCountingFakeEngine(
+        counts: (turn, budget) => switch (turn) {
+          0 => (decoded: 1, total: 5),
+          1 => (decoded: budget, total: 100),
+          _ => (decoded: budget - 1, total: 4096),
+        },
+        chunks: (_) => [
+          _messageChunk('several tokens'),
+          _messageChunk(' per chunk'),
+        ],
+        mtpRounds: (_) => 1,
+      );
+      final engine = LlamaEngine(WebAutoBackend.withTextHistory());
+      addTearDown(engine.dispose);
+      await engine.loadModel(url, modelParams: loadMtp);
+      for (final limit in const [
+        internal.BackendGenerationLimit.maxTokens,
+        internal.BackendGenerationLimit.contextSize,
+      ]) {
+        final chunks = await engine.create(
+          const [
+            LlamaChatMessage.fromText(
+              role: api.LlamaChatRole.user,
+              text: 'hello',
+            ),
+          ],
+          params: const GenerationParams(
+            maxTokens: 8,
+            speculativeDecoding: true,
+          ),
+        ).toList();
+        expect(chunks.map((c) => c.text).join(), 'several tokens per chunk');
+        expect(chunks.last.choices.single.finishReason, 'length');
+        expect(completionGenerationLimit(chunks.last), limit);
+      }
+    });
+
+    test(
+      'cancels a speculative stream, immediately reuses and disposes it',
+      () async {
+        final fake = _installQueueFakeEngine(mtpOn: 11);
+        final backend = LiteRtLmBackend();
+        addTearDown(() async {
+          fake.finishAll();
+          await backend.dispose();
+        });
+        final model = await backend.modelLoad(url, loadMtp);
+        final context = await backend.contextCreate(model, loadMtp);
+        const params = GenerationParams(speculativeDecoding: true);
+        final first = _CollectedGeneration(
+          backend.generate(context, 'several tokens', params),
+        );
+        await first.firstChunk;
+        final firstRun = await fake.started(0);
+        await firstRun.holding;
+        backend.cancelGeneration();
+        final next = _CollectedGeneration(
+          backend.generate(context, 'also several tokens', params),
+        );
+        firstRun.finish();
+        await first.done;
+        expect(first.error, isNull);
+        expect(first.text, 'several tokens;');
+        expect(firstRun.cancelCalls, 1);
+        await next.firstChunk;
+        final nextRun = await fake.started(1);
+        await nextRun.holding;
+        final disposing = backend.dispose();
+        nextRun.finish();
+        await disposing;
+        await next.done;
+        expect(next.error, isNull);
+        expect(next.text, 'also several tokens;');
+        expect(fake.conversationsDeleted, 2);
+        expect(backend.isReady, isFalse);
+      },
+    );
+
+    test('rejects Web CPU before creating an engine', () async {
+      var creates = 0;
+      _installFakeEngine(chunks: [], onCreate: (_) => creates++);
+      final backend = LiteRtLmBackend();
+      addTearDown(backend.dispose);
+      for (final params in const [
+        ModelParams(loadMtp: true, device: ComputeDevice.cpu),
+        ModelParams(loadMtp: true, gpuLayers: 0),
+        ModelParams(loadMtp: true, preferredBackend: GpuBackend.cpu),
+      ]) {
+        await expectLater(
+          backend.modelLoad(url, params),
+          throwsA(_mtpUnsupported('Web CPU')),
+        );
+      }
+      expect(creates, 0);
+    });
   });
 
   test('rejects unsupported context-time model params', () async {
@@ -2992,13 +3292,13 @@ void main() {
       await expectLater(
         () => backend.contextCreate(
           modelHandle,
-          const ModelParams(loadMtp: true, modelBytesHint: 1),
+          const ModelParams(modelBytesHint: 1),
         ),
         throwsA(
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,
             'message',
-            contains('ModelParams: loadMtp, modelBytesHint.'),
+            contains('ModelParams: modelBytesHint.'),
           ),
         ),
       );
@@ -4488,6 +4788,9 @@ void _installFakeEngine({
   globalContext.setProperty('LiteRtLmEngine'.toJS, engineClass);
 }
 
+Matcher _mtpUnsupported(String message) => isA<LlamaUnsupportedException>()
+    .having((error) => error.message, 'message', contains(message));
+
 typedef _TurnCounts = ({int decoded, int total});
 
 /// A `@litert-lm/core@0.19.0`-shaped runtime with text history, tool
@@ -4511,12 +4814,16 @@ final class _CountingFake {
   int created = 0;
   int deleted = 0;
   int countReads = 0;
+  int enginesDeleted = 0;
+  final List<int?> modes = [];
 }
 
 _CountingFake _installCountingFakeEngine({
   required _TurnCounts? Function(int turn, int budget) counts,
   List<JSAny?> Function(int turn)? chunks,
   bool countsApi = true,
+  int? Function(int? mode)? mtpRounds,
+  int reportedBackend = 3,
   int? maxNumTokens = 4096,
   int? executorTokens,
   String? Function(String prompt)? reject,
@@ -4542,13 +4849,16 @@ _CountingFake _installCountingFakeEngine({
           ..setProperty(
             'settings'.toJS,
             {
-              'backend': 3,
+              'backend': reportedBackend,
               'mainExecutorSettings': {'maxNumTokens': ?maxNumTokens},
             }.jsify(),
           )
           ..setProperty(
             'delete'.toJS,
-            (() => Future<JSAny?>.value(null).toJS).toJS,
+            (() {
+              fake.enginesDeleted++;
+              return Future<JSAny?>.value(null).toJS;
+            }).toJS,
           );
         engine.setProperty(
           'createConversation'.toJS,
@@ -4561,10 +4871,15 @@ _CountingFake _installCountingFakeEngine({
                   .getProperty<JSObject>('JSON'.toJS)
                   .callMethod<JSAny?>('stringify'.toJS, preface);
             }
-            final budget = config
-                .getProperty<JSObject>('sessionConfig'.toJS)
+            final session = config.getProperty<JSObject>('sessionConfig'.toJS);
+            final budget = session
                 .getProperty<JSNumber>('maxOutputTokens'.toJS)
                 .toDartInt;
+            final mode = session
+                .getProperty<JSObject?>('speculativeDecodingConfig'.toJS)
+                ?.getProperty<JSNumber>('mode'.toJS)
+                .toDartInt;
+            fake.modes.add(mode);
             int? turn;
             final conversation =
                 _fakeConversation(
@@ -4623,6 +4938,7 @@ _CountingFake _installCountingFakeEngine({
                     fake.countReads++;
                     return read().then((counts) {
                       return <String, Object>{
+                        'mtpRounds': ?mtpRounds?.call(mode),
                         'lastDecodeTokenCount': counts.decoded,
                         'lastPrefillTokenCount': counts.total - counts.decoded,
                       }.jsify();
@@ -4790,6 +5106,7 @@ JSObject _messageChunk(String text) {
 void _clearGlobals() {
   globalContext.delete('LiteRtLmEngine'.toJS);
   globalContext.delete('LiteRtLmBackendEnum'.toJS);
+  globalContext.delete('LiteRtLmSpeculativeDecodingMode'.toJS);
   globalContext.delete('__llamadartLiteRtLmModule'.toJS);
   globalContext.delete('__llamadartLiteRtLmModuleUrl'.toJS);
   globalContext.delete('__llamadartLiteRtLmModuleSettings'.toJS);
@@ -4873,9 +5190,11 @@ final class _QueueFakeEngine {
     required this.rejectOnCancel,
     this.textHistory = false,
     this.toolDeclarations = false,
+    this.mtpOn,
   });
 
   final bool textHistory;
+  final int? mtpOn;
 
   /// Whether conversation creation serializes the preface, reading its tools.
   final bool toolDeclarations;
@@ -4927,6 +5246,21 @@ final class _QueueFakeEngine {
     if (gate != null) {
       await gate;
       throw StateError('createConversation failed');
+    }
+    final session = config.getProperty<JSObject>('sessionConfig'.toJS);
+    if (mtpOn != null &&
+        session.getProperty<JSNumber>('maxOutputTokens'.toJS).toDartInt == 1) {
+      final mode = session
+          .getProperty<JSObject?>('speculativeDecodingConfig'.toJS)
+          ?.getProperty<JSNumber>('mode'.toJS)
+          .toDartInt;
+      return _fakeConversation(chunks: [_messageChunk('probe token')])
+        ..setProperty(
+          'getBenchmarkInfo'.toJS,
+          (() => Future<JSAny?>.value(
+            {'mtpRounds': mode == mtpOn ? 1 : 0}.jsify(),
+          ).toJS).toJS,
+        );
     }
     return _conversation(preface);
   }
@@ -5021,17 +5355,22 @@ _QueueFakeEngine _installQueueFakeEngine({
   bool rejectOnCancel = false,
   bool textHistory = false,
   bool toolDeclarations = false,
+  int? mtpOn,
 }) {
   final fake = _QueueFakeEngine(
     rejectOnCancel: rejectOnCancel,
     textHistory: textHistory,
     toolDeclarations: toolDeclarations,
+    mtpOn: mtpOn,
   );
   final engineClass = JSObject();
   engineClass.setProperty(
     'create'.toJS,
     ((JSObject settings) {
       final engine = JSObject();
+      if (mtpOn != null) {
+        engine.setProperty('settings'.toJS, {'backend': 3}.jsify());
+      }
       engine.setProperty(
         'createConversation'.toJS,
         ((JSObject config) => fake._createConversation(config).toJS).toJS,

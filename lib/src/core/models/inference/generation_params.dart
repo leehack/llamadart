@@ -1010,10 +1010,11 @@ class GenerationParams {
   /// Native LiteRT-LM forwards this flag to the runtime's speculative decoding
   /// setting; when the runtime cannot run it and the bundle declares no
   /// speculative drafter, the request throws `LlamaUnsupportedException`.
+  /// On LiteRT-LM Web, this opts the request in after a successful WebGPU load
+  /// with `loadMtp: true` and a bundle that passed the drafter probe.
   /// llama.cpp, native and WebGPU, maps it to the backend-default
   /// speculative strategy, `ngram-mod`, when the active model/context supports
-  /// that path; WebGPU needs bridge assets that report `ngram-mod`. LiteRT-LM
-  /// web rejects this option.
+  /// that path. WebGPU needs bridge assets that report `ngram-mod`.
   ///
   /// With a llama.cpp runtime older than ggml 0.28.0 (llamadart-native
   /// v0.8.0), native Qwen3.5 on Android Vulkan GPUs with a subgroup size below

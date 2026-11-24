@@ -235,6 +235,11 @@ const params = LlamaCppModelParams(
   `draftModel`. WebGPU passes it, and `speculativeRollbackTokenMax`, to
   the bridge only when set; bridge assets without speculative decoding ignore
   both.
+- `loadMtp` (LiteRT-LM WebGPU): load the bundle's embedded MTP drafter.
+  Defaults to `false`. Requires `@litert-lm/core` 0.20.0+ and a positive
+  drafter probe. Set it through `ModelParams` or `LiteRtLmModelParams`,
+  then opt in separately on each generation. LiteRT-LM Web CPU and native
+  LiteRT-LM reject this load option.
 - `speculativeRollbackTokenMax` (llama.cpp): native recurrent or hybrid models
   reject a nonzero value with `LlamaUnsupportedException` before context
   creation. The pinned runtime cannot establish a safe rollback graph budget.
@@ -322,8 +327,9 @@ throws `LlamaUnsupportedException` naming each rejected field, so a GGUF
 tuning profile never appears to apply silently. That includes `loadMtp`,
 `speculativeRollbackTokenMax`, `cpuMoeLayers`, `moeCacheBytes`,
 `gpuMemoryFit`, `preferMemory64`, `modelBytesHint` and `jsBackedModelStaging`.
-LiteRT-LM web accepts `device` or `liteRtLmBackend` for CPU or GPU selection
-and rejects every other field in the table the same way.
+LiteRT-LM Web accepts `device` or `liteRtLmBackend` for CPU or GPU selection
+and `loadMtp` on a compatible WebGPU bundle. The native-only settings in
+the table are rejected.
 
 Benchmark load time, prefill and decode throughput, and output quality on the
 deployment device after changing the activation type or prefill chunk size.
@@ -493,7 +499,9 @@ Important fields:
   and cache when a generation starts, with `draftModelDownload`. WebGPU takes
   the strategies its bridge assets report, with a remote `draftModel` whose
   URL the runtime fetches, and URLs for the n-gram cache paths, and rejects
-  `draftMicroBatchSize`. LiteRT-LM web rejects both.
+  `draftMicroBatchSize`. LiteRT-LM WebGPU accepts the boolean or one of the
+  two LiteRT-LM configs above after a successful `loadMtp` load. It rejects
+  all draft tuning fields and external draft models.
   See [Speculative decoding](../guides/performance-tuning#speculative-decoding).
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.

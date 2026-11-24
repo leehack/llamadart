@@ -211,9 +211,17 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   ending exactly at `maxTokens` also counts as cut off. `ToolChoice.required`
   and `parallelToolCalls` still throw.
   It rejects media parts, grammar, `penalty`, `minP`, `presencePenalty`,
-  `thinkingBudget`, `ignoreEos` and speculative decoding; generation honors only
+  `thinkingBudget` and `ignoreEos`; ordinary generation honors
   `maxTokens`, `temp`, `topK`, `topP`, `seed` and `stopSequences`. It has no
   embeddings, tokenizer, LoRA, state or usage. Use GGUF for anything more.
+- For LiteRT-LM MTP, use WebGPU with `@litert-lm/core` 0.20.0+ and a
+  drafter-bearing bundle (standard Gemma 4 E2B; Artisan `-gpu` and `-web`
+  bundles have no drafter). Set `loadMtp: true` on load, then check
+  `(await engine.capabilities).speculativeDecodingStrategies`. Opt in per
+  turn with `speculativeDecoding: true` or an untuned `backendDefault` or
+  `mtp` config. Output can differ from plain decoding. For preloaded Engine,
+  expose `window.LiteRtLmSpeculativeDecodingMode = module.SpeculativeDecodingMode`
+  and `window.LiteRtLmBackendEnum = module.Backend` from the same module.
 - `flutter build web` only copies what is in `web/`: run the setup tool (or
   commit `web/webgpu_bridge/`) before building, and set the COOP/COEP headers on the
   production host for threaded GGUF.
