@@ -3307,6 +3307,18 @@ def validate_stable_diffusion_release_manifest(
             SAFE_LITERT_LIBRARY_FILENAME_RE.fullmatch(library) is None
         ):
             raise ReleaseError(f"stable_diffusion {target} library name is invalid")
+        # Match the library selected by StableDiffusionBundleSpec.primaryLibrary.
+        platform = target.split("-", 1)[0]
+        if platform == "windows":
+            primary_library = "stable-diffusion.dll"
+        elif platform in ("android", "linux"):
+            primary_library = "libstable-diffusion.so"
+        else:
+            primary_library = "libstable-diffusion.dylib"
+        if library != primary_library:
+            raise ReleaseError(
+                f"stable_diffusion {target} primary library must be {primary_library}"
+            )
         libraries = artifact.get("libraries", [library])
         if not isinstance(libraries, list) or not libraries:
             raise ReleaseError(
