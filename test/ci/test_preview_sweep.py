@@ -54,6 +54,19 @@ class PreviewSweepTest(unittest.TestCase):
         ])
         api.delete_repo.assert_not_called()
 
+    def test_matrix_is_capped_at_the_oldest_256_closed_prs(self):
+        api = Mock()
+        numbers = range(260, 0, -1)
+        api.list_spaces.return_value = [
+            SimpleNamespace(id=f'leehack/llamadart-chat-pr-{number}')
+            for number in numbers
+        ]
+        responses = [self.response(200, number=number) for number in numbers]
+        with patch.object(sweep.subprocess, 'run', side_effect=responses):
+            self.assertEqual(sweep.list_closed_previews(api),
+                             [str(number) for number in range(1, 257)])
+        api.delete_repo.assert_not_called()
+
     def test_empty_matrix_is_written_to_workflow_output(self):
         api = Mock()
         api.list_spaces.return_value = []

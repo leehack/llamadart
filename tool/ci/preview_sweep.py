@@ -56,7 +56,8 @@ def list_closed_previews(api):
                 candidates[match[1]] = space.id
     except Exception as error:
         raise SweepFailed('list_spaces', NAMESPACE, error) from None
-    return [number for number, space in candidates.items() if pr_is_closed(number, space)]
+    closed = [number for number, space in candidates.items() if pr_is_closed(number, space)]
+    return sorted(closed, key=int)[:256]
 
 
 def delete_closed_preview(api, number):

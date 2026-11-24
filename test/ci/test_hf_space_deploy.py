@@ -857,8 +857,13 @@ from unittest import mock
 
 from test_hf_space_deploy import ROOT
 
+class FatalSdkError(BaseException):
+    pass
+
+failure = FatalSdkError if sys.argv[1] == 'FatalSdkError' else RuntimeError
+
 def make_client(**kwargs):
-    raise RuntimeError('SDK initialization failed https://inert.invalid/asset?sig=AUDIT_INIT')
+    raise failure('SDK initialization failed https://inert.invalid/asset?sig=AUDIT_INIT')
 
 script = ROOT / 'tool/ci/hf_space_deploy.py'
 sys.argv = [str(script), '--repo', 'org/space', '--folder', 'build',
@@ -866,15 +871,19 @@ sys.argv = [str(script), '--repo', 'org/space', '--folder', 'build',
 with mock.patch.dict(sys.modules, {'huggingface_hub': mock.Mock(HfApi=make_client)}):
     runpy.run_path(str(script), run_name='__main__')
 '''
-        result = subprocess.run(
-            [sys.executable, '-B', '-c', runner], cwd=Path(__file__).parent,
-            env={**os.environ, 'HF_TOKEN': 'mock-token'},
-            capture_output=True, text=True, timeout=15)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn('Traceback (most recent call last)', result.stderr)
-        self.assertIn('RuntimeError: SDK initialization failed', result.stderr)
-        self.assertNotIn('AUDIT_INIT', result.stderr)
-        self.assertNotIn('AUDIT_INIT', result.stdout)
+        for failure in ('RuntimeError', 'FatalSdkError'):
+            with self.subTest(failure=failure):
+                result = subprocess.run(
+                    [sys.executable, '-B', '-c', runner, failure],
+                    cwd=Path(__file__).parent,
+                    env={**os.environ, 'HF_TOKEN': 'mock-token'},
+                    capture_output=True, text=True, timeout=15)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn('Traceback (most recent call last)', result.stderr)
+                self.assertIn(f'{failure}: SDK initialization failed', result.stderr)
+                for stream in (result.stdout, result.stderr):
+                    self.assertNotIn('inert.invalid', stream)
+                    self.assertNotIn('AUDIT_INIT', stream)
 
     def test_cli_redacts_an_interrupted_upload(self):
         runner = '''
