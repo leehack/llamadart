@@ -37,6 +37,7 @@ with patch.dict(sys.modules, {"playwright": ModuleType("playwright"),
 build = Path("build/web_js_backed_model_staging")
 build.mkdir(parents=True)
 (build / "model.gguf").write_bytes(b"default model")
+Path("extra.gguf").write_bytes(b"extra model")
 Path("projector.gguf").write_bytes(b"projector")
 
 # Keep the real CLI, loader setup and receipts. Replace downloads and page work.
@@ -71,6 +72,7 @@ void main() {
           .toList();
       expect(receipt['browser'], 'fixture browser');
       expect(receipt['gpu_required'], isTrue);
+      expect(receipt['extra_model']['bytes'], 11);
       expect(receipt['projector']['bytes'], 9);
       expect(plan, [
         for (final worker in [false, true])
@@ -81,6 +83,7 @@ void main() {
               'worker': worker,
               'mem64': mem64,
               'gpu': true,
+              'model_bytes_hint': 11,
               'mmproj_url': 'http://localhost:7358/projector.gguf',
             },
             {
@@ -90,6 +93,7 @@ void main() {
               'worker': worker,
               'mem64': mem64,
               'gpu': true,
+              'model_bytes_hint': 11,
               'mmproj_url': 'http://localhost:7358/projector.gguf',
             },
           ],
