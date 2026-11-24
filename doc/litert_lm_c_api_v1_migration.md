@@ -1,9 +1,9 @@
 # LiteRT-LM C API 1.0 consumer preparation
 
 The public lazy client, default services and speech worker now select legacy
-runtimes or admitted C API 1.0.x through shared discovery. Unknown, malformed or
-future C API versions are refused before engine calls. Owner pins and the
-companion select published v0.19.1-2; C API 1 first shipped in core and
+runtimes or admitted C API 1.0.x and 1.1.x through shared discovery. Unknown, malformed or
+future C API versions are refused before engine calls. C API 1.1.x uses the
+same bindings. C API 1 first shipped in core and
 companions `0.18.0` (#1677).
 [Current adoption coverage and gates](litert_lm_v1_adoption.md) describe the
 selected implementation; [the migration guide](../MIGRATION.md) covers upgrades.

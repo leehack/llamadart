@@ -2069,53 +2069,149 @@ void main() {
     expect((sampler.getProperty('seed'.toJS) as JSNumber).toDartInt, 42);
   });
 
-  // GPU loads keep the runtime's default backend: @litert-lm/core 0.19.0
-  // reports GPU for standard bundles and GPU_ARTISAN for Web bundles, 0.18.0
-  // reports GPU_ARTISAN, and an engine without settings keeps GPU_ARTISAN.
-  for (final (device, reported, sent, sampler) in const [
-    (ComputeDevice.gpu, 4, null, 4),
-    (ComputeDevice.gpu, 2, null, 2),
-    (ComputeDevice.gpu, null, null, 2),
-    (ComputeDevice.cpu, 3, 3, 3),
-    (ComputeDevice.cpu, null, 3, 3),
+  for (final (version, device, reported, sent, sampler) in const [
+    ('0.19.0', ComputeDevice.gpu, 4, null, 4),
+    ('0.19.0', ComputeDevice.gpu, 2, null, 2),
+    ('0.19.0', ComputeDevice.gpu, null, null, 2),
+    ('0.19.0', ComputeDevice.cpu, 3, 3, 3),
+    ('0.19.0', ComputeDevice.cpu, null, 3, 3),
+    ('0.20.0', ComputeDevice.gpu, 3, null, 3),
+    ('0.20.0', ComputeDevice.gpu, 1, null, 1),
+    ('0.20.0', ComputeDevice.gpu, null, null, 1),
+    ('0.20.0', ComputeDevice.cpu, 2, 2, 2),
+    ('0.20.0', ComputeDevice.cpu, null, 2, 2),
   ]) {
-    test('a ${device.name} load sends backend $sent and samples on $sampler '
-        'when the engine reports $reported', () async {
-      addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
-      Object? sentBackend = 'unset';
-      JSObject? conversationConfig;
-      _installFakeEngine(
-        onCreate: (settings) => sentBackend = settings.has('backend')
-            ? (settings.getProperty('backend'.toJS) as JSNumber).toDartInt
-            : null,
-        onCreateConversation: (config) => conversationConfig = config,
-        chunks: <JSAny?>[_messageChunk('ok')],
-        reportedBackend: reported,
-      );
-      final params = ModelParams(device: device);
-      final backend = LiteRtLmBackend();
-      final contextHandle = await backend.contextCreate(
-        await backend.modelLoadFromUrl(
-          'https://example.com/model.litertlm',
+    test(
+      'a $version ${device.name} load sends backend $sent and samples on $sampler '
+      'when the engine reports $reported',
+      () async {
+        addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
+        Object? sentBackend = 'unset';
+        JSObject? conversationConfig;
+        _installFakeEngine(
+          onCreate: (settings) => sentBackend = settings.has('backend')
+              ? (settings.getProperty('backend'.toJS) as JSNumber).toDartInt
+              : null,
+          onCreateConversation: (config) => conversationConfig = config,
+          chunks: <JSAny?>[_messageChunk('ok')],
+          reportedBackend: reported,
+        );
+        final params = ModelParams(device: device);
+        globalContext.setProperty(
+          'LiteRtLmBackendEnum'.toJS,
+          (version == '0.19.0'
+                  ? {'CPU_ARTISAN': 1, 'GPU_ARTISAN': 2, 'CPU': 3, 'GPU': 4}
+                  : {'GPU_ARTISAN': 1, 'CPU': 2, 'GPU': 3})
+              .jsify(),
+        );
+        final backend = LiteRtLmBackend();
+        final contextHandle = await backend.contextCreate(
+          await backend.modelLoadFromUrl(
+            'https://example.com/model.litertlm',
+            params,
+          ),
           params,
+        );
+
+        await backend
+            .generate(contextHandle, 'Hi', const GenerationParams(maxTokens: 4))
+            .drain<void>();
+
+        expect(sentBackend, sent);
+        final sessionConfig =
+            conversationConfig!.getProperty('sessionConfig'.toJS) as JSObject;
+        expect(
+          (sessionConfig.getProperty('samplerBackend'.toJS) as JSNumber)
+              .toDartInt,
+          sampler,
+        );
+      },
+    );
+  }
+
+  for (final invalidCpu in [null, '2', 0, 2.5, double.nan]) {
+    test('refuses CPU when a preloaded enum reports $invalidCpu', () async {
+      var created = false;
+      _installFakeEngine(onCreate: (_) => created = true, chunks: []);
+      if (invalidCpu != null) {
+        globalContext.setProperty(
+          'LiteRtLmBackendEnum'.toJS,
+          {'CPU': invalidCpu}.jsify(),
+        );
+      }
+      final backend = LiteRtLmBackend();
+      addTearDown(backend.dispose);
+      await expectLater(
+        backend.modelLoadFromUrl(
+          'https://example.com/model.litertlm',
+          const ModelParams(device: ComputeDevice.cpu),
         ),
-        params,
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'preload instructions',
+            contains('LiteRtLmBackendEnum'),
+          ),
+        ),
       );
-
-      await backend
-          .generate(contextHandle, 'Hi', const GenerationParams(maxTokens: 4))
-          .drain<void>();
-
-      expect(sentBackend, sent);
-      final sessionConfig =
-          conversationConfig!.getProperty('sessionConfig'.toJS) as JSObject;
-      expect(
-        (sessionConfig.getProperty('samplerBackend'.toJS) as JSNumber)
-            .toDartInt,
-        sampler,
-      );
+      expect(created, isFalse);
     });
   }
+
+  test('an engine-only GPU preload never borrows a stale enum', () async {
+    JSObject? sessionConfig;
+    _installFakeEngine(
+      onCreateConversation: (config) =>
+          sessionConfig = config.getProperty<JSObject>('sessionConfig'.toJS),
+      chunks: [_messageChunk('ok')],
+    );
+    globalContext.setProperty(
+      '__llamadartLiteRtLmModule'.toJS,
+      {
+        'Engine': JSObject(),
+        'Backend': {'CPU': 3, 'GPU_ARTISAN': 2},
+      }.jsify(),
+    );
+    final backend = LiteRtLmBackend();
+    addTearDown(backend.dispose);
+    const params = ModelParams();
+    final model = await backend.modelLoadFromUrl(
+      'https://example.com/model.litertlm',
+      params,
+    );
+    final context = await backend.contextCreate(model, params);
+    await backend
+        .generate(context, 'Hi', const GenerationParams(maxTokens: 4))
+        .drain<void>();
+    expect(sessionConfig!.has('samplerBackend'), isFalse);
+  });
+
+  test('CPU uses the imported 0.20.0 enum over a stale preload enum', () async {
+    globalContext.setProperty(
+      'LiteRtLmBackendEnum'.toJS,
+      {'CPU': 3, 'GPU_ARTISAN': 2, 'GPU': 4}.jsify(),
+    );
+    final moduleUrl =
+        'data:text/javascript;charset=utf-8,${Uri.encodeComponent("""
+      export const Backend = { GPU_ARTISAN: 1, CPU: 2, GPU: 3 };
+      export const Engine = {
+        async create(settings) {
+          globalThis.__llamadartLiteRtLmModuleSettings = settings;
+          return { async delete() {} };
+        },
+      };
+    """)}';
+    final backend = LiteRtLmBackend(moduleUrl: moduleUrl);
+    addTearDown(backend.dispose);
+    await backend.modelLoadFromUrl(
+      'https://example.com/model.litertlm',
+      const ModelParams(device: ComputeDevice.cpu),
+    );
+    final settings = globalContext.getProperty<JSObject>(
+      '__llamadartLiteRtLmModuleSettings'.toJS,
+    );
+    expect(settings.getProperty<JSNumber>('backend'.toJS).toDartInt, 2);
+  });
 
   test('loads an extensionless URL only when declared LiteRT-LM', () async {
     const url = 'https://example.com/download?id=42';
@@ -4159,6 +4255,10 @@ void main() {
     late List<int?> createdBackends;
 
     setUp(() {
+      globalContext.setProperty(
+        'LiteRtLmBackendEnum'.toJS,
+        {'CPU': 3, 'GPU_ARTISAN': 2, 'GPU': 4}.jsify(),
+      );
       createdBackends = <int?>[];
       _installFakeEngine(
         onCreate: (settings) => createdBackends.add(

@@ -99,7 +99,7 @@ hooks:
   that error on x86_64; a `libraryPath` passed to `LiteRtLmRuntimeClient`
   does for the legacy runtime. The ABI-aware selector keeps unsupported
   ABI checks and requires macOS 14+ before loading even an explicit path or
-  legacy library; public selection admits C API 1.0.x while unknown/future
+  legacy library; public selection admits C API 1.0.x and 1.1.x while unknown/future
   versions remain unsupported. The hook and Apple companion pin published
   native `v0.19.1-7`.
 - An empty or all-unknown selection falls back to `llama_cpp` and

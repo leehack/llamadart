@@ -96,14 +96,14 @@ typedef _GenerateD =
 typedef _TextN = Int Function(Pointer<Void>, Size, Pointer<Pointer<Utf8>>);
 typedef _TextD = int Function(Pointer<Void>, int, Pointer<Pointer<Utf8>>);
 
-/// Internal C API 1.0 adapter used by the selected v1 client.
+/// Internal adapter for the status/out ABI introduced in C API 1.0.
 ///
 /// Raw sessions and conversations have separate ownership. Optional feature
 /// groups retain their own admission checks. Blocking creation uses scalar
 /// addresses in an owned background scope; its native library and configuration
 /// remain retained until explicit completion.
 final class LiteRtLmV1Runtime {
-  /// Opens a caller-supplied candidate library with exactly C API 1.0.x.
+  /// Opens a caller-supplied candidate library with C API 1.0.x or 1.1.x.
   LiteRtLmV1Runtime(
     DynamicLibrary library, {
     LiteRtLmV1CreateRunner? createRunner,

@@ -16,7 +16,13 @@ static bool context=false, threads=false, benchmark=false, speculation=false;
 static std::string backend, answer;
 extern "C" {
 const char* litert_lm_get_last_error_message(){return "Android GPU safety restriction: vendor=20803 device=1124406273 driver=2150604839 maxStorageBufferRange=134217728 fixture 555579ff2f4fd13379abe69c1c3ab5200f7338bc92471557f1d6614a6e5ab0b4";}
-int litert_lm_get_api_version(int*a,int*b,int*c){*a=std::getenv("WRONG_ABI")?2:1;*b=0;*c=0;return 0;}
+int litert_lm_get_api_version(int*a,int*b,int*c){
+ *a=std::getenv("WRONG_ABI")?2:1;
+ const char* minor=std::getenv("API_MINOR");
+ *b=minor?std::atoi(minor):0;
+ *c=0;
+ return 0;
+}
 int litert_lm_set_min_log_level(int level){return level;}
 int litert_lm_engine_settings_create(const char*,const char*b,const char*,const char*,void**o){backend=b;*o=(void*)1;return 0;}
 int litert_lm_engine_settings_set_num_threads(void*,int v){threads=v==4;return !threads;}
@@ -113,6 +119,14 @@ class ChildSourceTest(unittest.TestCase):
         self.assertTrue(all(row['input_tokens'] == 12 and row['output_tokens'] == 3 for row in metrics))
         self.assertTrue(rows[-1]['engine_deleted'])
 
+    def test_reports_actual_c_api_version_for_admitted_minors(self):
+        for minor in ('0', '1'):
+            with self.subTest(minor=minor):
+                process, rows = self.run_child(API_MINOR=minor)
+                self.assertEqual(process.returncode, 0, process.stderr)
+                maps = next(row for row in rows if row['event'] == 'maps')
+                self.assertEqual(maps['c_api_version'], f'1.{minor}.0')
+
     def test_guard_never_calls_generation(self):
         process, rows = self.run_child('guard', GUARD='1')
         self.assertEqual(process.returncode, 0, process.stderr)
@@ -120,7 +134,7 @@ class ChildSourceTest(unittest.TestCase):
         self.assertFalse(any(row['event'] == 'generation' for row in rows))
 
     def test_bad_abi_and_null_json_have_no_terminal_success(self):
-        for env in ({'WRONG_ABI':'1'}, {'NULL_JSON':'1'}):
+        for env in ({'WRONG_ABI':'1'}, {'API_MINOR':'2'}, {'NULL_JSON':'1'}):
             with self.subTest(env=env):
                 process, rows = self.run_child(**env)
                 self.assertEqual(process.returncode, 1)

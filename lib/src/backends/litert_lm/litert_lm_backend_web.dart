@@ -35,8 +35,9 @@ import 'litert_lm_templates.dart';
 /// Web LiteRT-LM backend for `.litertlm` models.
 ///
 /// This backend wraps the official `@litert-lm/core` browser API. Apps can
-/// preload the package and expose `window.LiteRtLmEngine = module.Engine`, or
-/// set `window.__llamadartLiteRtLmModuleUrl` to a module URL such as
+/// preload the package and expose `window.LiteRtLmEngine = module.Engine`
+/// and `window.LiteRtLmBackendEnum = module.Backend`, or set
+/// `window.__llamadartLiteRtLmModuleUrl` to a module URL such as
 /// `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm`.
 ///
 /// [LiteRtLmBackend.withTextHistory] opts into ordered system/user/assistant
@@ -68,9 +69,6 @@ class LiteRtLmBackend
       '{% for message in messages %}'
       '{% if loop.last %}{{ message["content"] }}{% endif %}'
       '{% endfor %}';
-
-  static const int _backendGpuArtisan = 2;
-  static const int _backendCpu = 3;
 
   final String? _moduleUrl;
   final Duration _readyTimeout;
@@ -258,12 +256,21 @@ class LiteRtLmBackend
 
     onProgress?.call(0);
     final constructor = await _ensureEngineConstructor();
+    final backendValue = _backendValueFromEnum(constructor, backend);
+    if (backend == 'cpu' && backendValue == null) {
+      throw LlamaUnsupportedException(
+        'CPU inference with LiteRT-LM on the Web requires a numeric CPU '
+        'backend from the loaded @litert-lm/core module. When preloading '
+        'Engine, set window.LiteRtLmBackendEnum = module.Backend from the '
+        'same module, or load the runtime through the module URL.',
+      );
+    }
     final cachedModelBlob = await _cachedModelBlobFor(url);
     final modelValue = cachedModelBlob ?? url.toJS;
     final settings = _createEngineSettings(
       model: modelValue,
       params: params,
-      backend: backend,
+      cpuBackend: backend == 'cpu' ? backendValue : null,
     );
 
     await _disposeEngine();
@@ -279,8 +286,7 @@ class LiteRtLmBackend
     final consoleGuard = _installScopedConsoleGuard();
     try {
       _engine = await constructor.create(settings).toDart;
-      _engineBackendValue =
-          _reportedBackendValue(_engine!) ?? _backendValueFor(backend);
+      _engineBackendValue = _reportedBackendValue(_engine!) ?? backendValue;
       _supportsTextHistory =
           _textHistoryEnabled && await _probeTextHistory(_engine!);
       _supportsToolDeclarations =
@@ -735,7 +741,8 @@ class LiteRtLmBackend
 
     throw LlamaBackendInitializationException(
       'LiteRT-LM web runtime is not loaded. Preload @litert-lm/core and set '
-      'window.LiteRtLmEngine = module.Engine, or set '
+      'window.LiteRtLmEngine = module.Engine and '
+      'window.LiteRtLmBackendEnum = module.Backend, or set '
       'window.__llamadartLiteRtLmModuleUrl to the @litert-lm/core module URL.',
     );
   }
@@ -774,9 +781,6 @@ class LiteRtLmBackend
       import(${jsonEncode(moduleUrl)}).then(mod => {
         if (mod?.Engine) {
           window.LiteRtLmEngine = mod.Engine;
-        }
-        if (mod?.Backend) {
-          window.LiteRtLmBackendEnum = mod.Backend;
         }
         window.__llamadartLiteRtLmModule = mod;
         if (window.$callbackName) {
@@ -823,7 +827,7 @@ class LiteRtLmBackend
   JSObject _createEngineSettings({
     required JSAny model,
     required ModelParams params,
-    required String backend,
+    required int? cpuBackend,
   }) {
     final settings = JSObject();
     settings.setProperty('model'.toJS, model);
@@ -831,8 +835,8 @@ class LiteRtLmBackend
     // resolves it to GPU_ARTISAN for Web bundles and GPU for other bundles;
     // 0.18.0, which apps may still preload, defaults to GPU_ARTISAN and fails
     // Web bundles on GPU. No single explicit value loads on both.
-    if (backend == 'cpu') {
-      settings.setProperty('backend'.toJS, _backendValueFor(backend).toJS);
+    if (cpuBackend != null) {
+      settings.setProperty('backend'.toJS, cpuBackend.toJS);
     }
 
     final executorSettings = JSObject();
@@ -865,10 +869,10 @@ class LiteRtLmBackend
     final sessionConfig = JSObject();
     sessionConfig.setProperty('maxOutputTokens'.toJS, params.maxTokens.toJS);
     sessionConfig.setProperty('samplerParams'.toJS, samplerParams);
-    sessionConfig.setProperty(
-      'samplerBackend'.toJS,
-      (_engineBackendValue ?? _backendValueFor(_activeBackend ?? 'gpu')).toJS,
-    );
+    final samplerBackend = _engineBackendValue;
+    if (samplerBackend != null) {
+      sessionConfig.setProperty('samplerBackend'.toJS, samplerBackend.toJS);
+    }
 
     final config = JSObject();
     config.setProperty('sessionConfig'.toJS, sessionConfig);
@@ -1761,53 +1765,50 @@ class LiteRtLmBackend
   String _backendNameForGpuPreference(GpuBackend backend) =>
       _liteRtLmWebBackendForGpuPreference(backend);
 
-  int _backendValueFor(String backend) {
-    final moduleBackend = _backendValueFromGlobalEnum(backend);
-    if (moduleBackend != null) {
-      return moduleBackend;
-    }
-    return switch (backend) {
-      'cpu' => _backendCpu,
-      // Only for an engine that reports no backend: GPU_ARTISAN was the GPU
-      // default before @litert-lm/core@0.19.0.
-      'gpu' => _backendGpuArtisan,
-      _ => _backendGpuArtisan,
-    };
-  }
-
   /// The backend [engine] runs on, as its `settings.backend` reports it once
   /// the runtime has resolved its default.
   int? _reportedBackendValue(_LiteRtLmWebEngine engine) {
     try {
       final settings = engine.getProperty<JSAny?>('settings'.toJS);
       if (settings == null || !settings.isA<JSObject>()) return null;
-      final value = (settings as JSObject).getProperty<JSAny?>('backend'.toJS);
-      return value != null && value.isA<JSNumber>()
-          ? (value as JSNumber).toDartInt
-          : null;
+      return _readBackendId(settings as JSObject, 'backend');
     } catch (_) {
       return null;
     }
   }
 
-  int? _backendValueFromGlobalEnum(String backend) {
-    final raw = globalContext.getProperty('LiteRtLmBackendEnum'.toJS);
-    if (raw == null || !raw.isA<JSObject>()) {
+  int? _backendValueFromEnum(
+    _LiteRtLmEngineConstructor constructor,
+    String backend,
+  ) {
+    final module = globalContext.getProperty('__llamadartLiteRtLmModule'.toJS);
+    final loadedModule = module != null && module.isA<JSObject>()
+        ? module as JSObject
+        : null;
+    // The module namespace can outlive its Engine global if an app replaces it.
+    final raw =
+        constructor
+            .strictEquals(loadedModule?.getProperty('Engine'.toJS))
+            .toDart
+        ? loadedModule?.getProperty<JSAny?>('Backend'.toJS)
+        : globalContext.getProperty<JSAny?>('LiteRtLmBackendEnum'.toJS);
+    if (raw == null || !raw.isA<JSObject>()) return null;
+    final backendEnum = raw as JSObject;
+    return backend == 'cpu'
+        ? _readBackendId(backendEnum, 'CPU')
+        : _readBackendId(backendEnum, 'GPU_ARTISAN') ??
+              _readBackendId(backendEnum, 'GPU');
+  }
+
+  int? _readBackendId(JSObject object, String key) {
+    final value = object.getProperty<JSAny?>(key.toJS);
+    if (value == null || !value.isA<JSNumber>()) return null;
+    final number = (value as JSNumber).toDartDouble;
+    if (!(number > 0 && number <= 0x7fffffff) ||
+        number != number.truncateToDouble()) {
       return null;
     }
-    final keys = switch (backend) {
-      'cpu' => const ['CPU'],
-      'gpu' => const ['GPU_ARTISAN', 'GPU'],
-      _ => const <String>[],
-    };
-    final enumObject = raw as JSObject;
-    for (final key in keys) {
-      final value = enumObject.getProperty(key.toJS);
-      if (value != null && value.isA<JSNumber>()) {
-        return (value as JSNumber).toDartInt;
-      }
-    }
-    return null;
+    return number.toInt();
   }
 
   int _defaultSamplerSeed() {

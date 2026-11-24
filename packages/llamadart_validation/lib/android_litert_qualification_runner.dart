@@ -6,9 +6,10 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
-import 'package:ffi/ffi.dart';
 import 'package:llamadart/backend.dart' as spi;
 import 'package:llamadart/llamadart.dart';
+// ignore: implementation_imports
+import 'package:llamadart/src/backends/litert_lm/litert_lm_c_api_version.dart';
 // Same default-service boundary as the accepted macOS public qualifier.
 // ignore: implementation_imports
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
@@ -61,35 +62,28 @@ Future<void> runS24LiteRtQualification(
     );
   }
   final library = DynamicLibrary.open('${directory.path}/libLiteRtLm.so');
-  final version = calloc<Int32>(3);
-  try {
-    final status = library
-        .lookupFunction<
-          Int32 Function(Pointer<Int32>, Pointer<Int32>, Pointer<Int32>),
-          int Function(Pointer<Int32>, Pointer<Int32>, Pointer<Int32>)
-        >('litert_lm_get_api_version')(version, version + 1, version + 2);
-    if (status != 0 || version[0] != 1 || version[1] != 0 || version[2] < 0) {
-      throw StateError('Actual mapped library does not provide C API 1.0.x');
-    }
-    emit({
-      'event': 'identity',
-      'binding': binding,
-      'device': device,
-      'c_api_version': [version[0], version[1], version[2]],
-      'v1_selection_evidence':
-          'derived_from_frozen_default_source_and_mapped_C_API_1_library',
-      'v1_route_counters': 'not_exposed_not_measured',
-      'public_raw_native_json': 'not_exposed_separate_direct_control_only',
-      'public_finish': 'not_exposed_by_default_service',
-      'required_case_ids': s24LiteRtCases,
-      'stage_deadlines_seconds': s24LiteRtStageSeconds,
-      'injected_runtime_factory': false,
-      'backend_override': false,
-      'mappings': await captureS24LiteRtMappings(directory, binding),
-    });
-  } finally {
-    calloc.free(version);
+  final version = readLiteRtLmCApiVersion(library);
+  if (version == null) {
+    throw StateError(
+      'Actual mapped library did not report C API 1.0.x or 1.1.x',
+    );
   }
+  emit({
+    'event': 'identity',
+    'binding': binding,
+    'device': device,
+    'c_api_version': [version.major, version.minor, version.patch],
+    'v1_selection_evidence':
+        'derived_from_frozen_default_source_and_mapped_C_API_1_library',
+    'v1_route_counters': 'not_exposed_not_measured',
+    'public_raw_native_json': 'not_exposed_separate_direct_control_only',
+    'public_finish': 'not_exposed_by_default_service',
+    'required_case_ids': s24LiteRtCases,
+    'stage_deadlines_seconds': s24LiteRtStageSeconds,
+    'injected_runtime_factory': false,
+    'backend_override': false,
+    'mappings': await captureS24LiteRtMappings(directory, binding),
+  });
 
   String? active;
   var sequence = 0;

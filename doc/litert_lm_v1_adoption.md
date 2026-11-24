@@ -1,7 +1,7 @@
 # LiteRT-LM C API 1 adoption
 
 The public lazy facade, default service probes and speech worker now share
-ABI-aware discovery. Public production selection now admits C API 1.0.x;
+ABI-aware discovery. Public production selection now admits C API 1.0.x and 1.1.x;
 unknown/future versions remain unsupported. The native hook and Apple companion
 source now pin published [v0.19.1-2](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-2),
 owner `0b15fb34` / upstream `7a03724cece417f1724c923b3d527b4319730841`, which

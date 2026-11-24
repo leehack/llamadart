@@ -10,7 +10,7 @@ typedef _GetApiVersionNative =
 typedef _GetApiVersionDart =
     int Function(Pointer<Int>, Pointer<Int>, Pointer<Int>);
 
-/// Reads the only admitted versioned ABI without calling any engine function.
+/// Reads the admitted versioned ABI without calling any engine function.
 /// A missing marker means legacy; every malformed or unknown version is refused.
 ({int major, int minor, int patch})? readLiteRtLmCApiVersion(
   DynamicLibrary library,
@@ -24,15 +24,16 @@ typedef _GetApiVersionDart =
   try {
     parts[0] = parts[1] = parts[2] = -1;
     final status = getVersion(parts, parts + 1, parts + 2);
-    if (status != 0 || parts[0] != 1 || parts[1] != 0 || parts[2] < 0) {
+    final (major, minor, patch) = (parts[0], parts[1], parts[2]);
+    if (status != 0 || major != 1 || (minor != 0 && minor != 1) || patch < 0) {
       throw LlamaUnsupportedException(
-        'LiteRT-LM rejects C API ${parts[0]}.${parts[1]}.${parts[2]} (version probe status $status). '
-        'Use the packaged litert-lm-native $liteRtLmReleaseTag runtime with supported C API 1.0.x. '
+        'LiteRT-LM rejects C API $major.$minor.$patch (version probe status $status). '
+        'Use the packaged litert-lm-native $liteRtLmReleaseTag runtime with supported C API 1.0.x and 1.1.x. '
         'See https://github.com/leehack/llamadart/issues/1677 for the admitted ABI contract. '
         'No legacy engine call was attempted.',
       );
     }
-    return (major: parts[0], minor: parts[1], patch: parts[2]);
+    return (major: major, minor: minor, patch: patch);
   } finally {
     calloc.free(parts);
   }
@@ -75,7 +76,7 @@ void requireLiteRtLmLegacyCApi(DynamicLibrary library) {
     throw LlamaUnsupportedException(
       'Native LiteRT-LM C API $version is incompatible with the pre-1.0 bindings. '
       'Use the default LiteRtLmRuntimeClient or LiteRtLmService to select the '
-      'admitted C API 1.0.x route for the packaged litert-lm-native $liteRtLmReleaseTag '
+      'admitted C API 1.0.x or 1.1.x route for the packaged litert-lm-native $liteRtLmReleaseTag '
       'runtime, or select a compatible legacy runtime override for these bindings. '
       'See https://github.com/leehack/llamadart/issues/1677 for the admitted ABI contract. '
       'No legacy engine call was attempted.',

@@ -127,6 +127,12 @@ LiteRT-LM `v0.19.1-7` fixes the GPU command-buffer race that could duplicate
 tokens with sampler lookahead enabled. Qwen3-0.6B keeps lookahead on Metal.
 [Backport and qualification](https://github.com/leehack/litert-lm-native/pull/123).
 
+For native LiteRT-LM, `getPerformanceContext()` exposes the runtime's
+initialization timer as `loadMs`. C API 1.0.x sums recorded initialization
+phases. C API 1.1.x reports engine creation alone, or zero when that phase
+was not recorded. Compare like runtime versions when measuring load latency.
+[Upstream timer change](https://github.com/google-ai-edge/LiteRT-LM/commit/eefda36067)
+
 ## Generation tuning (`GenerationParams`)
 
 ```dart

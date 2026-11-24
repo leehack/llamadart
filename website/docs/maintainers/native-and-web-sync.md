@@ -131,8 +131,8 @@ compatibility `v0.15.0` or later with the required stream-chunk capability.
 This compatibility reader does not qualify a new candidate: the owner's
 new-manifest validator requires the version-correct declaration
 ([owner issue #107](https://github.com/leehack/litert-lm-native/issues/107)).
-Reading either declaration does not replace live runtime probes: C API 1.0
-still requires callback ABI 2 and independent allocation-failure ABI 1;
+Reading either declaration does not replace live runtime probes: C API 1.0.x and 1.1.x
+still require callback ABI 2 and independent allocation-failure ABI 1;
 finish-reason ABI 1 and ASR bridge ABI 1 keep their separate contracts.
 Corrected artifact verification and a pin update remain separate work.
 
@@ -425,7 +425,7 @@ runtime it bundles. Then run the `image-generation-smoke` and
 LiteRT-LM 0.19 changes C function signatures to status returns and output
 parameters. The public lazy facade, service metadata/finish probes and speech
 worker share discovery and ABI selection. `_liteRtLmV1ProductionSelection` in
-`litert_lm_runtime_facade.dart` enables public C API 1.0.x dispatch. The native
+`litert_lm_runtime_facade.dart` enables public C API 1.0.x and 1.1.x dispatch. The native
 hook and Apple companion source now pin published
 [v0.19.1-7](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-7),
 owner `930a3e29` / upstream `7a03724c`. It keeps C API 1.0.0, the
@@ -636,8 +636,10 @@ and consumer gates are tracked in `doc/litert_lm_v1_adoption.md`.
 
 ### Current v1 discovery
 
-C API 1.0 discovery accepts the owner's sampler-free 0.19 desktop
-inventory only after probing the selected primary library's supported C API.
+Discovery accepts the owner's sampler-free 0.19 desktop inventory only after
+probing the selected primary library for C API 1.0.x or 1.1.x. ABI admission
+uses the existing 1.0 signatures and is separate from reviewing the release
+manifest and its platform library inventory for a pin update.
 An absent marker still requires every legacy TopK companion. Common companions
 load before that probe; legacy-only samplers load after admission. macOS flat,
 versioned-framework and native-SPM layouts follow the same rule. A staged

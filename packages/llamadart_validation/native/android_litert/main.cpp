@@ -151,7 +151,11 @@ int main(int argc, char** argv) {
     if (!library) throw std::runtime_error("bound LiteRT core could not be loaded");
     int major = -1, minor = -1, patch = -1;
     Check(Function<int (*)(int*, int*, int*)>("litert_lm_get_api_version")(&major, &minor, &patch));
-    if (major != 1 || minor != 0 || patch < 0) throw std::runtime_error("C API 1.0.x required");
+    const std::string api_version =
+        std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(patch);
+    if (major != 1 || (minor != 0 && minor != 1) || patch < 0) {
+      throw std::runtime_error("C API 1.0.x or 1.1.x required, detected " + api_version);
+    }
     Check(Function<int (*)(int)>("litert_lm_set_min_log_level")(0));
     const std::string template_text = Read(argv[5], 16000);
     Owned settings{"litert_lm_engine_settings_delete"};
@@ -177,7 +181,7 @@ int main(int argc, char** argv) {
     while (std::getline(maps, line)) {
       if (line.find("LiteRt") != std::string::npos || line.find("webgpu") != std::string::npos || line.find("GemmaModelConstraint") != std::string::npos) selected += line + '\n';
     }
-    Record("maps", ",\"raw_hex\":" + Quote(Hex(selected)) + ",\"c_api_version\":\"1.0." + std::to_string(patch) + "\"");
+    Record("maps", ",\"raw_hex\":" + Quote(Hex(selected)) + ",\"c_api_version\":" + Quote(api_version));
     Generation(engine.pointer, "hello", "Reply with one short sentence saying hello.", template_text);
     Generation(engine.pointer, "arithmetic", "What is 3 + 4? Reply with only the number.", template_text);
     // Free every handle before the terminal process receipt.
