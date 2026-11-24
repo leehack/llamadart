@@ -63,6 +63,122 @@ class SelectionTest(unittest.TestCase):
         marker = 'tool/release/recoveries/' + 'a' * 40 + '.json'
         self.assertTrue(ci.select([marker], pull_request=True)['jobs']['analyze'])
 
+    def test_tool_paths_select_their_consumers(self):
+        static = {'analyze', 'markdown-tests'}
+        vm = {'analyze', 'test-linux-coverage'}
+        hosts = vm | {'test-other-os'}
+        cases = (
+            ('scripts/android_runtime_smoke.sh', static, False, False),
+            ('tool/gen_litert_lm_templates.dart', static, False, False),
+            ('tool/git/pr_head_update_evidence.schema.json', static, False, False),
+            ('tool/macos_llamadart_benchmark.dart', static, False, False),
+            ('tool/native/fixtures/litert_lm_v0191_owner_SHA256SUMS', static, False, False),
+            ('tool/testing/playwright_chat_app_benchmark.py', static, False, False),
+            ('tool/testing/run_llama_cpp_chat_tests.sh', vm, False, False),
+            ('tool/litert_lm_templates/qwen3.jinja', vm, False, False),
+            ('tool/testing/without_app_nap.sh', hosts, True, False),
+            ('tool/testing/build_llama_cpp_runtime_gbnf_validator.sh', hosts, True, False),
+            ('tool/litert_lm_templates/gemma4.jinja', hosts, True, True),
+            ('tool/native/fixtures/litert_lm_v019_apple_inventory_projection.json', hosts, True, True),
+            ('tool/litert_lm_asr_smoke.dart', hosts, True, True),
+            ('tool/testing/test_matrix.dart', hosts, True, True),
+            ('tool/testing/playwright_web_js_backed_model_staging.py', hosts, True, True),
+        )
+        for path, jobs, macos, windows in cases:
+            for pull_request in (True, False):
+                with self.subTest(path=path, pull_request=pull_request):
+                    plan = ci.select([path], pull_request=pull_request)
+                    self.assertEqual({job for job, selected in plan['jobs'].items() if selected}, jobs)
+                    self.assertEqual(plan['macos-native'], macos)
+                    self.assertEqual(plan['windows-native'], windows)
+                    self.assertEqual(plan['test-other-os-matrix'], [
+                        *(ci.MACOS_SHARDS if macos else ()),
+                        *(ci.WINDOWS_SHARDS if windows else ()),
+                    ])
+                    for key in ('companions', 'desktops', 'apps', 'reasons'):
+                        self.assertEqual(plan[key], [], key)
+                    for key in ('studio-macos', 'macos-validation-memory', 'apple-cache'):
+                        self.assertFalse(plan[key], key)
+                    self.assertEqual(plan['coverage'], not pull_request)
+
+    def test_tool_workflow_inputs_and_unknown_paths_stay_full(self):
+        paths = (
+            'tool/prepare_workspace.dart',
+            'tool/litert_lm_tokenizer_fixture.dart',
+            'tool/testing/run_local_e2e.dart',
+            'tool/testing/llama_cpp_templates.ref',
+            'tool/testing/playwright_chat_app_utils.py',
+            'tool/testing/serve_static_with_headers.py',
+            'tool/native/sync_native_release_pins.py',
+            'tool/native/fixtures/legacy_release_allowlist.json',
+            'tool/native/fixtures/native_release_tag_grammar.json',
+            'tool/release/pr_resolutions/48af8ec5bc294620bd63a1e1818f6c6593afb5d3.json',
+            'tool/release/pub_content_limits.dart',
+            'tool/release/reopen_unreleased_changelog.dart',
+            'tool/git/safe_pr_head_update.dart',
+            'scripts/build_chat_app_web.sh',
+            'scripts/fetch_webgpu_bridge_assets.sh',
+            'tool/new_benchmark.dart',
+            'tool/testing/playwright_new_smoke.py',
+            'tool/native/fixtures/new_release.json',
+            'tool/release/new_gate.dart',
+            'tool/git/new_writer.dart',
+            'tool/litert_lm_templates/new_model.jinja',
+            'scripts/new_runtime_smoke.sh',
+        )
+        for pull_request in (True, False):
+            full = ci.select(['new/unknown'], pull_request=pull_request)
+            for path in paths:
+                with self.subTest(path=path, pull_request=pull_request):
+                    plan = ci.select([path], pull_request=pull_request)
+                    self.assertEqual({**plan, 'reasons': full['reasons']}, full)
+                    self.assertEqual(plan['reasons'], [
+                        'shared/runtime or unclassified path: ' + path,
+                    ])
+
+    def test_tool_rules_union_with_each_other_and_existing_lanes(self):
+        paths = [
+            'scripts/android_runtime_smoke.sh',
+            'tool/litert_lm_templates/qwen3.jinja',
+            'tool/testing/without_app_nap.sh',
+            'tool/testing/test_matrix.dart',
+            'website/docs/examples/dartpad-gguf.md',
+            'example/chat_app/android/build.gradle',
+        ]
+        for pull_request in (True, False):
+            for changed in (paths, paths[::-1]):
+                with self.subTest(paths=changed, pull_request=pull_request):
+                    plan = ci.select(changed, pull_request=pull_request)
+                    self.assertEqual(
+                        {job for job, selected in plan['jobs'].items() if selected},
+                        {'analyze', 'docs-check', 'test-linux-coverage', 'test-other-os'},
+                    )
+                    self.assertEqual(plan['test-other-os-matrix'], [
+                        *ci.MACOS_SHARDS, *ci.WINDOWS_SHARDS,
+                    ])
+                    self.assertEqual(plan['apps'], ['android'])
+                    self.assertEqual(plan['desktops'], [])
+                    self.assertEqual(plan['reasons'], [])
+
+            for path in ('tool/native/fixtures/new_release.json', 'tool/ci/select_jobs.py'):
+                with self.subTest(fallback=path, pull_request=pull_request):
+                    expected = ci.select([*paths[4:], path], pull_request=pull_request)
+                    self.assertEqual(ci.select([*paths, path], pull_request=pull_request), expected)
+                    self.assertEqual(ci.select([path, *paths[::-1]], pull_request=pull_request),
+                                     expected)
+
+            validation = 'tool/testing/validation/bundle.dart'
+            expected = ci.select([*paths[4:], validation], pull_request=pull_request)
+            for changed in ([*paths, validation], [validation, *paths[::-1]]):
+                with self.subTest(validation=changed, pull_request=pull_request):
+                    plan = ci.select(changed, pull_request=pull_request)
+                    self.assertEqual(plan['jobs'], {**expected['jobs'], 'test-other-os': True})
+                    self.assertEqual(plan['desktops'], expected['desktops'])
+                    self.assertEqual(plan['apps'], expected['apps'])
+                    self.assertEqual(plan['test-other-os-matrix'], [
+                        *ci.MACOS_SHARDS, *ci.WINDOWS_SHARDS,
+                    ])
+
     def test_documentation_omits_native_and_bundles(self):
         for path in ('website/pubspec.lock', 'website/sidebars.json'):
             with self.subTest(path=path):

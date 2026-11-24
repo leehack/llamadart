@@ -78,6 +78,7 @@ const Map<String, String> _ciToolFiles = {
   'tool/ci/select_jobs.py':
       '.md | AGENTS | CHANGELOG | CONTRIBUTING | README | doc/ | git diff | skills/ | website/',
   'tool/ci/web_deployment.py': 'git diff',
+  'tool/git/safe_pr_head_update.dart': 'git cat-file',
   'tool/native/sync_native_headers_and_bindings.sh': 'find',
   'tool/native/sync_native_release_pins.py':
       '.md | CHANGELOG | README | find | git archive | git show | website/',
@@ -393,19 +394,9 @@ const Map<String, Exemption> suiteExemptions = {
         'Passes Markdown paths to the selector and inspects YAML without running preview helpers.',
     evidence: {
       ..._studioSourceFiles,
-      ..._validationFiles,
-      ..._pinTableFiles,
+      ..._ciToolFiles,
       'test/unit/tooling/ci_workflow_selection_test.dart':
           '.md | AGENTS | CONTRIBUTING | README | doc/ | git checkout | git clone | listSync | website/',
-      'tool/ci/deploy_guard.py': '.md | git diff',
-      'tool/ci/preview_guard.py': '.md | README | git diff | git show',
-      'tool/ci/select_jobs.py':
-          '.md | AGENTS | CHANGELOG | CONTRIBUTING | README | doc/ | git diff | skills/ | website/',
-      'tool/ci/web_deployment.py': 'git diff',
-      'tool/testing/validation/coverage_catalog.dart': '.md',
-      'tool/testing/validation/remote.dart': 'listSync',
-      'website/lib/src/site/sidebar.dart': 'doc/',
-      'website/lib/src/site/site_model.dart': '.md',
     },
     gate: null,
   ),
@@ -416,7 +407,6 @@ const Map<String, Exemption> suiteExemptions = {
       ..._ciToolFiles,
       'test/unit/tooling/classify_high_risk_changes_test.dart':
           '.md | CONTRIBUTING | README | doc/ | git checkout | ls-files | website/',
-      'tool/git/safe_pr_head_update.dart': 'git cat-file',
       'tool/testing/classify_high_risk_changes.dart':
           '.md | AGENTS | CONTRIBUTING | doc/ | git diff',
       'tool/testing/high_risk_readiness.dart':
@@ -517,19 +507,7 @@ const Map<String, Exemption> suiteExemptions = {
   'test/unit/tooling/preview_guard_test.dart': (
     reason:
         'Runs the guards against fixture checkouts it writes to temp directories.',
-    evidence: {
-      ..._studioSourceFiles,
-      ..._validationFiles,
-      ..._pinTableFiles,
-      'test/ci/test_preview_guard.py': '.md | README',
-      'test/ci/test_web_deployment.py': '.md | README | doc/ | glob',
-      'tool/ci/preview_guard.py': '.md | README | git diff | git show',
-      'tool/ci/select_jobs.py':
-          '.md | AGENTS | CHANGELOG | CONTRIBUTING | README | doc/ | git diff | skills/ | website/',
-      'tool/ci/web_deployment.py': 'git diff',
-      'tool/testing/validation/coverage_catalog.dart': '.md',
-      'tool/testing/validation/remote.dart': 'listSync',
-    },
+    evidence: {..._studioSourceFiles, ..._ciToolFiles},
     gate: null,
   ),
   'test/unit/tooling/run_llama_cpp_chat_tests_script_test.dart': (
