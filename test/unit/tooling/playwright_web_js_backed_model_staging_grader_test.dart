@@ -44,6 +44,11 @@ def read_fixture(suffix):
 # Chromium receipts from audit-2165-a8eeb693/browser.log and
 # browser-large.jsonl (Qwen3-4B explicit wasm64 staging, line 13).
 cases = read_fixture("chromium")
+cli_results = {name: cases[name]["result"] for name in (
+    "chromium-default", "explicit-on", "extra-default", "extra-staged",
+)}
+# The CLI parity mock needs only the expected Stories15M output for explicit-off.
+cli_results["explicit-off"] = {"output": cli_results["chromium-default"]["output"]}
 
 
 def replay(receipt, *, isolated=True, **options):
@@ -241,17 +246,15 @@ class GraderTest(TestCase):
             replay(modified, **projector_options)
 
     def test_cli_output_parity(self):
-        results = {name: cases[name]["result"] for name in (
-            "chromium-default", "explicit-on", "extra-default", "extra-staged",
-        )}
-        run_cli(results)
-        for staged, default in (("explicit-on", "chromium-default"),
-                                ("extra-staged", "extra-default")):
-            with self.subTest(staged):
-                different = dict(results[staged], output="different output")
+        run_cli(cli_results)
+        for name, default in (("explicit-on", "chromium-default"),
+                              ("explicit-off", "chromium-default"),
+                              ("extra-staged", "extra-default")):
+            with self.subTest(name):
+                different = dict(cli_results[name], output="different output")
                 with self.assertRaises(AssertionError) as failure:
-                    run_cli(dict(results, **{staged: different}))
-                self.assertEqual(failure.exception.args, ((different, results[default]),))
+                    run_cli(dict(cli_results, **{name: different}))
+                self.assertEqual(failure.exception.args, ((different, cli_results[default]),))
 
     def test_large_control_accepts_wasm64_retry(self):
         # Qwen3-4B control from audit-2165-a8eeb693/browser-large.jsonl, line 6.
@@ -270,12 +273,7 @@ class GraderTest(TestCase):
         self.assertEqual(result, receipt["result"])
         with self.assertRaises(AssertionError):
             replay(receipt)
-        run_cli({
-            "chromium-default": cases["chromium-default"]["result"],
-            "explicit-on": cases["explicit-on"]["result"],
-            "extra-default": result,
-            "extra-staged": cases["extra-staged"]["result"],
-        })
+        run_cli(dict(cli_results, **{"extra-default": result}))
 
     def test_large_control_rejects_unrelated_unsupported(self):
         receipt = dict(cases["old-core"], staging=None)
