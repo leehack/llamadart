@@ -1266,7 +1266,7 @@ jobs:
         run: dart test -p vm -j 1 --exclude-tags local-only --file-reporter=json:.dart_tool/test_events.jsonl ${{ steps.shard.outputs.files }}
 
       - name: Check the LiteRT-LM cache canary
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (steps.shard.outcome == 'success' || steps.shard.outcome == 'failure') }}
         shell: bash
         run: bash tool/ci/litert_lm_temp_canary.sh check
 

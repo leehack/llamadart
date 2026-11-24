@@ -157,7 +157,6 @@ void main() {
     final check = steps.singleWhere(
       (step) => step['name'] == 'Check the LiteRT-LM cache canary',
     );
-    expect(check['if'], r'${{ !cancelled() }}');
     expect(check['run'], 'bash tool/ci/litert_lm_temp_canary.sh check');
     expect(
       (workflow['jobs']['companion-packages']['steps'] as YamlList).singleWhere(

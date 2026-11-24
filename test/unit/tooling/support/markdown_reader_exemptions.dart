@@ -66,7 +66,7 @@ const Map<String, String> _ciToolFiles = {
   'test/ci/test_nonpublishing_auth_probe.py': 'listdir',
   'test/ci/test_preview_guard.py': '.md | README',
   'test/ci/test_select_jobs.py':
-      '.md | AGENTS | CHANGELOG | CONTRIBUTING | README | SKILL | doc/ | glob | skills/ | website/',
+      '.md | AGENTS | CHANGELOG | CONTRIBUTING | README | SKILL | doc/ | glob | ls-files | skills/ | website/',
   'test/ci/test_stage_genkit_package.py':
       '.md | CHANGELOG | README | SKILL | doc/ | glob | skills/',
   'test/ci/test_supervise_chrome_test.py': 'glob | listdir',

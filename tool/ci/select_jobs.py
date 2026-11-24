@@ -61,6 +61,32 @@ VALIDATION_BUNDLED_ASSETS = (
     'packages/llamadart_validation/assets/embeddings/v1/',
 )
 
+EXAMPLE_PACKAGES = (
+    'example/basic_app/',
+    'example/dartpad_gguf/',
+    'example/laya_command_bar/',
+    'example/laya_tetris/',
+    'example/llamadart_cli/',
+    'example/llamadart_server/',
+    'example/tui_coding_agent/',
+)
+EXAMPLE_NOTEBOOK = 'example/training_notebook/'
+
+# The Linux VM also runs each root suite that imports or reads these files.
+BASIC_APP_ROOT_VM = (
+    'example/basic_app/bin/src/live_asr_pcm.dart',
+    'example/basic_app/bin/src/macos_mic_asr.dart',
+)
+BASIC_APP_ROOT_CHROME = (
+    'example/basic_app/bin/llamadart_engine_lifecycle_example.dart',
+    'example/basic_app/test/fixtures/image_warmup_comparison.dart',
+)
+BASIC_APP_ROOT_HOST_VM = (
+    'example/basic_app/test/fixtures/image_container_native_reference.cpp',
+    'example/basic_app/test/fixtures/image_original_container_model.dart',
+    'example/basic_app/test/image_generation_smoke.yaml',
+)
+
 # Use exact paths so new tools and fixtures default to full CI. Workflow and
 # bundle entrypoints and their dependencies stay out of these sets.
 TOOLS_STATIC = {
@@ -211,9 +237,10 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
         elif path in ('.github/pull_request_template.md', '.dockerignore'):
             continue  # Markdown Tests covers the template. Docker builds run locally.
         elif (path in ('README.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'AGENTS.md',
-                       'LICENSE', 'MIGRATION.md')
+                       'LICENSE', 'MIGRATION.md', 'example/README.md')
               or path.startswith(('doc/', 'website/', 'tool/docs/'))
-              or (path.startswith(('packages/', 'example/')) and path.endswith('.md'))):
+              or (path.endswith('.md') and path.startswith(
+                  ('packages/', 'example/chat_app/', EXAMPLE_NOTEBOOK) + EXAMPLE_PACKAGES))):
             jobs.update(('docs-check', 'docs-versions'))
         elif (path in ('.github/dependabot.yml', 'dartdoc_options.yaml')
               or path.startswith(('skills/', 'docker/'))):
@@ -297,8 +324,22 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
                 jobs.update(('web-chat-contract', 'validation-harness'))
                 apps.update(APPS)
                 apple_cache = True
-        elif path.startswith('example/dartpad_gguf/'):
+        # DartPad already narrows .gitignore. Keep the other examples' ignore
+        # files on the full path because bundle builds check for a dirty tree.
+        elif path.startswith('example/dartpad_gguf/') or (
+            path.startswith(EXAMPLE_PACKAGES) and not path.endswith('/.gitignore')
+        ):
             jobs.update(('analyze', 'example-packages'))
+            if path in BASIC_APP_ROOT_VM:
+                jobs.add('test-linux-coverage')
+            elif path in BASIC_APP_ROOT_CHROME:
+                jobs.update(('test-linux-coverage', 'test-web'))
+            elif path in BASIC_APP_ROOT_HOST_VM:
+                jobs.add('test-linux-coverage')
+                macos_native = True
+                windows_native = True
+        elif path.startswith(EXAMPLE_NOTEBOOK) and not path.endswith('/.gitignore'):
+            jobs.add('analyze')
         elif path.startswith('test/'):
             # Preserve all root test inventories, including Linux/Chrome/Windows.
             jobs.update(('analyze', 'test-linux-coverage', 'test-web', 'test-other-os'))
