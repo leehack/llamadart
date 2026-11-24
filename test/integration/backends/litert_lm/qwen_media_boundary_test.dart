@@ -343,6 +343,9 @@ class _RuntimeClient implements LiteRtLmRuntimeClientContract {
   bool get supportsMessageRendering => rendersMessages;
 
   @override
+  String get textLoraUnsupportedReason => 'has no text LoRA probe';
+
+  @override
   LiteRtLmFinishReason? get lastFinishReason => null;
 
   @override

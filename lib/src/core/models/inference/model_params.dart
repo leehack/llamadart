@@ -335,11 +335,11 @@ class ModelParams {
   /// `LlamaUnsupportedException` naming the adapter; any other failure throws
   /// `LlamaModelException`, with the adapter and cause in its `details`.
   ///
-  /// The legacy native LiteRT-LM adapter accepts one default-scale text LoRA
-  /// path, but upstream v0.18.1 and v0.19.0 reject initial text adapters in
-  /// their advanced engine. Path-setter success is not adapter application.
-  /// The C API 1.0 client explicitly refuses this unsupported path. Runtime
-  /// updates, stacking, custom scales, and LiteRT-LM web LoRA are unsupported.
+  /// Native LiteRT-LM runtimes v0.18.1 through v0.20.0 throw
+  /// `LlamaUnsupportedException` for initial text LoRA at model load.
+  /// The loaded runtime must export text LoRA probe ABI 1 and report support 1.
+  /// Runtime updates, stacking, custom scales, and LiteRT-LM web LoRA are
+  /// unsupported.
   /// When the model's format, given or from a
   /// `.litertlm` extension, the native file header of a model without either,
   /// or the backend makes the load LiteRT-LM, adapters it cannot take throw

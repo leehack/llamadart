@@ -1,6 +1,20 @@
 #include "c_api_v1_tokenizer.c"
 #include "c_api_v1_metadata.c"
 
+static int text_lora_support_calls;
+int fixture_text_lora_support_calls(void) { return text_lora_support_calls; }
+
+#ifdef TEXT_LORA_ABI
+int32_t litert_lm_native_text_lora_abi_version(void) { return TEXT_LORA_ABI; }
+#endif
+
+#ifdef TEXT_LORA_SUPPORT
+int32_t litert_lm_native_supports_text_lora(void) {
+  text_lora_support_calls++;
+  return TEXT_LORA_SUPPORT;
+}
+#endif
+
 static int client_log_level;
 int fixture_client_log_level(void) { return client_log_level; }
 int fixture_client_active(void) { return active; }
