@@ -148,7 +148,9 @@ interface does not establish backend/model support; read `await engine.capabilit
   `unloadModel()` only frees the model without loading another. Neither
   queues: while a `setModel` runs, another `setModel` or an `unloadModel`
   throws `LlamaStateException`. Serialize model switches in app code, or stop
-  the running load with `ModelLoadOptions.cancelToken`.
+  the running load with `ModelLoadOptions.cancelToken` for package-managed
+  downloads and streamed Web GGUF loads. Await `LlamaStateException` from
+  the cancelled load before trying again.
 - Check `engine.isReady` before inference. Log `engine.getBackendName()` in
   diagnostics so reports name the runtime actually used.
   Native llama.cpp with `device: ComputeDevice.auto`,

@@ -95,10 +95,14 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   on the web, which the runtime fetches itself. Use
   `ModelSource.parse('https://...')` for a remote model or projector; a
   `ModelSource.path` for one is a URL relative to the document, or a `blob:`
-  URL. Leave `download:` at `ModelLoadOptions.defaults`: options that need
-  the native download manager (bearer tokens or headers, `sha256`,
-  `cancelToken`, `cacheDirectory`, `resume: false`, or a cache policy other
-  than `preferCached`) throw `LlamaUnsupportedException`. `onProgress`
+  URL. For streamed GGUF loads, pass
+  `ModelLoadOptions(cancelToken: token)` to `LlamaEngine.load` or `setModel`.
+  The cancelled load throws `LlamaStateException` and the engine can be
+  reused after it settles. Disposal also aborts staging. Opt-in WasmFS loads
+  can continue fetching until the bridge attempt settles. LiteRT-LM Web
+  rejects cancel tokens. Native download options (bearer tokens or headers,
+  `sha256`, `cacheDirectory`, `resume: false`, or a cache policy other than
+  `preferCached`) throw `LlamaUnsupportedException`. `onProgress`
   reports only the model's fetch; with a projector that fetch fills the first
   half, and progress reaches 1 once the projector has loaded. The model URL must be fetchable from the page (CORS).
 - Models are cached in browser Cache Storage keyed by URL, subject to quota and

@@ -87,7 +87,9 @@ uses JavaScript-backed staging for hints above 960 MiB through 3.75 GiB and
 rejects larger hints before downloading. Other loads follow the bridge's
 browser policy.
 Set `ModelParams.jsBackedModelStaging: false` to disable staging or `true` to
-require it with staging-capable v0.1.92+ assets.
+require it with staging-capable v0.1.92+ assets. Pass
+`ModelLoadOptions(cancelToken: token)` to stop a streamed Web GGUF load.
+Wait for the load to throw `LlamaStateException` before loading again.
 
 llamadart also ships [agent skills](https://dart.dev/tools/pub/package-skills)
 that teach coding agents its APIs. Install them from your app's root:

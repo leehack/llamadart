@@ -376,11 +376,11 @@ use.
 - `llamadart` does not list repository files or pick a quantization. Copy the
   exact path from the repository's **Files and versions** tab.
 - URL-loading web backends accept only unauthenticated `preferCached` loads.
-  Auth headers, checksums, cancel tokens, other cache policies,
-  `cacheDirectory`, `resume: false` and custom retries throw
-  `LlamaUnsupportedException` there; use a native target for those. A
-  `ModelSource.path` there is a URL relative to the document, or a `blob:`
-  URL.
+  `LlamaEngine.load` and `setModel` support cancel tokens for streamed GGUF
+  transfers. LiteRT-LM Web rejects cancel tokens. Auth headers, checksums,
+  other cache policies, `cacheDirectory`, `resume: false` and custom retries
+  require a native target. A `ModelSource.path` there is a URL relative to the
+  document, or a `blob:` URL.
 
 ## Reference: resume, locking and cache metadata
 
