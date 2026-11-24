@@ -619,6 +619,7 @@ class WebGpuLlamaBackend
 
   Future<({String variant, String notes})?> _activateModelLoadBridge({
     required bool allowSingleThreadCore,
+    required bool memory64ExplicitlyDisabled,
     required bool? requestedStaging,
     required bool tryAutomaticStaging,
     required int automaticStagingModelBytes,
@@ -653,7 +654,10 @@ class WebGpuLlamaBackend
         );
         if (core?.variant == 'memory64' && tryMemory64Staging) return core;
         if (core?.variant == 'wasm32' && allowSingleThreadCore) {
-          _checkWasm32StagingLimit(automaticStagingModelBytes);
+          _checkWasm32StagingLimit(
+            automaticStagingModelBytes,
+            memory64ExplicitlyDisabled: memory64ExplicitlyDisabled,
+          );
           if (tryWasm32Staging) return core;
         }
       } on LlamaUnsupportedException catch (error) {
@@ -673,14 +677,20 @@ class WebGpuLlamaBackend
       throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
     }
     if (core.variant == 'wasm32') {
-      _checkWasm32StagingLimit(automaticStagingModelBytes);
+      _checkWasm32StagingLimit(
+        automaticStagingModelBytes,
+        memory64ExplicitlyDisabled: memory64ExplicitlyDisabled,
+      );
     }
     return core;
   }
 
-  void _checkWasm32StagingLimit(int modelBytes) {
+  void _checkWasm32StagingLimit(
+    int modelBytes, {
+    required bool memory64ExplicitlyDisabled,
+  }) {
     if (modelBytes <= _wasm32JsStagingMaxModelBytes) return;
-    final memory64Advice = _effectivePreferMemory64 == false
+    final memory64Advice = memory64ExplicitlyDisabled
         ? 'Unset preferMemory64 or set it to true on a browser with memory64'
         : 'Use a browser with memory64';
     throw LlamaUnsupportedException(
@@ -1806,6 +1816,7 @@ class WebGpuLlamaBackend
       try {
         final preflight = await _activateModelLoadBridge(
           allowSingleThreadCore: allowSingleThreadCore,
+          memory64ExplicitlyDisabled: params.preferMemory64 == false,
           requestedStaging: jsBackedModelStaging,
           tryAutomaticStaging: tryAutomaticStaging,
           automaticStagingModelBytes: automaticStagingModelBytes,
