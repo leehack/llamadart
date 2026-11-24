@@ -10,6 +10,37 @@ import 'package:llamadart/src/hook/native_release_tag.dart';
 import 'package:test/test.dart';
 
 import '../../../tool/testing/check_webgpu_bridge_tag.dart';
+import 'support/bounded_process.dart';
+
+const _bootstrapCdnRoutes = r'''
+const { readFileSync } = require('node:fs');
+const { runInNewContext } = require('node:vm');
+const [path, inputs] = process.argv.slice(1);
+const html = readFileSync(path, 'utf8');
+const startMarker = '<script type="module">';
+const endMarker = 'const preferLocalBridgeRuntime';
+const start = html.indexOf(startMarker);
+const end = html.indexOf(endMarker, start);
+if (start < 0 || end < 0) throw new Error('Missing bridge bootstrap in ' + path);
+const source = html.slice(start + startMarker.length, end);
+(async () => {
+  const urls = [];
+  for (const [tag, repo] of JSON.parse(inputs)) {
+    urls.push(await runInNewContext(
+      '(async () => {' + source + '; return cdnBridgeUrl; })()',
+      { URLSearchParams, navigator: {}, window: {
+        __llamadartBridgeAssetsTag: tag,
+        __llamadartBridgeAssetsRepo: repo,
+        location: { search: '' },
+      } },
+    ));
+  }
+  console.log(JSON.stringify(urls));
+})().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
+''';
 
 Directory _fakeRepo(
   String assetsTag, {
@@ -1778,6 +1809,58 @@ void main() {
     final unregistered = findUnregisteredTagSites(root, 'v0.1.63');
     expect(unregistered, hasLength(1));
     expect(unregistered.single, startsWith('$livePath:1:'));
+  });
+
+  for (final path in [
+    'example/chat_app/web/index.html',
+    'packages/llamadart_studio/web/index.html',
+  ]) {
+    test(
+      '$path selects the bridge CDN route',
+      () async {
+        const official = 'leehack/llama-web-bridge-assets';
+        const custom = 'example/custom-bridge-assets';
+        const cdn = 'https://cdn.jsdelivr.net';
+        const module = 'llama_webgpu_bridge.js';
+        final result = await runBoundedProcess('node', [
+          '-e',
+          _bootstrapCdnRoutes,
+          path,
+          jsonEncode([
+            ['v0.1.91', official],
+            ['v0.1.90', official],
+            ['v0.1.94-rc.1', official],
+            ['v0.1.94', custom],
+          ]),
+        ], timeout: const Duration(seconds: 180));
+        expect(result.exitCode, 0, reason: result.stderr.toString());
+        expect(jsonDecode(result.stdout as String), [
+          '$cdn/npm/llama-web-bridge@0.1.91/dist/$module',
+          '$cdn/gh/$official@v0.1.90/$module',
+          '$cdn/gh/$official@v0.1.94-rc.1/$module',
+          '$cdn/gh/$custom@v0.1.94/$module',
+        ]);
+      },
+      testOn: '!windows',
+      timeout: const Timeout(Duration(seconds: 200)),
+    );
+  }
+
+  test('an unregistered npm dist pin holding a stale version is caught', () {
+    final root = _fakeRepo(
+      'v9.9.9',
+      files: const {
+        'notes.md':
+            'https://cdn.jsdelivr.net/npm/llama-web-bridge@0.1.91/dist/llama_webgpu_bridge.js\n',
+      },
+    );
+    Process.runSync('git', ['init', '--quiet'], workingDirectory: root.path);
+    Process.runSync('git', ['add', '-A'], workingDirectory: root.path);
+
+    expect(
+      findUnregisteredTagSites(root, 'v9.9.9'),
+      contains(contains('notes.md:1: a bridge asset pin is not covered')),
+    );
   });
 
   test('an unregistered pin holding a stale tag is still caught', () {
