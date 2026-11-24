@@ -208,7 +208,7 @@ cat "$PREP_PAGES"
 case "$*" in
   'api repos/owner/repo/git/ref/heads/main --jq .object.sha') echo "$MAIN_SHA" ;;
   'api repos/owner/repo/pulls/4') cat "$PR_RESPONSE" ;;
-  *viewerMergeBodyText*) echo '{"data":{"repository":{"pullRequest":{"viewerMergeHeadlineText":"GitHub title (#4)","viewerMergeBodyText":"GitHub body"}}}}' ;;
+  api\ graphql\ *' -F number=4 '*viewerMergeBodyText*) echo '{"data":{"repository":{"pullRequest":{"viewerMergeHeadlineText":"GitHub title (#4)","viewerMergeBodyText":"GitHub body"}}}}' ;;
   *) exit 64 ;;
 esac
 ''');
@@ -296,7 +296,15 @@ echo "Core release prep: $CORE_PREP"
       );
       final push = File('${temp.path}/push')
         ..writeAsStringSync(
-          '{"pull_request":{"title":"Stale title","number":4,"body":"Stale body"}}',
+          jsonEncode({
+            'pull_request': {
+              'title': 'Stale title',
+              'number': 99,
+              'body': '## Changelog\nN/A: Stale description.',
+              'base': {'sha': main},
+              'head': {'sha': head},
+            },
+          }),
         );
       Future<ProcessResult> check(String testedBase, {bool corePrep = false}) =>
           Process.run(
@@ -349,6 +357,7 @@ echo "Core release prep: $CORE_PREP"
         hasLength(4),
       );
       expect(squash.stdout, contains('GitHub title (#4)\n\nGitHub body'));
+      expect(squash.stdout, isNot(contains('(#99)')));
     },
     skip: Platform.isWindows ? 'Runs the Bash workflow step.' : false,
   );
