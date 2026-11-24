@@ -8,10 +8,11 @@ import 'package:crypto/crypto.dart';
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/backend.dart' as spi;
 import 'package:llamadart/llamadart.dart';
-import 'package:llamadart/src/core/url_redaction.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_c_api_version.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart'
     as runtime;
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
+import 'package:llamadart/src/core/url_redaction.dart';
 
 import '../../tool/litert_lm_asr_smoke.dart' as speech;
 import '../support/litert_lm_thinking_direct_cache.dart';
@@ -104,25 +105,10 @@ Future<List<PublicLiteRtLmPayload>> _checkInputs(
 }
 
 void _requireCApi1(DynamicLibrary library) {
-  if (!library.providesSymbol('litert_lm_get_api_version')) {
+  if (readLiteRtLmCApiVersion(library) == null) {
     throw LlamaUnsupportedException(
-      'Public v1 qualification requires C API 1.0.',
+      'Public v1 qualification requires C API 1.0.x or 1.1.x.',
     );
-  }
-  final values = calloc<Int32>(3);
-  try {
-    final status = library
-        .lookupFunction<
-          Int32 Function(Pointer<Int32>, Pointer<Int32>, Pointer<Int32>),
-          int Function(Pointer<Int32>, Pointer<Int32>, Pointer<Int32>)
-        >('litert_lm_get_api_version')(values, values + 1, values + 2);
-    if (status != 0 || values[0] != 1 || values[1] != 0 || values[2] < 0) {
-      throw LlamaUnsupportedException(
-        'The supplied core does not admit C API 1.0.x.',
-      );
-    }
-  } finally {
-    calloc.free(values);
   }
 }
 

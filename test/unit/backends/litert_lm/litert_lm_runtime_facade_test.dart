@@ -38,6 +38,7 @@ void main() {
     for (final entry in {
       'legacy': 'c_api_legacy_service.c',
       'v1': 'c_api_v1_public_dispatch.c',
+      'v11': 'c_api_v1_public_dispatch.c',
       'missing': 'c_api_version.c',
     }.entries) {
       final path =
@@ -46,6 +47,7 @@ void main() {
         '-shared',
         '-fPIC',
         '-pthread',
+        if (entry.key == 'v11') '-DAPI_MINOR=1',
         'test/fixtures/litert_lm/${entry.value}',
         '-o',
         path,
@@ -220,23 +222,30 @@ void main() {
     },
   );
 
-  test('public facade lazily selects v1 and releases its engine', () async {
-    final client = LiteRtLmRuntimeClient(libraryPath: paths['v1']);
-    expect(client.nativeSettlement, LiteRtLmNativeSettlement.settled);
-    expect(client.supportsFinishReasons, isTrue);
-    await client.initialize(
-      modelPath: 'unused',
-      backend: 'cpu',
-      speculativeDecoding: false,
+  for (final version in ['v1', 'v11']) {
+    test(
+      'public facade lazily selects $version and releases its engine',
+      () async {
+        final client = LiteRtLmRuntimeClient(libraryPath: paths[version]);
+        expect(client.nativeSettlement, LiteRtLmNativeSettlement.settled);
+        expect(client.supportsFinishReasons, isTrue);
+        await client.initialize(
+          modelPath: 'unused',
+          backend: 'cpu',
+          speculativeDecoding: false,
+        );
+        expect(client.tokenize('hello', addSpecial: false), [5, 104, 111]);
+        client.dispose();
+        final library = DynamicLibrary.open(paths[version]!);
+        expect(
+          library.lookupFunction<Int Function(), int Function()>(
+            'fixture_live',
+          )(),
+          0,
+        );
+      },
     );
-    expect(client.tokenize('hello', addSpecial: false), [5, 104, 111]);
-    client.dispose();
-    final library = DynamicLibrary.open(paths['v1']!);
-    expect(
-      library.lookupFunction<Int Function(), int Function()>('fixture_live')(),
-      0,
-    );
-  });
+  }
 
   test('explicit disabled selector refuses v1 before engine calls', () async {
     final client = createLiteRtLmSelectedRuntimeClient(

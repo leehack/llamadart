@@ -218,9 +218,11 @@ lists them.
 
 Native `.litertlm` loads use the LiteRT-LM runtime bundled by the build hook.
 Web `.litertlm` URLs use the `@litert-lm/core` JavaScript runtime: before
-loading, set `window.LiteRtLmEngine = module.Engine` or set
-`window.__llamadartLiteRtLmModuleUrl` to an `@litert-lm/core` ESM URL. See
-[Choosing llama.cpp or LiteRT-LM](./backend-selection).
+loading, set `window.__llamadartLiteRtLmModuleUrl` to an `@litert-lm/core`
+ESM URL, or preload the module and set `window.LiteRtLmEngine = module.Engine`
+and `window.LiteRtLmBackendEnum = module.Backend` from the same import. CPU loads
+throw `LlamaUnsupportedException` when the runtime's CPU backend ID is missing.
+See [Choosing llama.cpp or LiteRT-LM](./backend-selection).
 
 ## Load from Hugging Face or a URL
 

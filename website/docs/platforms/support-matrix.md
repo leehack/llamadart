@@ -283,13 +283,16 @@ architecture. The published Apple llama.cpp companions `0.20.0` and `0.20.1`
 remain compatible with an upgrade warning and use their own native builds.
 
 The direct native client, service probes and speech worker share ABI-aware
-discovery. Public selection admits legacy runtimes and C API 1.0.x; unknown
+discovery. Public selection admits legacy runtimes and C API 1.0.x and 1.1.x; unknown
 or future versions are refused before engine calls. The pinned runtime is
 published native
 [v0.19.1-7](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-7)
 (owner `930a3e29`, upstream `7a03724c`). The selected loader requires macOS 14+
 before loading any core or companion library, including legacy libraries and
-custom paths. Web uses `@litert-lm/core@0.19.0`.
+custom paths. The Web default stays on `@litert-lm/core@0.19.0`. Backend IDs
+are read from the loaded module, including with the shifted 0.20.0 enum.
+[Manual preload setup](../guides/model-lifecycle) explains
+how to expose the enum for CPU loads.
 The Flutter companion's iOS 16.4 floor remains separate.
 Apps can override the llama.cpp release with `llamadart_native_tag`; accepted
 tag forms, keys, backend modules and local bundles:

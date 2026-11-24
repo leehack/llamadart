@@ -2,12 +2,16 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 JSAny? _previousEngine;
+JSAny? _previousBackendEnum;
 
 String liteRtWebFakeOutput = 'ok';
 
 void installLiteRtWebRuntimeFake() {
   liteRtWebFakeOutput = 'ok';
   _previousEngine = globalContext.getProperty<JSAny?>('LiteRtLmEngine'.toJS);
+  _previousBackendEnum = globalContext.getProperty<JSAny?>(
+    'LiteRtLmBackendEnum'.toJS,
+  );
   final constructor = JSObject();
   constructor.setProperty(
     'create'.toJS,
@@ -72,6 +76,10 @@ void installLiteRtWebRuntimeFake() {
       return Future<JSObject>.value(engine).toJS;
     }).toJS,
   );
+  globalContext.setProperty(
+    'LiteRtLmBackendEnum'.toJS,
+    {'CPU': 3, 'GPU_ARTISAN': 2, 'GPU': 4}.jsify(),
+  );
   globalContext.setProperty('LiteRtLmEngine'.toJS, constructor);
 }
 
@@ -82,5 +90,12 @@ void restoreLiteRtWebRuntime() {
   } else {
     globalContext.setProperty('LiteRtLmEngine'.toJS, previous);
   }
+  final previousBackendEnum = _previousBackendEnum;
+  if (previousBackendEnum == null) {
+    globalContext.delete('LiteRtLmBackendEnum'.toJS);
+  } else {
+    globalContext.setProperty('LiteRtLmBackendEnum'.toJS, previousBackendEnum);
+  }
   _previousEngine = null;
+  _previousBackendEnum = null;
 }

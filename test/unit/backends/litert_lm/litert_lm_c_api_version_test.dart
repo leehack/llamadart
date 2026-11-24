@@ -21,7 +21,10 @@ void main() {
       'v1': [],
       'future': ['-DAPI_MAJOR=2'],
       'failed': ['-DAPI_STATUS=13'],
-      'futureMinor': ['-DAPI_MINOR=1'],
+      'v11': ['-DAPI_MINOR=1'],
+      'v11Patch': ['-DAPI_MINOR=1', '-DAPI_PATCH=7'],
+      'futureMinor': ['-DAPI_MINOR=2'],
+      'negativeMinor': ['-DAPI_MINOR=-1'],
       'negativePatch': ['-DAPI_PATCH=-1'],
       'incomplete': ['-DOMIT_PATCH_WRITE'],
       'inProcess0': ['-DIN_PROCESS_LITERT_ABI=0'],
@@ -45,7 +48,7 @@ void main() {
 
   tearDownAll(() => directory.delete(recursive: true));
 
-  test('shared probe admits only legacy and C API 1.0.x', () {
+  test('shared probe admits only legacy, C API 1.0.x and 1.1.x', () {
     expect(
       readLiteRtLmCApiVersion(DynamicLibrary.open(libraries['legacy']!)),
       isNull,
@@ -55,10 +58,20 @@ void main() {
       minor: 0,
       patch: 0,
     ));
+    expect(readLiteRtLmCApiVersion(DynamicLibrary.open(libraries['v11']!)), (
+      major: 1,
+      minor: 1,
+      patch: 0,
+    ));
+    expect(
+      readLiteRtLmCApiVersion(DynamicLibrary.open(libraries['v11Patch']!)),
+      (major: 1, minor: 1, patch: 7),
+    );
     for (final name in [
       'future',
       'failed',
       'futureMinor',
+      'negativeMinor',
       'negativePatch',
       'incomplete',
     ]) {
@@ -93,7 +106,8 @@ void main() {
     'v1': '1.0.0',
     'future': '2.0.0',
     'failed': 'status 13',
-    'futureMinor': '1.1.0',
+    'v11': '1.1.0',
+    'futureMinor': '1.2.0',
     'negativePatch': '1.0.-1',
     'incomplete': '1.0.-1',
   }.entries) {
@@ -102,7 +116,7 @@ void main() {
       try {
         await expectLater(
           client.initialize(modelPath: 'unused.litertlm', backend: 'cpu'),
-          entry.key == 'v1'
+          (entry.key == 'v1' || entry.key == 'v11')
               ? throwsA(
                   isA<LlamaUnsupportedException>().having(
                     (error) => error.message,
@@ -125,7 +139,7 @@ void main() {
                       .having(
                         (error) => error.message,
                         'admitted ABI',
-                        contains('supported C API 1.0.x'),
+                        contains('supported C API 1.0.x and 1.1.x'),
                       )
                       .having(
                         (error) => error.message,

@@ -66,6 +66,12 @@ an earlier `<script>`:
 | `__llamadartLiteRtLmModuleUrl` | `@litert-lm/core` module; default `@litert-lm/core@0.19.0` from jsDelivr |
 | `__llamadartBridgeBootstrapVerbose` | `true` enables bootstrap `console.*` logs |
 
+A custom LiteRT-LM preload sets `window.LiteRtLmEngine = module.Engine` and
+`window.LiteRtLmBackendEnum = module.Backend` from the same module. The enum
+values differ between `@litert-lm/core` 0.19.0 and 0.20.0. Engine-only preloads
+can use the runtime's default GPU route. CPU loads require the enum and fail
+before engine creation without it.
+
 ## Pinned assets
 
 Default pinned tag in the example is `v0.1.94`.

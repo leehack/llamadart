@@ -73,7 +73,9 @@ flutter run
 ```
 
 For LiteRT-LM Web text chat, choose a browser-compatible bundle and check the
-loaded runtime before relying on history or system instructions:
+loaded runtime before relying on history or system instructions. For a custom
+page that preloads LiteRT-LM, set both `window.LiteRtLmEngine = module.Engine`
+and `window.LiteRtLmBackendEnum = module.Backend` from the same import:
 
 ```dart
 final engine = await LlamaEngine.load(

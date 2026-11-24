@@ -1245,9 +1245,12 @@ abstract class BackendGpuEnumeration {
   });
 }
 
-/// Native performance timings reported by llama.cpp for the active context.
+/// Native performance timings reported by the backend for the active context.
 class BackendPerfContextData {
-  /// Time spent loading the model in ms.
+  /// Runtime-reported load time in milliseconds.
+  ///
+  /// LiteRT-LM C API 1.1 reports engine creation time, or zero when unavailable.
+  /// Earlier LiteRT-LM runtimes report the sum of recorded initialization phases.
   final double loadMs;
 
   /// Time spent evaluating prompt tokens in ms.

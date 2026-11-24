@@ -305,7 +305,7 @@ Directory? liteRtLmFindBundleLibraryDirectoryForAbi(
 /// An incomplete explicit override throws instead of substituting another runtime.
 /// [searchRoots] is only called when the first two steps find nothing.
 /// With [cApiV1], this finds a candidate containing the common 0.19 files; the
-/// selected primary must still prove C API 1.0 before waiving legacy samplers.
+/// selected primary must still prove an admitted C API before waiving legacy samplers.
 Directory? liteRtLmResolveRuntimeDirectoryForAbi(
   Abi abi, {
   required String? libDirOverride,

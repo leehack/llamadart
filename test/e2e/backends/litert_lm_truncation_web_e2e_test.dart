@@ -49,7 +49,7 @@ void main() {
     final script = HTMLScriptElement()
       ..type = 'module'
       ..text =
-          "import('$moduleUrl').then(m => { window.LiteRtLmEngine = m.Engine; window.$callback(null); }).catch(e => window.$callback(String(e)));";
+          "import('$moduleUrl').then(m => { window.LiteRtLmEngine = m.Engine; window.LiteRtLmBackendEnum = m.Backend; window.$callback(null); }).catch(e => window.$callback(String(e)));";
     document.head!.append(script);
     addTearDown(() {
       script.remove();
