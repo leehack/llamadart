@@ -30,11 +30,64 @@ public class MainActivityTest {
     public MainActivityTest() throws IOException {
         Bundle arguments = InstrumentationRegistry.getArguments();
         Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+        stageValidationModel(arguments, instrumentation);
         if ("true".equals(arguments.getString("stageModel"))) stageModel(arguments, instrumentation);
         forwardReloadMemoryArguments(arguments, instrumentation);
         forwardMicroBatchSweepArguments(arguments, instrumentation);
         forwardAndroidQualificationArguments(arguments, instrumentation);
         forwardPixelQwen35GuardArguments(arguments, instrumentation);
+    }
+
+    private static void stageValidationModel(Bundle arguments, Instrumentation instrumentation)
+            throws IOException {
+        String name = arguments.getString("validationStageModelName");
+        String sha256 = arguments.getString("validationStageModelSha256");
+        String bytes = arguments.getString("validationStageModelBytes");
+        if (name == null && sha256 == null && bytes == null) return;
+        if (name == null || !name.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,118}\\.litertlm")
+                || sha256 == null || !sha256.matches("[a-f0-9]{64}")
+                || bytes == null || !bytes.matches("[1-9][0-9]{0,17}")
+                || "true".equals(arguments.getString("stageModel"))) {
+            throw new IOException("Invalid validation model staging arguments");
+        }
+        long expectedBytes = Long.parseLong(bytes);
+        File files = instrumentation.getTargetContext().getFilesDir();
+        File directory = new File(files, "validation/models/" + sha256 + "/" + Process.myPid());
+        if (!directory.mkdirs()) {
+            throw new IOException("Cannot create a fresh validation model directory");
+        }
+        File destination = new File(directory, name);
+        File temporary = new File(directory, "model.part");
+        boolean copied = false;
+        try {
+            // The shell owns files pushed under /data/local/tmp, and Android
+            // may purge large models written to the app's cache.
+            ParcelFileDescriptor descriptor = instrumentation.getUiAutomation()
+                .executeShellCommand("cat /data/local/tmp/llamadart-validation-model.litertlm");
+            long total = 0;
+            try (InputStream input = new ParcelFileDescriptor.AutoCloseInputStream(descriptor);
+                 FileOutputStream output = new FileOutputStream(temporary)) {
+                byte[] buffer = new byte[1024 * 1024];
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    total += count;
+                    if (total > expectedBytes) {
+                        throw new IOException("Staged validation model exceeds the locked byte size");
+                    }
+                    output.write(buffer, 0, count);
+                }
+            }
+            if (total != expectedBytes || !temporary.renameTo(destination)) {
+                throw new IOException("Staged validation model is incomplete or cannot be finalized");
+            }
+            copied = true;
+        } finally {
+            if (!copied) {
+                temporary.delete();
+                directory.delete();
+            }
+        }
+        // The validation host verifies the digest against the profile before load.
     }
 
     private static void stageModel(Bundle arguments, Instrumentation instrumentation) throws IOException {

@@ -11,6 +11,9 @@ import 'image_profile.dart';
 import 'npu.dart';
 import 'process.dart';
 
+const _androidStagedModelDevicePath =
+    '/data/local/tmp/llamadart-validation-model.litertlm';
+
 Object? _freeze(Object? value) => value is Map
     ? Map<String, dynamic>.unmodifiable(
         value.map((key, item) => MapEntry(key as String, _freeze(item))),
@@ -53,6 +56,7 @@ class RemotePlan {
   bool get firebase => target.startsWith('firebase-');
   bool get blaze => firebase && settings['billing_mode'] == 'blaze';
   bool get windows => target == 'gce-windows-cuda';
+  bool get androidStagedModel => json['android_staged_model'] == true;
 
   static const firebaseTimeoutMinutes = 20;
   static const firebasePhysicalHourlyUsd = 5;
@@ -91,6 +95,12 @@ class RemotePlan {
     }
     if (!RegExp(r'^[^\s@]+@[^\s@]+$').hasMatch(account)) {
       throw const FormatException('Explicit account email required');
+    }
+    if (json.containsKey('android_staged_model') &&
+        (!androidStagedModel || target != 'firebase-android')) {
+      throw const FormatException(
+        'Staged model plans require Firebase Android',
+      );
     }
     if (!p.isAbsolute(bundle) ||
         !RegExp(
@@ -345,6 +355,9 @@ void requireRemoteBundleTarget(RemotePlan plan, Map<String, dynamic> manifest) {
   if (plan.firebase && manifest['profile'] != plan.profile) {
     throw StateError('Compiled mobile profile mismatch');
   }
+  if (plan.androidStagedModel != (manifest['android_staged_model'] == true)) {
+    throw StateError('Android staged model plan and bundle mismatch');
+  }
   if (!plan.firebase &&
       (manifest['build_os'] != (plan.windows ? 'windows' : 'linux') ||
           manifest['build_abi'] !=
@@ -557,7 +570,11 @@ class RemoteController {
       state['dispatched_at'] = now().toUtc().toIso8601String();
       state['deadline'] = now()
           .toUtc()
-          .add(Duration(minutes: plan.firebase ? 45 : 60))
+          .add(
+            Duration(
+              minutes: plan.firebase && !plan.androidStagedModel ? 45 : 60,
+            ),
+          )
           .toIso8601String();
       _save(plan.runId, state);
       started = true;
@@ -942,13 +959,19 @@ class GcloudProvider implements RemoteProvider {
   Future<CommandResult> command(
     RemotePlan plan,
     List<String> args, {
+    String? directory,
     Duration? timeout,
-  }) => execute(gcloud, [
-    ...args,
-    '--project=${plan.project}',
-    '--account=${plan.account}',
-    '--quiet',
-  ], timeout: timeout);
+  }) => execute(
+    gcloud,
+    [
+      ...args,
+      '--project=${plan.project}',
+      '--account=${plan.account}',
+      '--quiet',
+    ],
+    directory: directory,
+    timeout: timeout,
+  );
 
   Future<Map<String, dynamic>> matrix(
     RemotePlan plan,
@@ -1122,6 +1145,9 @@ class GcloudProvider implements RemoteProvider {
         jsonDecode(File(p.join(plan.bundle, 'profile.json')).readAsStringSync())
             as Map;
     final image = isImageGenerationProfile(profile);
+    final stagedModel = plan.androidStagedModel
+        ? profile['model'] as Map
+        : null;
     final args = [
       'firebase',
       'test',
@@ -1138,13 +1164,25 @@ class GcloudProvider implements RemoteProvider {
       '--client-details=matrixLabel=${plan.runId}',
       '--results-dir=${plan.runId}',
       '--format=json',
+      if (!ios) ...[
+        // The APK also contains an independently admitted S24 runner.
+        '--test-targets=class com.example.llamadart_chat_example.MainActivityTest',
+        '--no-use-orchestrator',
+      ],
+      if (stagedModel != null) ...[
+        '--other-files=$_androidStagedModelDevicePath=$androidStagedModelPayload',
+        '--environment-variables=validationStageModelName=${stagedModel['filename']},'
+            'validationStageModelSha256=${stagedModel['sha256']},'
+            'validationStageModelBytes=${stagedModel['bytes']}',
+      ],
       if (!ios)
         '--directories-to-pull=${image ? androidImageProfileDirectory(profile) : androidValidationDirectory}',
     ];
     final result = await command(
       plan,
       args,
-      timeout: const Duration(minutes: 10),
+      directory: stagedModel == null ? null : plan.bundle,
+      timeout: Duration(minutes: stagedModel == null ? 10 : 25),
     );
     // gcloud --async returns a console URL, even with --format=json. Its
     // creation receipt names the matrix; verify ownership through the API.

@@ -551,6 +551,18 @@ const Map<String, Exemption> suiteExemptions = {
     },
     gate: null,
   ),
+  'test/unit/tooling/validation_android_staged_model_test.dart': (
+    reason:
+        'Builds and verifies a temporary Android bundle from copied pins and '
+        'a JSON profile. All build and provider commands are mocked.',
+    evidence: {
+      ..._studioSourceFiles,
+      ..._validationFiles,
+      ..._pinTableFiles,
+      'tool/testing/validation/remote.dart': 'listSync',
+    },
+    gate: null,
+  ),
   'test/unit/tooling/validation_embedding_profile_test.dart': (
     reason: _validationTooling,
     evidence: {

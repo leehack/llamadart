@@ -1930,9 +1930,13 @@ void main() {
       File(
         p.join(pulled.path, 'events.jsonl'),
       ).writeAsStringSync(jsonEncode({'type': 'manifest', 'profile': profile}));
-      Future<bool> assess(Map<String, dynamic> bound) => assessCollectedRun(
+      Future<bool> assess(
+        Map<String, dynamic> bound, {
+        bool staged = false,
+        String? preparationSource,
+      }) => assessCollectedRun(
         Directory.current.path,
-        plan(),
+        RemotePlan({...plan().json, if (staged) 'android_staged_model': true}),
         run,
         execute:
             (executable, arguments, {directory, timeout, environment}) async {
@@ -1942,7 +1946,12 @@ void main() {
               expect(arguments, contains('bin/report.dart'));
               File(p.join(arguments[2], 'results.json')).writeAsStringSync(
                 jsonEncode({
-                  'manifest': {'environment': bound, 'profile': profile},
+                  'manifest': {
+                    'environment': bound,
+                    'profile': profile,
+                    if (preparationSource != null)
+                      'preparation': {'source': preparationSource},
+                  },
                   'summary': {'qualified': true},
                 }),
               );
@@ -1950,6 +1959,15 @@ void main() {
             },
       );
       expect(await assess(identity), true);
+      expect(await assess(identity, staged: true), false);
+      expect(
+        await assess(
+          identity,
+          staged: true,
+          preparationSource: 'android_staged',
+        ),
+        true,
+      );
       for (final key in identity.keys) {
         expect(
           await assess({
@@ -2692,6 +2710,16 @@ void main() {
           expect(calls.single, contains('--async'));
           expect(calls.single, contains('--num-flaky-test-attempts=0'));
           expect(calls.single, contains('--timeout=${timeoutMinutes}m'));
+          const androidRunner =
+              '--test-targets=class com.example.llamadart_chat_example.MainActivityTest';
+          if (target == 'firebase-android') {
+            expect(
+              calls.single,
+              containsAll([androidRunner, '--no-use-orchestrator']),
+            );
+          } else {
+            expect(calls.single, isNot(contains(androidRunner)));
+          }
           expect(
             calls.single.where((arg) => arg.startsWith('--device=')),
             hasLength(1),
