@@ -1,3 +1,7 @@
+## 0.20.8
+
+- Update the installation example to core `0.20.8`. Apple SwiftPM stays pinned to `leehack/stable-diffusion-native@v0.4.0-1`.
+
 ## 0.20.7
 
 - Update the Apple SwiftPM pin to `leehack/stable-diffusion-native@v0.4.0-1` and require core `0.20.7` or later in the 0.20 series.

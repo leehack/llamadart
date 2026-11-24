@@ -2,7 +2,8 @@
 
 [Open on preview.dartpad.dev](https://preview.dartpad.dev/?package=llamadart&root=example/dartpad_gguf&file=example/dartpad_gguf/lib/main.dart)
 The link always opens the latest published llamadart.
-The example is available starting in 0.20.7.
+The example is available starting in 0.20.7. The model picker and multi-turn
+chat are available starting in 0.20.8.
 
 Choose a model from the **Model** selector and select **Load** to download it:
 
