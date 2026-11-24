@@ -948,10 +948,8 @@ void main() {
 
       await _selectLocalModel(tester, 'Gemma 4 E2B (desktop Chrome, ~3 GB)');
       expect(tester.takeException(), isNull);
-      expect(find.textContaining('~4–6 GiB peak browser RSS'), findsOneWidget);
-      expect(find.textContaining('~3.5 GiB steady'), findsOneWidget);
       expect(
-        find.textContaining('Chrome 158 on Apple silicon macOS'),
+        find.textContaining('budget several gigabytes of browser memory'),
         findsOneWidget,
       );
       expect(
