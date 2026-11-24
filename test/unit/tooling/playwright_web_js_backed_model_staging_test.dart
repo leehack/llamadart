@@ -34,6 +34,8 @@ with patch.dict(sys.modules, {"playwright": ModuleType("playwright"),
                               "playwright.sync_api": api}):
     main = runpy.run_path(driver)["main"]
 
+run_live_case = main.__globals__["run_case"]
+
 build = Path("build/web_js_backed_model_staging")
 build.mkdir(parents=True)
 (build / "model.gguf").write_bytes(b"default model")
@@ -47,8 +49,31 @@ with patch.dict(main.__globals__, {"prepare_legacy_assets": Mock(),
     main()
 
 browser.close.assert_called_once_with()
-print(json.dumps([case.kwargs for case in run_case.call_args_list
-                  if case.args == (browser, origin, model_url)]))
+base_url = f"{origin}/{build.as_posix()}/model.gguf"
+print(json.dumps({
+    "base": [case.kwargs for case in run_case.call_args_list
+             if case.args == (browser, origin, base_url) and case.kwargs["name"]
+             in ("chromium-default", "explicit-on", "explicit-off")],
+    "extra": [case.kwargs for case in run_case.call_args_list
+              if case.args == (browser, origin, model_url)],
+}))
+
+context = browser.new_context.return_value
+page = context.new_page.return_value
+page.evaluate.side_effect = [True, {
+    "output": "fixture output",
+    "execution": "main-thread",
+    "core_variant": "wasm64",
+    "runtime_notes": "",
+    "mmproj_loaded": "0",
+    "coreMemory": {"scope": "page", "wasmBytes": 1, "peakWasmBytes": 1},
+}]
+run_live_case(browser, origin, base_url, name="explicit-off", worker=False,
+              mem64=True, stage=False, model_bytes_hint=13)
+script, payload = page.evaluate.call_args.args
+assert script == run_live_case.__globals__["BOOTSTRAP"]
+print(json.dumps(payload["config"]))
+context.close.assert_called_once_with()
 ''';
 
 void main() {
@@ -66,7 +91,7 @@ void main() {
       );
       expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
 
-      final [receipt, plan] = const LineSplitter()
+      final [receipt, plan, _, config] = const LineSplitter()
           .convert(result.stdout as String)
           .map(jsonDecode)
           .toList();
@@ -74,7 +99,40 @@ void main() {
       expect(receipt['gpu_required'], isTrue);
       expect(receipt['extra_model']['bytes'], 11);
       expect(receipt['projector']['bytes'], 9);
-      expect(plan, [
+      expect(receipt['model']['bytes'], 13);
+      expect(config['modelBytesHint'], 13);
+      expect(config['jsBackedModelStaging'], isFalse);
+      expect(plan['base'], [
+        for (final worker in [false, true])
+          for (final mem64 in [false, true]) ...[
+            {
+              'name': 'chromium-default',
+              'worker': worker,
+              'mem64': mem64,
+              'gpu': true,
+              'model_bytes_hint': 13,
+            },
+            {
+              'name': 'explicit-on',
+              'stage': true,
+              'reuse': true,
+              'worker': worker,
+              'mem64': mem64,
+              'gpu': true,
+              'model_bytes_hint': 13,
+            },
+            if (mem64)
+              {
+                'name': 'explicit-off',
+                'stage': false,
+                'worker': worker,
+                'mem64': true,
+                'gpu': true,
+                'model_bytes_hint': 13,
+              },
+          ],
+      ]);
+      expect(plan['extra'], [
         for (final worker in [false, true])
           for (final mem64 in [false, true]) ...[
             {
