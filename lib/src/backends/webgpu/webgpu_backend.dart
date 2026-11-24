@@ -613,19 +613,30 @@ class WebGpuLlamaBackend
     _syncBridgeLogLevel();
   }
 
-  Future<String?> _activateModelLoadBridge({
+  Future<({String variant, String notes})?> _activateModelLoadBridge({
     required bool allowSingleThreadCore,
     required bool? requestedStaging,
     required bool tryAutomaticStaging,
+    required int automaticStagingModelBytes,
     required Iterable<String> sourceUrls,
   }) async {
-    if (tryAutomaticStaging &&
+    final tryMemory64Staging =
+        tryAutomaticStaging &&
+        automaticStagingModelBytes <= _automaticStagingMaxModelBytes &&
+        _effectivePreferMemory64 != false &&
+        _isChromiumBrowser();
+    final tryWasm32Staging =
+        tryAutomaticStaging &&
+        allowSingleThreadCore &&
+        automaticStagingModelBytes > _wasm32DefaultStagingMaxModelBytes &&
+        automaticStagingModelBytes <= _wasm32JsStagingMaxModelBytes;
+    if ((tryMemory64Staging || tryWasm32Staging) &&
         await _canTryAutomaticStaging(
           allowSingleThreadCore: allowSingleThreadCore,
           sourceUrls: sourceUrls,
         )) {
       // Staging is a constructor option in the pinned bridge. Preflight this
-      // bridge before it can stage any bytes on a wasm32 fallback core.
+      // bridge before it can stage any model bytes.
       try {
         await _activateBridge(
           allowSingleThreadCore: allowSingleThreadCore,
@@ -636,8 +647,10 @@ class WebGpuLlamaBackend
           _requireBridge(),
           singleThread: allowSingleThreadCore,
         );
-        if (core != null && core.variant == 'memory64') {
-          return allowSingleThreadCore ? core.notes : null;
+        if (core?.variant == 'memory64' && tryMemory64Staging) return core;
+        if (core?.variant == 'wasm32' && allowSingleThreadCore) {
+          _checkWasm32StagingLimit(automaticStagingModelBytes);
+          if (tryWasm32Staging) return core;
         }
       } on LlamaUnsupportedException catch (error) {
         if (error.message != webGpuJsBackedStagingRequired) rethrow;
@@ -655,7 +668,19 @@ class WebGpuLlamaBackend
     if (core == null) {
       throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
     }
-    return core.notes;
+    if (core.variant == 'wasm32') {
+      _checkWasm32StagingLimit(automaticStagingModelBytes);
+    }
+    return core;
+  }
+
+  void _checkWasm32StagingLimit(int modelBytes) {
+    if (modelBytes <= _wasm32JsStagingMaxModelBytes) return;
+    throw LlamaUnsupportedException(
+      'Automatic JS-backed model staging on the wasm32 single-thread core '
+      'supports size hints up to 3.75 GiB. This GGUF size hint is $modelBytes '
+      'bytes. Use a browser with memory64 or choose a smaller or sharded GGUF.',
+    );
   }
 
   Future<bool> _canTryAutomaticStaging({
@@ -1220,6 +1245,11 @@ class WebGpuLlamaBackend
   // newer read path. Without a size hint, keep the bridge policy.
   static const int _automaticStagingMaxModelBytes = 4 * 1024 * 1024 * 1024;
 
+  // Without preallocation the released WasmFS writer failed above 1 GiB.
+  static const int _wasm32DefaultStagingMaxModelBytes = 960 * 1024 * 1024;
+  // Leave about 256 MiB below the largest verified JS-staged load (#2210).
+  static const int _wasm32JsStagingMaxModelBytes = 3840 * 1024 * 1024;
+
   /// Resolves the effective mem64 preference for a load.
   ///
   /// Size-driven, not model-name based: an explicit [ModelParams.preferMemory64]
@@ -1661,14 +1691,11 @@ class WebGpuLlamaBackend
         !allowSingleThreadCore &&
         jsBackedModelStaging != true &&
         _isRemoteFetchBackendOptedIn();
-    final modelBytesHint = params.modelBytesHint;
-    var tryAutomaticStaging =
-        jsBackedModelStaging == null &&
-        modelBytesHint != null &&
-        modelBytesHint > 0 &&
-        modelBytesHint <= _automaticStagingMaxModelBytes &&
-        !remoteFetchBackendOptedIn &&
-        _isChromiumBrowser();
+    final automaticStagingModelBytes =
+        jsBackedModelStaging == null && !remoteFetchBackendOptedIn
+        ? params.modelBytesHint ?? 0
+        : 0;
+    var tryAutomaticStaging = automaticStagingModelBytes > 0;
     if (setup.requireGpu && !await webGpuAdapterAvailable()) {
       throw LlamaUnsupportedException(
         'ComputeDevice.gpu needs WebGPU for llama.cpp on the Web, but this '
@@ -1706,11 +1733,11 @@ class WebGpuLlamaBackend
       );
 
       try {
-        final preflightNotes = await _activateModelLoadBridge(
+        final preflight = await _activateModelLoadBridge(
           allowSingleThreadCore: allowSingleThreadCore,
           requestedStaging: jsBackedModelStaging,
-          tryAutomaticStaging:
-              tryAutomaticStaging && _effectivePreferMemory64 != false,
+          tryAutomaticStaging: tryAutomaticStaging,
+          automaticStagingModelBytes: automaticStagingModelBytes,
           sourceUrls: sourceUrls,
         );
         final bridge = _requireBridge();
@@ -1766,6 +1793,7 @@ class WebGpuLlamaBackend
         }
         if (tryAutomaticStaging &&
             _activeJsBackedModelStaging == true &&
+            preflight?.variant != 'wasm32' &&
             _collectBridgeRuntimeHints(
                   bridge,
                 )['llamadart.webgpu.core_variant'] ==
@@ -1809,7 +1837,9 @@ class WebGpuLlamaBackend
           );
         }
 
-        _singleThreadPreflightNotes = preflightNotes;
+        _singleThreadPreflightNotes = allowSingleThreadCore
+            ? preflight?.notes
+            : null;
         _isReady = true;
         _chatTemplate = params.chatTemplate;
         _mmContextActive = false;

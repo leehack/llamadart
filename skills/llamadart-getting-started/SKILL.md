@@ -180,8 +180,10 @@ interface does not establish backend/model support; read `await engine.capabilit
   `preferMemory64`, `modelBytesHint` or `jsBackedModelStaging` off the Web.
   Web llama.cpp with `null` uses automatic staging on confirmed Chromium
   memory64 cores (v0.1.93+ assets and a positive `modelBytesHint` up to
-  4 GiB) and supported WebKit cores. Require it with `true` on v0.1.92+
-  assets or disable it with `false`.
+  4 GiB) and supported WebKit cores. On confirmed wasm32 single-thread cores
+  with capable assets, automatic staging covers hints above 960 MiB through
+  3.75 GiB. Larger hints on that core fail before download. Require staging
+  with `true` on v0.1.92+ assets or disable it with `false`.
   Staging can reduce Wasm heap use while increasing
   JavaScript heap use during load. LiteRT-LM rejects explicit staging settings.
   Build one per runtime with

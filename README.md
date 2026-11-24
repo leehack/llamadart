@@ -77,7 +77,10 @@ load to require the threaded core. Lazy tool-call grammars and
 custom grammar roots follow the loaded core's `lazyGrammar` capability.
 With bridge assets v0.1.93+, Chromium automatically uses JavaScript-backed
 GGUF and projector staging on confirmed memory64 cores when `modelBytesHint`
-is at most 4 GiB. Supported WebKit cores follow the bridge's browser policy.
+is at most 4 GiB. On confirmed wasm32 single-thread cores, the automatic policy
+uses JavaScript-backed staging for hints above 960 MiB through 3.75 GiB and
+rejects larger hints before downloading. Other loads follow the bridge's
+browser policy.
 Set `ModelParams.jsBackedModelStaging: false` to disable staging or `true` to
 require it with staging-capable v0.1.92+ assets.
 

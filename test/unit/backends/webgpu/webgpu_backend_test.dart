@@ -3430,8 +3430,10 @@ void main() {
         }).toJS;
       });
 
-      group('automatic Chromium memory64 policy', () {
+      group('automatic model staging policy', () {
         const modelBytes = 3 * 1024 * 1024 * 1024;
+        const wasm32DefaultLimit = 960 * 1024 * 1024;
+        const wasm32StagingLimit = 3840 * 1024 * 1024;
         const automatic = LlamaCppModelParams(
           gpuLayers: 0,
           modelBytesHint: modelBytes,
@@ -3443,6 +3445,19 @@ void main() {
         late List<bool?> loadStaging;
         late List<bool?> loadCache;
         late int probes;
+
+        void selectSingleThreadCore() {
+          addTearDown(fakeCrossOriginIsolation(isolated: false));
+          addTearDown(
+            overrideBrowserProperty(
+              globalContext['WebAssembly'] as JSObject,
+              'Memory',
+              _jsFunction('descriptor', 'return function uncloneable() {};'),
+            ),
+          );
+          globalContext['__llamadartBridgeCoreModuleUrlSt'] = 'st.js'.toJS;
+          preflight['threading'] = 'single-thread'.toJS;
+        }
 
         setUp(() {
           globalContext['__llamadartBridgeUserAgent'] = chromiumUa.toJS;
@@ -3464,6 +3479,10 @@ void main() {
                 lastBridgeConfig?['jsBackedModelStaging'].dartify() as bool?;
             loadStaging.add(staging);
             loadCache.add(options?['useCache'].dartify() as bool?);
+            bridgeRuntimeHints['llamadart.webgpu.core_variant'] =
+                (preflight['variant'] as JSString).toDart == 'memory64'
+                ? 'wasm64'
+                : 'wasm32';
             bridgeRuntimeHints[notesKey] = staging == true
                 ? 'model_staging_js_backed'
                 : '';
@@ -3475,19 +3494,7 @@ void main() {
           test('stages on a confirmed memory64 core (single thread: '
               '$singleThread)', () async {
             if (singleThread) {
-              addTearDown(fakeCrossOriginIsolation(isolated: false));
-              addTearDown(
-                overrideBrowserProperty(
-                  globalContext['WebAssembly'] as JSObject,
-                  'Memory',
-                  _jsFunction(
-                    'descriptor',
-                    'return function uncloneable() {};',
-                  ),
-                ),
-              );
-              globalContext['__llamadartBridgeCoreModuleUrlSt'] = 'st.js'.toJS;
-              preflight['threading'] = 'single-thread'.toJS;
+              selectSingleThreadCore();
             }
             await backend.modelLoadFromUrl(url, automatic);
             expect(probes, 1);
@@ -3521,8 +3528,9 @@ void main() {
           () async {
             final load = bridge['loadModelFromUrl'] as JSFunction;
             bridge['loadModelFromUrl'] = ((String url, JSObject? options) {
+              final result = load.callAsFunction(bridge, url.toJS, options);
               bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
-              return load.callAsFunction(bridge, url.toJS, options);
+              return result;
             }).toJS;
             await backend.modelLoadFromUrl(url, automatic);
             expect(probes, 1);
@@ -3530,6 +3538,102 @@ void main() {
             expect(loadCache, [true, true]);
           },
         );
+
+        group('confirmed wasm32 single-thread core', () {
+          setUp(() {
+            selectSingleThreadCore();
+            preflight['variant'] = 'wasm32'.toJS;
+          });
+
+          for (final (size, stages) in [
+            (null, null),
+            (wasm32DefaultLimit, null),
+            (wasm32DefaultLimit + 1, true),
+            (wasm32StagingLimit, true),
+          ]) {
+            test('uses staging $stages for size hint $size', () async {
+              await backend.modelLoadFromUrl(
+                url,
+                LlamaCppModelParams(
+                  gpuLayers: 0,
+                  preferMemory64: false,
+                  modelBytesHint: size,
+                ),
+              );
+              expect(probes, 1);
+              expect(loadStaging, [stages]);
+            });
+          }
+
+          test('keeps staging after memory64 preflight falls back', () async {
+            preflight
+              ..['fallback'] = true.toJS
+              ..['fallbackReason'] = 'init_error'.toJS;
+            await backend.modelLoadFromUrl(
+              url,
+              automatic.copyWith(preferMemory64: true),
+            );
+            expect(probes, 1);
+            expect(loadStaging, [true]);
+          });
+
+          for (final size in [wasm32StagingLimit + 1, 5 * 1024 * 1024 * 1024]) {
+            test('rejects size hint $size before the bridge loads', () async {
+              await expectLater(
+                backend.modelLoadFromUrl(
+                  url,
+                  automatic.copyWith(modelBytesHint: size),
+                ),
+                throwsA(
+                  isA<LlamaUnsupportedException>().having(
+                    (error) => error.message,
+                    'message',
+                    allOf(
+                      contains('JS-backed model staging'),
+                      contains('wasm32 single-thread'),
+                      contains('3.75 GiB'),
+                      contains('memory64'),
+                      contains('smaller or sharded GGUF'),
+                    ),
+                  ),
+                ),
+              );
+              expect(probes, 1);
+              expect(loadCache, isEmpty);
+              expect(loadStaging, isEmpty);
+            });
+          }
+
+          for (final (explicit, size) in [
+            (true, wasm32DefaultLimit),
+            (false, wasm32DefaultLimit + 1),
+            (true, wasm32StagingLimit + 1),
+            (false, wasm32StagingLimit + 1),
+          ]) {
+            test('honors explicit staging $explicit at size $size', () async {
+              await backend.modelLoadFromUrl(
+                url,
+                LlamaCppModelParams(
+                  gpuLayers: 0,
+                  modelBytesHint: size,
+                  jsBackedModelStaging: explicit,
+                ),
+              );
+              expect(probes, 1);
+              expect(loadStaging, [explicit]);
+            });
+          }
+        });
+
+        test('keeps the separate memory64 single-thread size limit', () async {
+          selectSingleThreadCore();
+          await backend.modelLoadFromUrl(
+            url,
+            automatic.copyWith(modelBytesHint: 4 * 1024 * 1024 * 1024),
+          );
+          expect(probes, 1);
+          expect(loadStaging, [true]);
+        });
 
         for (final ua in [safariUa, iosChromeUa]) {
           test('defers to the bridge policy on $ua', () async {

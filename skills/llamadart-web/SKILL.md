@@ -113,9 +113,10 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   `kIsWeb` for a GGUF model.
 - On Web llama.cpp, omit `ModelParams.jsBackedModelStaging` to use staging
   on Chromium with a confirmed memory64 core (v0.1.93+ assets and a positive
-  `modelBytesHint` up to 4 GiB) or on supported WebKit cores. Chromium follows
-  the bridge policy on wasm32, unknown or larger model sizes, and when
-  fetch-backed loading is opted in. Set
+  `modelBytesHint` up to 4 GiB). On a confirmed wasm32 single-thread core,
+  hints above 960 MiB through 3.75 GiB use staging with capable assets.
+  Larger hints on that core fail before download. Other loads follow the
+  bridge policy, including staging on supported WebKit cores. Set
   `true` to require it with matching v0.1.92+ assets or `false` to opt out.
   Staging reduces Wasm memory pressure by holding downloads in JavaScript
   memory during load. Account for both heaps. Explicit opt-in excludes

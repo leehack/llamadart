@@ -418,7 +418,7 @@ void main() {
 
       expect(find.text(_gemma4Item), findsOneWidget);
       expect(find.textContaining('Large download (~3 GB)'), findsOneWidget);
-      expect(find.textContaining('memory64'), findsOneWidget);
+      expect(find.textContaining('Use desktop Chrome'), findsOneWidget);
       expect(find.textContaining('Safari'), findsOneWidget);
       expect(engine.source, isNull);
 
@@ -671,7 +671,7 @@ void main() {
   );
 
   testWidgets(
-    'renders narrow viewport cleanly with updated Gemma warning hidden after Load',
+    'renders narrow viewport cleanly with Gemma warning hidden after Load',
     (tester) async {
       tester.view.physicalSize = const Size(320, 480);
       tester.view.devicePixelRatio = 1.0;
@@ -703,10 +703,8 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.textContaining('Large download (~3 GB)'), findsOneWidget);
-      expect(find.textContaining('~4–6 GiB peak browser RSS'), findsOneWidget);
-      expect(find.textContaining('~3.5 GiB steady'), findsOneWidget);
       expect(
-        find.textContaining('Chrome 158 on Apple silicon macOS'),
+        find.textContaining('budget several gigabytes of browser memory'),
         findsOneWidget,
       );
 
@@ -728,7 +726,7 @@ void main() {
       engine.loaded.complete();
       await tester.pump();
 
-      expect(find.textContaining('~4–6 GiB peak browser RSS'), findsNothing);
+      expect(warningText, findsNothing);
 
       await tester.ensureVisible(_prompt);
       await send(tester, 'Hi');

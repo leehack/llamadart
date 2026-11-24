@@ -198,7 +198,7 @@
       "exemption": {
         "id": "web-js-backed-model-staging",
         "issue": "https://github.com/leehack/llamadart/issues/2115",
-        "reason": "The web-js-backed-model-staging local browser scenario checks automatic staging on Chromium memory64 and supported WebKit cores, explicit overrides across both Wasm widths, direct and worker execution, and version-skew refusals. Validation-pack profiles do not encode bridge asset skew, browser staging or separate JavaScript and Wasm memory measurements."
+        "reason": "The web-js-backed-model-staging local browser scenario covers automatic staging on Chromium memory64 and supported WebKit cores, explicit overrides across both Wasm widths, direct and worker execution, and version-skew refusals. The WebGPU backend Chrome unit suite covers automatic wasm32 single-thread staging, both size boundaries, and pre-download refusal for issue #2210. Validation-pack profiles do not encode bridge asset skew, browser staging or separate JavaScript and Wasm memory measurements."
       }
     },
     {
