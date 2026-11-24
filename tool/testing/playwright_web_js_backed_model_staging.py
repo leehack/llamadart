@@ -329,6 +329,10 @@ def main():
                     staged = run_case(browser, origin, model, name="explicit-on",
                                       stage=True, reuse=True, **common)
                     assert staged["output"] == control["output"], (staged, control)
+                    if mem64:
+                        unstaged = run_case(browser, origin, model, name="explicit-off",
+                                            stage=False, **common)
+                        assert unstaged["output"] == control["output"], (unstaged, control)
                     for stage in (None, False):
                         run_case(browser, origin, model, name="webkit-ua-control",
                                  stage=stage, webkit=True, worker=worker, mem64=mem64)
