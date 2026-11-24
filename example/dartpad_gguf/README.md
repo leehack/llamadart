@@ -2,7 +2,8 @@
 
 [Open on preview.dartpad.dev](https://preview.dartpad.dev/?package=llamadart&root=example/dartpad_gguf&file=example/dartpad_gguf/lib/main.dart)
 The link always opens the latest published llamadart.
-The example is available starting in 0.20.7.
+The example is available starting in 0.20.7. The model picker and multi-turn
+chat are available starting in 0.20.8.
 
 Choose a model from the **Model** selector and select **Load** to download it:
 
@@ -10,7 +11,9 @@ Choose a model from the **Model** selector and select **Load** to download it:
 - **Qwen3.5 0.8B** (~533 MB) — stronger replies, with thinking disabled.
 - **Gemma 4 E2B** (~3 GB, flagged in the UI with a pre-download warning) offers
   higher quality. The download can take several minutes and requires desktop
-  Chrome with WebAssembly `memory64`. Safari and mobile browsers are unsupported.
+  Chrome. The current source prefers WebAssembly `memory64` and can fall
+  back to wasm32 single-thread with automatic staging. Safari and mobile
+  browsers are unsupported.
   The lower memory usage needs bridge assets v0.1.94+ and automatic staging.
   Q4_K_S used ~3.5 GiB steady and ~4–6 GiB peak browser RSS in Chrome 158 on
   Apple silicon macOS. Usage varies by device and can be higher on older runtimes.

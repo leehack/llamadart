@@ -2154,6 +2154,9 @@ class LiteRtLmService {
     if (params.minP != defaults.minP) {
       unsupported.add('minP');
     }
+    if (params.ignoreEos) {
+      unsupported.add('ignoreEos');
+    }
     if (params.grammar != null) {
       unsupported.add('grammar');
     }

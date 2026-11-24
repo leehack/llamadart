@@ -252,6 +252,24 @@ void main() {
     });
   });
 
+  group('readModelEndOfGenerationTokens', () {
+    test('lists every token llama.cpp reports as end of generation', () {
+      final asked = <int>[];
+      final tokens = readModelEndOfGenerationTokens(
+        nullptr,
+        6,
+        isEndOfGeneration: (_, token) {
+          asked.add(token);
+          return token == 2 || token == 5;
+        },
+      );
+
+      expect(asked, const <int>[0, 1, 2, 3, 4, 5]);
+      expect(tokens, const <int>[2, 5]);
+      expect(() => tokens.add(1), throwsUnsupportedError);
+    });
+  });
+
   group('readModelSuppressTokens', () {
     test('copies metadata once into an immutable Dart list', () {
       final nativeTokens = calloc<llama_token>(2);

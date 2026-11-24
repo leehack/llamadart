@@ -620,6 +620,229 @@ void main() {
       clearBridgeGlobals();
     });
 
+    group('URL model load cancellation', () {
+      const url = 'https://example.com/model.gguf';
+      final model = LlamaModel(ModelSource.parse(url));
+      const params = LlamaCppModelParams(device: ComputeDevice.cpu);
+      late LlamaEngine engine;
+      late ModelDownloadCancelToken token;
+      late int loads;
+      late int disposals;
+
+      setUp(() {
+        // Exercise the public format router as well as the runtime.
+        engine = LlamaEngine(WebAutoBackend(webBackend: backend));
+        addTearDown(engine.dispose);
+        token = ModelDownloadCancelToken();
+        loads = 0;
+        disposals = 0;
+        bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
+        bridge['dispose'] = (() {
+          disposals++;
+          return Future<void>.value().toJS;
+        }).toJS;
+      });
+
+      Future<void> load({
+        bool withToken = true,
+        ModelDownloadProgressCallback? onProgress,
+      }) => engine.setModel(
+        model,
+        params: params,
+        download: withToken
+            ? ModelLoadOptions(cancelToken: token)
+            : ModelLoadOptions.defaults,
+        onProgress: onProgress,
+      );
+
+      Future<AbortSignal?> installTransfer({
+        bool reportProgress = false,
+        bool lateSuccess = false,
+      }) {
+        final started = Completer<AbortSignal?>();
+        late JSFunction settle;
+        void cancel() {
+          if (lateSuccess) {
+            settle.callAsFunction();
+          } else {
+            settle.callAsFunction(
+              null,
+              DOMException('Model load was cancelled.', 'AbortError'),
+            );
+          }
+        }
+
+        bridge['cancel'] = (() {
+          if (loads == 1) cancel();
+        }).toJS;
+        bridge['loadModelFromUrl'] = ((String url, JSObject options) {
+          loads++;
+          if (loads != 1) return Future<void>.value().toJS;
+          final signal = options.getProperty<AbortSignal?>('signal'.toJS);
+          return JSPromise<JSAny?>(
+            ((JSFunction resolve, JSFunction reject) {
+              settle = lateSuccess ? resolve : reject;
+              signal?.addEventListener('abort', ((Event _) => cancel()).toJS);
+              started.complete(signal);
+              if (reportProgress) {
+                final progress = options['progressCallback'] as JSFunction;
+                progress.callAsFunction(null, 0.25.toJS);
+              }
+              if (reportProgress && signal?.aborted != true) {
+                resolve.callAsFunction();
+              }
+            }).toJS,
+          );
+        }).toJS;
+        bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+            'model_fs_write_abort';
+        return started.future;
+      }
+
+      test(
+        'rejects a pre-cancelled token and keeps the loaded model',
+        () async {
+          await load(withToken: false);
+          token.cancel();
+
+          await expectLater(load(), throwsA(isA<LlamaStateException>()));
+
+          expect(engine.isReady, isTrue);
+          expect(disposals, 0);
+        },
+      );
+
+      test(
+        'aborts the pending fetch before its first byte and can reload',
+        () async {
+          final started = installTransfer();
+          final result = load();
+          final outcome = expectLater(
+            result,
+            throwsA(isA<LlamaStateException>()),
+          );
+          final signal = await Future.any<AbortSignal?>([
+            started,
+            result.then<AbortSignal?>((_) => null, onError: (Object _) => null),
+          ]);
+          token.cancel();
+          expect(signal?.aborted, isTrue);
+          await outcome;
+          expect(loads, 1);
+          expect(disposals, 1);
+          expect(engine.isReady, isFalse);
+
+          await load(withToken: false);
+          expect(loads, 2);
+          expect(engine.isReady, isTrue);
+        },
+      );
+
+      for (final lateSuccess in [false, true]) {
+        test('stops during staged progress with bridge late success: '
+            '$lateSuccess', () async {
+          final started = installTransfer(
+            reportProgress: true,
+            lateSuccess: lateSuccess,
+          );
+          final progress = <double?>[];
+          await expectLater(
+            load(
+              onProgress: (event) {
+                progress.add(event.fraction);
+                token.cancel();
+              },
+            ),
+            throwsA(isA<LlamaStateException>()),
+          );
+          expect((await started)?.aborted, isTrue);
+          expect(loads, 1);
+          expect(progress, [0.25]);
+          expect(disposals, 1);
+          expect(engine.isReady, isFalse);
+        });
+      }
+
+      test('legacy bridge cancel never enters wasm32 fallback', () async {
+        final console = globalContext['console'] as JSObject;
+        final originalWarn = console['warn'];
+        final warnings = <String>[];
+        console['warn'] = ((String warning) => warnings.add(warning)).toJS;
+        addTearDown(() => console['warn'] = originalWarn);
+        await backend.setLogLevel(LlamaLogLevel.warn);
+
+        final started = installTransfer(reportProgress: true);
+        await expectLater(
+          backend.modelLoadFromUrl(
+            url,
+            params,
+            onProgress: (_) => backend.cancelGeneration(),
+          ),
+          throwsA(isA<LlamaStateException>()),
+        );
+        expect((await started)?.aborted, isTrue);
+        expect(loads, 1);
+        expect(backend.isReady, isFalse);
+        expect(warnings, isNot(contains(contains('wasm32 memory pressure'))));
+      });
+
+      test('dispose aborts staging before waiting for the load', () async {
+        final started = installTransfer(reportProgress: true);
+        Future<void>? disposed;
+        final zone = Zone.current;
+        await expectLater(
+          load(
+            withToken: false,
+            onProgress: (_) {
+              expect(Zone.current, same(zone));
+              disposed = engine.dispose();
+            },
+          ),
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              contains('disposed while loading'),
+            ),
+          ),
+        );
+        await disposed;
+        expect((await started)?.aborted, isTrue);
+        expect(loads, 1);
+        expect(disposals, 1);
+        expect(engine.isReady, isFalse);
+        expect(token.isCancelled, isFalse);
+      });
+
+      test(
+        'cancelling a completed load token leaves the model ready',
+        () async {
+          bridge['loadModelFromUrl'] = ((String url, JSObject config) {
+            loads++;
+            return Future<void>.value().toJS;
+          }).toJS;
+
+          await load();
+          token.cancel();
+
+          expect(loads, 1);
+          expect(disposals, 0);
+          expect(engine.isReady, isTrue);
+        },
+      );
+
+      test('still refuses cancellation on a LiteRT-LM URL', () async {
+        await expectLater(
+          engine.setModel(
+            LlamaModel(ModelSource.parse('https://example.com/model.litertlm')),
+            download: ModelLoadOptions(cancelToken: token),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(loads, 0);
+      });
+    });
+
     test('names the subtype mismatch before the embedding-engine '
         'rejection', () async {
       await expectLater(
@@ -3430,8 +3653,10 @@ void main() {
         }).toJS;
       });
 
-      group('automatic Chromium memory64 policy', () {
+      group('automatic model staging policy', () {
         const modelBytes = 3 * 1024 * 1024 * 1024;
+        const wasm32DefaultLimit = 960 * 1024 * 1024;
+        const wasm32StagingLimit = 3840 * 1024 * 1024;
         const automatic = LlamaCppModelParams(
           gpuLayers: 0,
           modelBytesHint: modelBytes,
@@ -3443,6 +3668,19 @@ void main() {
         late List<bool?> loadStaging;
         late List<bool?> loadCache;
         late int probes;
+
+        void selectSingleThreadCore() {
+          addTearDown(fakeCrossOriginIsolation(isolated: false));
+          addTearDown(
+            overrideBrowserProperty(
+              globalContext['WebAssembly'] as JSObject,
+              'Memory',
+              _jsFunction('descriptor', 'return function uncloneable() {};'),
+            ),
+          );
+          globalContext['__llamadartBridgeCoreModuleUrlSt'] = 'st.js'.toJS;
+          preflight['threading'] = 'single-thread'.toJS;
+        }
 
         setUp(() {
           globalContext['__llamadartBridgeUserAgent'] = chromiumUa.toJS;
@@ -3464,6 +3702,10 @@ void main() {
                 lastBridgeConfig?['jsBackedModelStaging'].dartify() as bool?;
             loadStaging.add(staging);
             loadCache.add(options?['useCache'].dartify() as bool?);
+            bridgeRuntimeHints['llamadart.webgpu.core_variant'] =
+                (preflight['variant'] as JSString).toDart == 'memory64'
+                ? 'wasm64'
+                : 'wasm32';
             bridgeRuntimeHints[notesKey] = staging == true
                 ? 'model_staging_js_backed'
                 : '';
@@ -3475,19 +3717,7 @@ void main() {
           test('stages on a confirmed memory64 core (single thread: '
               '$singleThread)', () async {
             if (singleThread) {
-              addTearDown(fakeCrossOriginIsolation(isolated: false));
-              addTearDown(
-                overrideBrowserProperty(
-                  globalContext['WebAssembly'] as JSObject,
-                  'Memory',
-                  _jsFunction(
-                    'descriptor',
-                    'return function uncloneable() {};',
-                  ),
-                ),
-              );
-              globalContext['__llamadartBridgeCoreModuleUrlSt'] = 'st.js'.toJS;
-              preflight['threading'] = 'single-thread'.toJS;
+              selectSingleThreadCore();
             }
             await backend.modelLoadFromUrl(url, automatic);
             expect(probes, 1);
@@ -3521,8 +3751,9 @@ void main() {
           () async {
             final load = bridge['loadModelFromUrl'] as JSFunction;
             bridge['loadModelFromUrl'] = ((String url, JSObject? options) {
+              final result = load.callAsFunction(bridge, url.toJS, options);
               bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
-              return load.callAsFunction(bridge, url.toJS, options);
+              return result;
             }).toJS;
             await backend.modelLoadFromUrl(url, automatic);
             expect(probes, 1);
@@ -3530,6 +3761,102 @@ void main() {
             expect(loadCache, [true, true]);
           },
         );
+
+        group('confirmed wasm32 single-thread core', () {
+          setUp(() {
+            selectSingleThreadCore();
+            preflight['variant'] = 'wasm32'.toJS;
+          });
+
+          for (final (size, stages) in [
+            (null, null),
+            (wasm32DefaultLimit, null),
+            (wasm32DefaultLimit + 1, true),
+            (wasm32StagingLimit, true),
+          ]) {
+            test('uses staging $stages for size hint $size', () async {
+              await backend.modelLoadFromUrl(
+                url,
+                LlamaCppModelParams(
+                  gpuLayers: 0,
+                  preferMemory64: false,
+                  modelBytesHint: size,
+                ),
+              );
+              expect(probes, 1);
+              expect(loadStaging, [stages]);
+            });
+          }
+
+          test('keeps staging after memory64 preflight falls back', () async {
+            preflight
+              ..['fallback'] = true.toJS
+              ..['fallbackReason'] = 'init_error'.toJS;
+            await backend.modelLoadFromUrl(
+              url,
+              automatic.copyWith(preferMemory64: true),
+            );
+            expect(probes, 1);
+            expect(loadStaging, [true]);
+          });
+
+          for (final size in [wasm32StagingLimit + 1, 5 * 1024 * 1024 * 1024]) {
+            test('rejects size hint $size before the bridge loads', () async {
+              await expectLater(
+                backend.modelLoadFromUrl(
+                  url,
+                  automatic.copyWith(modelBytesHint: size),
+                ),
+                throwsA(
+                  isA<LlamaUnsupportedException>().having(
+                    (error) => error.message,
+                    'message',
+                    allOf(
+                      contains('JS-backed model staging'),
+                      contains('wasm32 single-thread'),
+                      contains('3.75 GiB'),
+                      contains('memory64'),
+                      contains('smaller or sharded GGUF'),
+                    ),
+                  ),
+                ),
+              );
+              expect(probes, 1);
+              expect(loadCache, isEmpty);
+              expect(loadStaging, isEmpty);
+            });
+          }
+
+          for (final (explicit, size) in [
+            (true, wasm32DefaultLimit),
+            (false, wasm32DefaultLimit + 1),
+            (true, wasm32StagingLimit + 1),
+            (false, wasm32StagingLimit + 1),
+          ]) {
+            test('honors explicit staging $explicit at size $size', () async {
+              await backend.modelLoadFromUrl(
+                url,
+                LlamaCppModelParams(
+                  gpuLayers: 0,
+                  modelBytesHint: size,
+                  jsBackedModelStaging: explicit,
+                ),
+              );
+              expect(probes, 1);
+              expect(loadStaging, [explicit]);
+            });
+          }
+        });
+
+        test('keeps the separate memory64 single-thread size limit', () async {
+          selectSingleThreadCore();
+          await backend.modelLoadFromUrl(
+            url,
+            automatic.copyWith(modelBytesHint: 4 * 1024 * 1024 * 1024),
+          );
+          expect(probes, 1);
+          expect(loadStaging, [true]);
+        });
 
         for (final ua in [safariUa, iosChromeUa]) {
           test('defers to the bridge policy on $ua', () async {
@@ -8924,6 +9251,7 @@ void main() {
         expect(capabilities.supportsPresencePenalty, isFalse);
         expect(capabilities.supportsThinkingBudget, isFalse);
         expect(capabilities.supportsStreamBatching, isFalse);
+        expect(capabilities.supportsIgnoreEos, isFalse);
         expect(capabilities.supportsVision, isFalse);
 
         await engine.unloadModel();
@@ -9252,6 +9580,25 @@ void main() {
         expect(fake().completionOption('minP'), 0.05);
       });
 
+      test('rejects ignoreEos', () async {
+        await loadModel();
+        expect(
+          () => backend.generate(
+            1,
+            'Hello',
+            const GenerationParams(ignoreEos: true),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('GenerationParams.ignoreEos'),
+            ),
+          ),
+        );
+        expect(fake().completionCalls, 0);
+      });
+
       test('rejects every option after a failed or malformed probe', () async {
         final probes = <void Function(FakeFeatureBridge)>[
           (bridge) => bridge.completionProbeError = 'Bridge has been disposed.',
@@ -9303,6 +9650,7 @@ void main() {
         Future<List<bool>> reported() async {
           final capabilities = await backend.generationCapabilities();
           expect(capabilities.streamBatching, isFalse);
+          expect(capabilities.ignoreEos, isFalse);
           return <bool>[
             capabilities.penalty,
             capabilities.presencePenalty,

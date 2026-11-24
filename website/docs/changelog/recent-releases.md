@@ -11,6 +11,14 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
+## 0.20.8
+
+- Aligned default WebGPU bridge assets to `v0.1.94` to reduce GGUF loading memory with improved JavaScript-backed staging and bounded WebGPU weight uploads.
+- Default to JavaScript-backed GGUF and projector staging on supported Chromium memory64 loads with size hints up to 4 GiB. On wasm32 single-thread cores, automatically stage GGUFs with hints above 960 MiB through 3.75 GiB and reject larger hints before downloading when automatic staging applies.
+- Add multi-turn chat, a model picker, generation settings, and streaming stats to the DartPad GGUF example. Improve download feedback and error recovery.
+
+Runtime baseline: native llama.cpp `v1.0.0-4` and Web use upstream `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`; native LiteRT-LM uses `v0.19.1-7` and stable-diffusion uses `v0.4.0-1`. Web LiteRT-LM uses `@litert-lm/core@0.19.0`. Manifest SHA-256: `24d62c212338dda646a3b815d5883557a01b09997dee4f5b84245c5ab64fa5f6`.
+
 ## 0.20.7
 
 - Bundle the Visual C++ runtime DLLs with Windows image generation.

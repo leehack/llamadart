@@ -57,6 +57,7 @@ export 'src/backends/backend.dart'
         BackendJsonSchemaThinkingChatGeneration,
         BackendModelFileTypeDiagnostics,
         BackendModelFormatRouting,
+        BackendUrlModelLoadCancellation,
         BackendMultimodalSupport,
         BackendNativeChatGeneration,
         BackendNextTokenScoring,

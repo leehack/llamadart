@@ -1693,6 +1693,9 @@ class LiteRtLmBackend
     if (params.presencePenalty != defaults.presencePenalty) {
       unsupported.add('presencePenalty');
     }
+    if (params.ignoreEos) {
+      unsupported.add('ignoreEos');
+    }
     if (params.grammar != null) {
       unsupported.add('grammar');
     }

@@ -13,6 +13,7 @@ import '../../core/models/inference/model_params_runtime_support.dart';
 import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/models/model_format.dart';
+import '../../core/models/model_load_options.dart';
 import '../../core/template/media_placeholders.dart';
 import '../backend.dart';
 import '../litert_lm/litert_lm_backend_web.dart';
@@ -34,6 +35,7 @@ class WebAutoBackend
     implements
         BackendRuntimeIdentity,
         BackendModelFormatRouting,
+        BackendUrlModelLoadCancellation,
         BackendLoadCheck,
         LlamaBackend,
         BackendAvailability,
@@ -67,6 +69,7 @@ class WebAutoBackend
 
   final LlamaBackend Function() _webGpuFactory;
   final LlamaBackend Function() _liteRtLmFactory;
+  final bool _usesDefaultWebGpuFactory;
 
   LlamaBackend? _delegate;
   int _embeddingCancelEpoch = 0;
@@ -81,7 +84,8 @@ class WebAutoBackend
     LlamaBackend? webBackend,
     LlamaBackend Function()? webGpuFactory,
     LlamaBackend Function()? liteRtLmFactory,
-  }) : _webGpuFactory =
+  }) : _usesDefaultWebGpuFactory = webBackend == null && webGpuFactory == null,
+       _webGpuFactory =
            webGpuFactory ?? (() => webBackend ?? WebGpuLlamaBackend()),
        _liteRtLmFactory = liteRtLmFactory ?? (() => LiteRtLmBackend()) {
     if (webBackend != null) {
@@ -281,6 +285,45 @@ class WebAutoBackend
       );
     }
     return delegate.modelLoadFromUrl(url, params, onProgress: onProgress);
+  }
+
+  @override
+  bool supportsUrlModelLoadCancellation(String url, ModelFormat? format) {
+    if ((format?.runtime ?? _runtimeForSource(url)) != LlamaRuntime.llamaCpp) {
+      return false;
+    }
+    final delegate = _delegateKind == LlamaRuntime.llamaCpp ? _delegate : null;
+    if (delegate is BackendUrlModelLoadCancellation) {
+      return (delegate as BackendUrlModelLoadCancellation)
+          .supportsUrlModelLoadCancellation(url, format);
+    }
+    return delegate == null && _usesDefaultWebGpuFactory;
+  }
+
+  @override
+  Future<int> modelLoadFromUrlWithCancellation(
+    String url,
+    ModelParams params, {
+    required ModelDownloadCancelToken cancelToken,
+    ModelFormat? format,
+    void Function(double progress)? onProgress,
+  }) async {
+    final delegate = await _delegateFor(
+      format?.runtime ?? _runtimeForSource(url),
+    );
+    if (delegate is BackendUrlModelLoadCancellation) {
+      return (delegate as BackendUrlModelLoadCancellation)
+          .modelLoadFromUrlWithCancellation(
+            url,
+            params,
+            cancelToken: cancelToken,
+            format: format,
+            onProgress: onProgress,
+          );
+    }
+    throw LlamaUnsupportedException(
+      'This Web runtime does not support cancellation during model loading.',
+    );
   }
 
   @override

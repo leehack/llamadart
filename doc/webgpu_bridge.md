@@ -250,9 +250,17 @@ physical playback, intelligibility or speaker-reference fidelity.
   memory64. It limits the default to a positive `modelBytesHint` of at most
   4 GiB because older compatible cores can mmap a larger lazy tensor and
   clamp JS-backed WasmFS reads to 2 GiB. Preflight does not distinguish those
-  cores from cores with the newer read path. The constructor takes the staging
-  setting, so Dart replaces the candidate bridge if preflight falls back to
-  wasm32, before loading the GGUF.
+  cores from cores with the newer read path. Dart also accepts a staging
+  candidate when preflight confirms the wasm32 single-thread core and the hint
+  is above 960 MiB through 3.75 GiB. This covers selection of wasm32 and
+  fallback from memory64. A hint above 3.75 GiB on the confirmed wasm32
+  single-thread core fails before the bridge starts the model download.
+  Measurements on the released bridge below set these limits. The default
+  writer staged 1 GiB without preallocation and failed at 1,025 MiB. With a usable
+  Content-Length it staged 2,047 MiB. JS-backed staging loaded a
+  4,294,176,864-byte Gemma 4 E2B GGUF, while the 4,501,721,184-byte variant
+  exceeded the native 4 GiB tensor-payload limit.
+  [Issue #2210](https://github.com/leehack/llamadart/issues/2210).
   Explicit staging settings and fetch-backed loading opt-ins take precedence.
 - `v0.1.94+`: JS-backed staging releases exclusively owned stream buffers
   after copying them. Memory64 WasmFS downloads reserve capacity when the
@@ -306,6 +314,15 @@ Repeated media batches are also qualified on wasm32 from `v0.1.76`, which
 removes the projector copy behind the earlier abort (measured on the pinned assets);
 memory64 stays recommended for headroom. See
 [multimodal embedding qualification](multimodal_embeddings_web.md).
+
+### Model load cancellation
+
+The bridge accepts an operation `AbortSignal` for streamed loads. The
+pinned WasmFS path uses a separate fetch worker and does not forward the
+signal. When the owner adds support, probe the active bridge and worker for
+a published WasmFS cancellation capability. Older assets already accept the
+generic `signal` option. Qualify with a pending WasmFS request and verify
+that cancellation aborts it and starts no further request.
 
 ### Per-request cancellation
 
@@ -562,8 +579,9 @@ tag:
   before model or projector fetch with `MODEL_STAGING_UNSUPPORTED`. Explicit
   opt-in disables automatic fetch-backed loading and rejects a forced
   fetch-backed request.
-- Omit the staging option to preserve the bridge's browser default. On
-  supported WebKit cores, this enables staging automatically. An explicit
+- Outside Dart's automatic size-based policy, omitting the option uses the
+  bridge's browser default, including automatic staging on supported WebKit
+  cores. An explicit
   `false` reaches the bridge even when it predates the probe. Dart checks
   `model_staging_js_backed` and `mmproj_staging_js_backed` in runtime notes
   after their respective loads and rejects an explicit setting that does

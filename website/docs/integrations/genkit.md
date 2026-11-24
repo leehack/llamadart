@@ -100,12 +100,11 @@ Dispose the prepared handle before shutting down Genkit; disposal is terminal.
 Try local inference in Chrome with the
 [Genkit DartPad Preview example](https://preview.dartpad.dev/?package=genkit_llamadart&root=example/dartpad&file=example/dartpad/lib/main.dart).
 It offers selectable GGUF models (**SmolLM2 135M** default, **Qwen3.5 0.8B**,
-and **Gemma 4 E2B**, which requires desktop Chrome with WebAssembly `memory64`)
-and **Gemini**. For Gemma 4 E2B GGUF, the lower memory usage needs bridge
-assets v0.1.94+ and automatic staging. Q4_K_S used ~3.5 GiB steady and
-~4–6 GiB peak browser RSS in Chrome 158 on Apple silicon macOS. Usage varies
-by device and can be higher on older runtimes. Safari and mobile browsers
-are unsupported for this GGUF.
+and **Gemma 4 E2B**) and **Gemini**. Use desktop Chrome for Gemma 4 E2B GGUF.
+The current source prefers WebAssembly `memory64` and can fall back to wasm32
+single-thread with automatic staging. Budget several gigabytes of browser
+memory. Usage varies by device and WebAssembly core. Safari and mobile
+browsers are unsupported for this GGUF.
 
 For single-turn **LiteRT-LM** chat,
 choose **Qwen3 0.6B** (default) or **Gemma 4 E2B** with

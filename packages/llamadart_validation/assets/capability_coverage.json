@@ -198,7 +198,17 @@
       "exemption": {
         "id": "web-js-backed-model-staging",
         "issue": "https://github.com/leehack/llamadart/issues/2115",
-        "reason": "The web-js-backed-model-staging local browser scenario checks automatic staging on Chromium memory64 and supported WebKit cores, explicit overrides across both Wasm widths, direct and worker execution, and version-skew refusals. Validation-pack profiles do not encode bridge asset skew, browser staging or separate JavaScript and Wasm memory measurements."
+        "reason": "The web-js-backed-model-staging local browser scenario covers automatic staging on Chromium memory64 and supported WebKit cores, explicit overrides across both Wasm widths, direct and worker execution, and version-skew refusals. The WebGPU backend Chrome unit suite covers automatic wasm32 single-thread staging, both size boundaries, and pre-download refusal for issue #2210. Validation-pack profiles do not encode bridge asset skew, browser staging or separate JavaScript and Wasm memory measurements."
+      }
+    },
+    {
+      "surfaces": [
+        "matrix:Streamed GGUF load cancellation"
+      ],
+      "exemption": {
+        "id": "web-streamed-gguf-load-cancellation",
+        "issue": "https://github.com/leehack/llamadart/issues/2166",
+        "reason": "The WebGPU backend Chrome tests check signal transport, no retry, staged cleanup, late success, explicit reload and disposal. Validation-pack profiles do not encode browser transfer timing, staged memory ownership or WasmFS signal support."
       }
     },
     {
@@ -413,6 +423,17 @@
         "matrix:Thinking budget"
       ],
       "pack": "sampler_controls"
+    },
+    {
+      "surfaces": [
+        "capability:LlamaEngineCapabilities.supportsIgnoreEos",
+        "matrix:ignoreEos"
+      ],
+      "exemption": {
+        "id": "ignore-eos",
+        "reason": "Native llama.cpp ignoreEos has no sampler_controls case: Stories15M, the pack's model, does not reliably emit an end-of-generation token. The local-only Qwen3.5 test test/integration/core/engine/qwen35_ignore_eos_test.dart checks a reply that stops early without it and runs to maxTokens with it, under n-gram speculation too, and the rejection of response-format and tool grammars; a synthetic GGUF with EOS, EOT and EOM checks in CI that all three are biased, that sampling which ends early without the option runs to maxTokens with it, and that eager and lazy grammars are refused before any decode; Stories15M CI tests check the capability report and the grammar refusal, and VM/Chrome unit tests the WebGPU and LiteRT-LM refusals. No device or Web qualification is implied.",
+        "issue": "https://github.com/leehack/llamadart/issues/2199"
+      }
     },
     {
       "surfaces": [

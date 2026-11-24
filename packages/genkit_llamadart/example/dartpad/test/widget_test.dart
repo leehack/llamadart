@@ -260,7 +260,7 @@ void main() {
   ) async {
     final runtime = _LocalRuntime(backendName: 'WebGPU, CPU');
     await _openLocal(tester, 'GGUF', runtime);
-    expect(find.text('Model ready (GGUF).'), findsOneWidget);
+    expect(find.text('Model ready (WebGPU).'), findsOneWidget);
     await _send(tester, 'Hello');
     await _reply(tester, runtime, 'Hi there');
     await _tap(tester, 'Gemini');
@@ -486,12 +486,7 @@ void main() {
       await _selectLocalModel(tester, 'Gemma 4 E2B (desktop Chrome, ~3 GB)');
       expect(runtime.definition, isNull);
       expect(find.text('Load Gemma 4 E2B to begin.'), findsOneWidget);
-      expect(
-        find.textContaining(
-          'Desktop Chrome with WebAssembly memory64 is required',
-        ),
-        findsOneWidget,
-      );
+      expect(find.textContaining('Use desktop Chrome'), findsOneWidget);
 
       await _tap(tester, 'Load');
       expect(runtime.definition?.name, 'gemma-4-e2b');
@@ -502,10 +497,7 @@ void main() {
         'gemma-4-E2B-it-Q4_K_S.gguf',
       );
       expect(runtime.definition?.modelParams.contextSize, 2048);
-      expect(
-        find.textContaining('Requires desktop Chrome with WebAssembly'),
-        findsNothing,
-      );
+      expect(find.textContaining('Use desktop Chrome'), findsNothing);
 
       await _tap(tester, 'Send');
       expect(runtime.enableThinking, isFalse);
@@ -956,10 +948,8 @@ void main() {
 
       await _selectLocalModel(tester, 'Gemma 4 E2B (desktop Chrome, ~3 GB)');
       expect(tester.takeException(), isNull);
-      expect(find.textContaining('~4–6 GiB peak browser RSS'), findsOneWidget);
-      expect(find.textContaining('~3.5 GiB steady'), findsOneWidget);
       expect(
-        find.textContaining('Chrome 158 on Apple silicon macOS'),
+        find.textContaining('budget several gigabytes of browser memory'),
         findsOneWidget,
       );
       expect(

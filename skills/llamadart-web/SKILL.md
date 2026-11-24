@@ -95,10 +95,14 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   on the web, which the runtime fetches itself. Use
   `ModelSource.parse('https://...')` for a remote model or projector; a
   `ModelSource.path` for one is a URL relative to the document, or a `blob:`
-  URL. Leave `download:` at `ModelLoadOptions.defaults`: options that need
-  the native download manager (bearer tokens or headers, `sha256`,
-  `cancelToken`, `cacheDirectory`, `resume: false`, or a cache policy other
-  than `preferCached`) throw `LlamaUnsupportedException`. `onProgress`
+  URL. For streamed GGUF loads, pass
+  `ModelLoadOptions(cancelToken: token)` to `LlamaEngine.load` or `setModel`.
+  The cancelled load throws `LlamaStateException` and the engine can be
+  reused after it settles. Disposal also aborts staging. Opt-in WasmFS loads
+  can continue fetching until the bridge attempt settles. LiteRT-LM Web
+  rejects cancel tokens. Native download options (bearer tokens or headers,
+  `sha256`, `cacheDirectory`, `resume: false`, or a cache policy other than
+  `preferCached`) throw `LlamaUnsupportedException`. `onProgress`
   reports only the model's fetch; with a projector that fetch fills the first
   half, and progress reaches 1 once the projector has loaded. The model URL must be fetchable from the page (CORS).
 - Models are cached in browser Cache Storage keyed by URL, subject to quota and
@@ -113,9 +117,10 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   `kIsWeb` for a GGUF model.
 - On Web llama.cpp, omit `ModelParams.jsBackedModelStaging` to use staging
   on Chromium with a confirmed memory64 core (v0.1.93+ assets and a positive
-  `modelBytesHint` up to 4 GiB) or on supported WebKit cores. Chromium follows
-  the bridge policy on wasm32, unknown or larger model sizes, and when
-  fetch-backed loading is opted in. Set
+  `modelBytesHint` up to 4 GiB). On a confirmed wasm32 single-thread core,
+  hints above 960 MiB through 3.75 GiB use staging with capable assets.
+  Larger hints on that core fail before download. Other loads follow the
+  bridge policy, including staging on supported WebKit cores. Set
   `true` to require it with matching v0.1.92+ assets or `false` to opt out.
   Staging reduces Wasm memory pressure by holding downloads in JavaScript
   memory during load. Account for both heaps. Explicit opt-in excludes
@@ -131,6 +136,8 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
     unless `withTextHistory()` is used and the loaded runtime supports them. Unreported
     controls throw `LlamaUnsupportedException`; `engine.runtime` names the
     runtime, so never sniff the `.litertlm` extension after loading.
+    `supportsIgnoreEos` is false on every Web runtime, and
+    `GenerationParams(ignoreEos: true)` throws there.
   - A `ThinkingBudget` with an eager `think-body` or `seed-thought` root needs
     assets that report `thinkingBudgetPauseGrammar`. This includes Granite
     required calls with a forced-open thought. Ling 3 required calls and all
@@ -201,7 +208,7 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   ending exactly at `maxTokens` also counts as cut off. `ToolChoice.required`
   and `parallelToolCalls` still throw.
   It rejects media parts, grammar, `penalty`, `minP`, `presencePenalty`,
-  `thinkingBudget` and speculative decoding; generation honors only
+  `thinkingBudget`, `ignoreEos` and speculative decoding; generation honors only
   `maxTokens`, `temp`, `topK`, `topP`, `seed` and `stopSequences`. It has no
   embeddings, tokenizer, LoRA, state or usage. Use GGUF for anything more.
 - `flutter build web` only copies what is in `web/`: run the setup tool (or

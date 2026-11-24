@@ -196,8 +196,13 @@ Future<List<String>> resolveModelSourceUrls(
   required ModelResolver resolver,
   required ModelLoadOptions download,
   String assetType = 'model',
+  bool allowCancelToken = false,
 }) async {
-  rejectUnsupportedUrlBackendOptions(download, assetType: assetType);
+  rejectUnsupportedUrlBackendOptions(
+    download,
+    assetType: assetType,
+    allowCancelToken: allowCancelToken,
+  );
   final request = ModelResolveRequest(options: download);
   return [
     for (final source in sources)
@@ -218,6 +223,7 @@ Future<List<String>> resolveModelSourceUrls(
 void rejectUnsupportedUrlBackendOptions(
   ModelLoadOptions options, {
   String assetType = 'model',
+  bool allowCancelToken = false,
 }) {
   final isModel = assetType == 'model';
   if (options.cachePolicy != ModelCachePolicy.preferCached) {
@@ -230,7 +236,7 @@ void rejectUnsupportedUrlBackendOptions(
       'Authenticated $assetType URL loading requires the native download/cache manager.',
     );
   }
-  if (options.cancelToken != null) {
+  if (options.cancelToken != null && !allowCancelToken) {
     throw LlamaUnsupportedException(
       isModel
           ? 'Cancellation tokens require the native download/cache manager.'

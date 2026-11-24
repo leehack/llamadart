@@ -6,16 +6,16 @@ description: Chat with SmolLM2 135M, Qwen3.5 0.8B, or Gemma 4 E2B (desktop Chrom
 
 [Open on preview.dartpad.dev](https://preview.dartpad.dev/?package=llamadart&root=example/dartpad_gguf&file=example/dartpad_gguf/lib/main.dart)
 The link always opens the latest published llamadart.
-The example is available starting in 0.20.7.
+The example is available starting in 0.20.7. The model picker and multi-turn
+chat are available starting in 0.20.8.
 
 Choose a model from the **Model** selector and select **Load** to download it:
 **SmolLM2 135M** (~105 MB, default), **Qwen3.5 0.8B** (~533 MB, thinking
-disabled), or **Gemma 4 E2B** (~3 GB). Gemma can take several minutes to download
-and requires desktop Chrome with WebAssembly `memory64`. Safari and mobile
-browsers are unsupported. The lower memory usage needs bridge assets v0.1.94+
-and automatic staging. Gemma 4 E2B Q4_K_S used ~3.5 GiB steady and ~4–6 GiB
-peak browser RSS in Chrome 158 on Apple silicon macOS. Usage varies by device
-and can be higher on older runtimes.
+disabled), or **Gemma 4 E2B** (~3 GB). Use desktop Chrome for Gemma and allow
+several minutes for the download. The current source prefers WebAssembly
+`memory64` and can fall back to wasm32 single-thread with automatic staging.
+Safari and mobile browsers are unsupported for this GGUF. Budget several
+gigabytes of browser memory. Usage varies by device and WebAssembly core.
 
 Switching models disposes the active engine, clears the conversation, and waits
 for **Load**. Enter a prompt or choose a preset and select **Send**. The app

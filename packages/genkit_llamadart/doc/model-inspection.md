@@ -40,8 +40,9 @@ For a directly constructed `LlamaDartPlugin`, use
   separately from chat vision/audio support. It is null for custom runtimes
   without `LlamaRuntimeEmbeddingProvider`. Diagnostic reasons are omitted.
 - Backend names are restricted to recognized CPU/GPU, WebGPU/WASM and LiteRT-LM
-  labels; unknown labels remain null. Arbitrary failure text, paths and model
-  metadata are excluded.
+  labels. GGUF Web bridge labels are normalized to `WebGPU` or `WASM`. Unknown
+  labels remain null. Arbitrary failure text, paths and model metadata are
+  excluded.
 
 Runtime capability support does not guarantee model quality or every combination
 of settings. Definition permissions such as `supportsTools` can restrict the

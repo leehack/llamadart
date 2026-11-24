@@ -31,7 +31,9 @@ If you do not know which goal matters most, start with latency and stability.
 
 Work in this order:
 
-1. Benchmark the exact prompt shape you care about.
+1. Benchmark the exact prompt shape you care about. On native llama.cpp,
+   `GenerationParams(ignoreEos: true)` keeps a run going past the model's end
+   of reply, so every run decodes the same number of tokens.
 2. Compare `cpu` and GPU backends before changing anything else.
 3. Reduce `contextSize` and `maxTokens` to the smallest values that fit your
    use case.

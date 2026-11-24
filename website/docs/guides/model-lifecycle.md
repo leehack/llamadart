@@ -253,10 +253,15 @@ throws `LlamaStateException`.
 
 On web the runtime fetches each file itself: `.gguf` URLs load through the
 llama.cpp WebGPU bridge and `.litertlm` URLs through LiteRT-LM JS. A
-`ModelSource.path` is a URL relative to the document, or a `blob:` URL;
-`download` must stay at its defaults, and `onProgress` reports a fraction from
-0 to 1: with a projector, the model fetch fills the first half and progress
-reaches 1 once the projector has loaded.
+`ModelSource.path` is a URL relative to the document, or a `blob:` URL.
+The cancel token stops a streamed GGUF download or staging operation.
+The load throws `LlamaStateException`, and you can load again on the same
+engine once it settles. Use `dispose()` to stop an active transfer when
+closing the engine. Other `download` options must stay at their defaults,
+and LiteRT-LM Web rejects cancel tokens. `onProgress` reports a fraction from
+0 to 1. With a projector, the model fetch fills the first half and progress
+reaches 1 once the projector has loaded. The token can discard the result
+after projector loading but does not interrupt its fetch.
 
 Revisions, private repositories, progress UI, checksums and cache location:
 [Download and cache models](./model-downloads).

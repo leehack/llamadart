@@ -49,6 +49,25 @@ Pointer<llama_sampler> createSuppressTokensSampler(
   }
 }
 
+/// Signature used to ask llama.cpp whether a token ends generation.
+typedef EndOfGenerationCheck = bool Function(Pointer<llama_vocab>, int);
+
+/// Returns the ids of every end-of-generation token in [vocab].
+///
+/// llama.cpp exposes no list of these tokens, so this walks all [vocabSize]
+/// ids, as llama.cpp's `--ignore-eos` does.
+List<int> readModelEndOfGenerationTokens(
+  Pointer<llama_vocab> vocab,
+  int vocabSize, {
+  EndOfGenerationCheck? isEndOfGeneration,
+}) {
+  final isEog = isEndOfGeneration ?? llama_vocab_is_eog;
+  return List<int>.unmodifiable([
+    for (int token = 0; token < vocabSize; token++)
+      if (isEog(vocab, token)) token,
+  ]);
+}
+
 /// Signature used to read model-defined suppress-token metadata from llama.cpp.
 typedef SuppressTokensGetter =
     Pointer<llama_token> Function(Pointer<llama_vocab>, Pointer<Int32>);

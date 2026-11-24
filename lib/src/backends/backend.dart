@@ -20,6 +20,7 @@ import '../core/models/config/gpu_device_info.dart';
 import '../core/models/config/log_level.dart';
 import '../core/models/diagnostics/model_file_type.dart';
 import '../core/models/model_format.dart';
+import '../core/models/model_load_options.dart';
 import '../core/models/tools/tool_definition.dart';
 
 import 'web/web_backend.dart' if (dart.library.io) 'native/native_backend.dart';
@@ -656,6 +657,24 @@ abstract class BackendModelFormatRouting {
   });
 }
 
+/// Optional support for cancelling the runtime-owned transfer of a URL model.
+abstract class BackendUrlModelLoadCancellation {
+  /// Whether the runtime selected by [url] and [format] accepts cancellation.
+  /// This is a routing check and must not start the runtime or fetch the URL.
+  bool supportsUrlModelLoadCancellation(String url, ModelFormat? format);
+
+  /// Loads the model, applying an explicitly specified [format] if present.
+  /// On cancellation, releases any partial load, makes no further attempts and
+  /// throws [LlamaStateException]. [onProgress] is a notification callback.
+  Future<int> modelLoadFromUrlWithCancellation(
+    String url,
+    ModelParams params, {
+    required ModelDownloadCancelToken cancelToken,
+    ModelFormat? format,
+    void Function(double progress)? onProgress,
+  });
+}
+
 /// Internal backend probe for the format a [BackendModelFormatRouting]
 /// backend detects in a local model file, where the file rather than its
 /// name or a declared format picks the runtime.
@@ -1062,6 +1081,12 @@ class BackendGenerationCapabilities {
   /// claim it.
   final bool streamBatching;
 
+  /// Whether [GenerationParams.ignoreEos] is applied.
+  ///
+  /// Defaults to `false` so a backend that predates this field does not
+  /// claim it.
+  final bool ignoreEos;
+
   /// Creates a capability snapshot.
   const BackendGenerationCapabilities({
     required this.presencePenalty,
@@ -1070,6 +1095,7 @@ class BackendGenerationCapabilities {
     this.speculativeDecodingStrategies = const <SpeculativeDecodingStrategy>{},
     this.penalty = false,
     this.streamBatching = false,
+    this.ignoreEos = false,
   });
 }
 

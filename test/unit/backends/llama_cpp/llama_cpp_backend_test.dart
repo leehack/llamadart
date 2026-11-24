@@ -1665,6 +1665,7 @@ void main() {
       expect(capabilities.presencePenalty, isFalse);
       expect(capabilities.minP, isFalse);
       expect(capabilities.streamBatching, isFalse);
+      expect(capabilities.ignoreEos, isFalse);
       expect(capabilities.thinkingBudget, isFalse);
       expect(capabilities.speculativeDecodingStrategies, isEmpty);
       expect(backend.isReady, isFalse);

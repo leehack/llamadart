@@ -107,6 +107,11 @@ LlamaArgumentException _draftMicroBatchTooSmall(
   );
 }
 
+const String _ignoreEosWithGrammar =
+    'GenerationParams.ignoreEos cannot be combined with a grammar (including '
+    'one from tools or responseFormat). Remove the grammar, use '
+    'ToolChoice.none, or set ignoreEos to false.';
+
 const String _draftBlockRequirement =
     'for llama.cpp draft-dflash and draft-dspark, which decode a whole draft '
     'block in one micro-batch.';
@@ -2983,13 +2988,13 @@ class LlamaCppService {
     required String sourcePath,
   }) {
     try {
-      final vocab = llama_model_get_vocab(modelPointer);
+      final info = _calls.samplingModelInfo(modelPointer);
       return _LlamaModelWrapper(
         modelPointer,
         _calls,
         sourcePath: sourcePath,
-        vocabSize: llama_vocab_n_tokens(vocab),
-        suppressedTokens: readModelSuppressTokens(vocab),
+        vocabSize: info.vocabSize,
+        suppressedTokens: info.suppressedTokens,
       );
     } catch (_) {
       IsolateShutdownReleases.current.release(modelPointer);
@@ -3890,6 +3895,7 @@ class LlamaCppService {
       minP: true,
       thinkingBudget: _supportsThinkingBudget(),
       streamBatching: true,
+      ignoreEos: true,
       speculativeDecodingStrategies:
           _requiresQwen35VulkanRestriction(modelHandle)
           ? const <SpeculativeDecodingStrategy>{}
@@ -5413,6 +5419,18 @@ class LlamaCppService {
     );
   }
 
+  /// The tokens a generation of [modelHandle] suppresses, for unit tests;
+  /// with [ignoreEos], `null` until a generation has read them.
+  List<int>? debugSuppressedTokensForTesting(
+    int modelHandle, {
+    required bool ignoreEos,
+  }) {
+    final model = _models[modelHandle]!;
+    return ignoreEos
+        ? model.suppressedTokensIgnoringEos
+        : model.suppressedTokens;
+  }
+
   /// Resolves llama.cpp penalty sampler parameters for unit tests.
   Map<String, Object> debugResolvePenaltySamplerParamsForTesting(
     GenerationParams params,
@@ -5594,6 +5612,9 @@ class LlamaCppService {
           projectorLoaded: _modelToMtmd[modelHandle] != null,
         );
       }
+      if (params.ignoreEos && (params.grammar?.isNotEmpty ?? false)) {
+        throw LlamaUnsupportedException(_ignoreEosWithGrammar);
+      }
       final thinkingBudgetConfig = _resolveLlamaCppThinkingBudgetConfig(
         params,
         hasMediaParts: hasMediaParts,
@@ -5742,7 +5763,12 @@ class LlamaCppService {
         params,
         vocab,
         model.vocabSize,
-        model.suppressedTokens,
+        params.ignoreEos
+            ? model.suppressedTokensIgnoringEos ??= List<int>.unmodifiable({
+                ...model.suppressedTokens,
+                ..._calls.endOfGenerationTokens(model.pointer),
+              })
+            : model.suppressedTokens,
         grammarPtr,
         rootPtr,
         lazyGrammarConfig,
@@ -11610,6 +11636,10 @@ class _LlamaModelWrapper {
   final String? sourcePath;
   final int vocabSize;
   final List<int> suppressedTokens;
+
+  /// [suppressedTokens] plus every end-of-generation token, read by the
+  /// first `ignoreEos` generation: other loads skip the vocabulary walk.
+  List<int>? suppressedTokensIgnoringEos;
   final LlamaCppObjectCalls _calls;
   _LlamaModelWrapper(
     this.pointer,
