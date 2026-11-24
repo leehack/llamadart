@@ -222,6 +222,13 @@ const String webGpuJsBackedStagingRequired =
     'worker and Wasm core (ABI v3+). Run dart run llamadart:web_setup to '
     'update bridge assets, or omit or disable jsBackedModelStaging.';
 
+/// The bridge worker or Wasm core cannot apply JS-backed staging.
+class WebGpuJsBackedStagingUnsupported extends LlamaUnsupportedException {
+  /// Creates the pre-transfer capability diagnostic.
+  WebGpuJsBackedStagingUnsupported()
+    : super('MODEL_STAGING_UNSUPPORTED: $webGpuJsBackedStagingRequired');
+}
+
 final RegExp _stagingErrorPath = RegExp(
   r'''(?:[a-zA-Z][a-zA-Z0-9+.-]*:)?[/\\][^\s'"<>),;]+''',
 );
@@ -269,9 +276,7 @@ LlamaException? webGpuModelStagingError(
   if (name == 'ModelStagingError') {
     switch (code) {
       case 'MODEL_STAGING_UNSUPPORTED':
-        return LlamaUnsupportedException(
-          '$code: $webGpuJsBackedStagingRequired',
-        );
+        return WebGpuJsBackedStagingUnsupported();
       case 'MODEL_TENSOR_SIZE_LIMIT_EXCEEDED':
         return LlamaUnsupportedException(
           '$code: Model tensors, individually or in total, exceed the wasm32 '

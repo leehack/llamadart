@@ -593,10 +593,13 @@ class ModelParams {
 
   /// Controls JavaScript-backed GGUF and projector staging on Web llama.cpp.
   ///
-  /// `null` leaves the bridge's browser default in effect, including automatic
-  /// staging on supported WebKit cores. `true` requires staging-capable bridge
-  /// assets (v0.1.92+), worker and Wasm core, and prohibits fetch-backed model
-  /// loading. `false` explicitly disables JavaScript-backed staging.
+  /// `null` enables staging on Chromium when v0.1.93+ bridge assets confirm
+  /// a memory64 core, [modelBytesHint] is positive and at most 4 GiB, and
+  /// fetch-backed loading is not opted in. Other loads follow the bridge's
+  /// browser policy, including automatic staging on supported WebKit cores.
+  /// `true` requires staging-capable bridge assets
+  /// (v0.1.92+), worker and Wasm core, and prohibits fetch-backed model loading.
+  /// `false` explicitly disables JavaScript-backed staging.
   ///
   /// Native llama.cpp and LiteRT-LM reject either explicit value with
   /// [LlamaUnsupportedException].

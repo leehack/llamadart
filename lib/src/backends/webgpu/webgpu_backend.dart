@@ -415,9 +415,6 @@ class WebGpuLlamaBackend
     );
     final workerModuleUrl =
         _bridgeWorkerUrl ?? _getGlobalString('__llamadartBridgeWorkerUrl');
-    final preferMemory64 =
-        _preferMemory64Override ??
-        _getGlobalOptionalBool('__llamadartBridgePreferMemory64');
     final threadPoolSizeHint = _getGlobalPositiveInt(
       '__llamadartBridgeThreadPoolSize',
     );
@@ -435,7 +432,7 @@ class WebGpuLlamaBackend
       workerUrl: workerModuleUrl?.toJS,
       coreModuleUrl: coreModuleUrl?.toJS,
       coreModuleUrlMem64: coreModuleUrlMem64?.toJS,
-      preferMemory64: preferMemory64,
+      preferMemory64: _effectivePreferMemory64,
       allowSingleThreadCore: allowSingleThreadCore ? true : null,
       threadPoolSize: threadPoolSizeHint,
       allowAutoRemoteFetchBackend: allowAutoRemoteFetchBackend,
@@ -492,31 +489,11 @@ class WebGpuLlamaBackend
       return true;
     }
 
-    if (!globalContext.has('LlamaWebGpuBridge')) {
-      final scriptUrl = _bridgeScriptUrl;
-      if (scriptUrl != null && scriptUrl.isNotEmpty) {
-        try {
-          await _loadBridgeScript();
-        } on Exception catch (error) {
-          if (allowSingleThreadCore) {
-            throw _singleThreadBridgeUnavailable(
-              sourceUrls,
-              importError: error,
-            );
-          }
-          if (jsBackedModelStaging == true) {
-            throw LlamaUnsupportedException(
-              'The configured WebGPU bridge module could not be loaded. '
-              '$webGpuJsBackedStagingRequired',
-            );
-          }
-          rethrow;
-        }
-      } else {
-        await _waitForPreloadedBridge();
-      }
-    }
-
+    await _ensureBridgeConstructor(
+      allowSingleThreadCore: allowSingleThreadCore,
+      requireStaging: jsBackedModelStaging == true,
+      sourceUrls: sourceUrls,
+    );
     if (!globalContext.has('LlamaWebGpuBridge')) {
       return false;
     }
@@ -536,6 +513,34 @@ class WebGpuLlamaBackend
       ),
     );
     return true;
+  }
+
+  Future<void> _ensureBridgeConstructor({
+    required bool allowSingleThreadCore,
+    required bool requireStaging,
+    required Iterable<String> sourceUrls,
+  }) async {
+    if (globalContext.has('LlamaWebGpuBridge')) return;
+    final scriptUrl = _bridgeScriptUrl;
+    if (scriptUrl == null || scriptUrl.isEmpty) {
+      await _waitForPreloadedBridge();
+      return;
+    }
+
+    try {
+      await _loadBridgeScript();
+    } on Exception catch (error) {
+      if (allowSingleThreadCore) {
+        throw _singleThreadBridgeUnavailable(sourceUrls, importError: error);
+      }
+      if (requireStaging) {
+        throw LlamaUnsupportedException(
+          'The configured WebGPU bridge module could not be loaded. '
+          '$webGpuJsBackedStagingRequired',
+        );
+      }
+      rethrow;
+    }
   }
 
   Future<void> _safeDisposeBridge() async {
@@ -606,6 +611,84 @@ class WebGpuLlamaBackend
     _activeJsBackedModelStaging = jsBackedModelStaging;
     _usingBridge = true;
     _syncBridgeLogLevel();
+  }
+
+  Future<String?> _activateModelLoadBridge({
+    required bool allowSingleThreadCore,
+    required bool? requestedStaging,
+    required bool tryAutomaticStaging,
+    required Iterable<String> sourceUrls,
+  }) async {
+    if (tryAutomaticStaging &&
+        await _canTryAutomaticStaging(
+          allowSingleThreadCore: allowSingleThreadCore,
+          sourceUrls: sourceUrls,
+        )) {
+      // Staging is a constructor option in the pinned bridge. Preflight this
+      // bridge before it can stage any bytes on a wasm32 fallback core.
+      try {
+        await _activateBridge(
+          allowSingleThreadCore: allowSingleThreadCore,
+          jsBackedModelStaging: true,
+          sourceUrls: sourceUrls,
+        );
+        final core = await _probeCore(
+          _requireBridge(),
+          singleThread: allowSingleThreadCore,
+        );
+        if (core != null && core.variant == 'memory64') {
+          return allowSingleThreadCore ? core.notes : null;
+        }
+      } on LlamaUnsupportedException catch (error) {
+        if (error.message != webGpuJsBackedStagingRequired) rethrow;
+        await _safeDisposeBridge();
+      }
+    }
+
+    await _activateBridge(
+      allowSingleThreadCore: allowSingleThreadCore,
+      jsBackedModelStaging: requestedStaging,
+      sourceUrls: sourceUrls,
+    );
+    if (!allowSingleThreadCore) return null;
+    final core = await _probeCore(_requireBridge(), singleThread: true);
+    if (core == null) {
+      throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
+    }
+    return core.notes;
+  }
+
+  Future<bool> _canTryAutomaticStaging({
+    required bool allowSingleThreadCore,
+    required Iterable<String> sourceUrls,
+  }) async {
+    if (_bridgeFactory != null) {
+      if (_bridge == null) {
+        await _activateBridge(
+          allowSingleThreadCore: allowSingleThreadCore,
+          jsBackedModelStaging: null,
+          sourceUrls: sourceUrls,
+        );
+      }
+    } else {
+      await _ensureBridgeConstructor(
+        allowSingleThreadCore: allowSingleThreadCore,
+        requireStaging: false,
+        sourceUrls: sourceUrls,
+      );
+      if (!globalContext.has('LlamaWebGpuBridge')) {
+        if (allowSingleThreadCore) {
+          throw _singleThreadBridgeUnavailable(sourceUrls);
+        }
+        throw UnsupportedError(
+          _buildBridgeUnavailableMessage(_getBridgeLoadError()),
+        );
+      }
+    }
+    final constructor =
+        _bridge?['constructor'] ?? globalContext['LlamaWebGpuBridge'];
+    return _constructorSupportsJsBackedModelStaging(constructor) &&
+        _supportsCorePreflight(constructor);
   }
 
   bool _shouldEmitConsole(LlamaLogLevel level) {
@@ -836,10 +919,13 @@ class WebGpuLlamaBackend
     return flag.isA<JSBoolean>() && (flag as JSBoolean).toDart;
   }
 
-  Future<String> _preflightSingleThreadCore(LlamaWebGpuBridge bridge) async {
+  Future<({String variant, String notes})?> _probeCore(
+    LlamaWebGpuBridge bridge, {
+    required bool singleThread,
+  }) async {
     if (!_supportsCorePreflight(bridge['constructor']) ||
         !_hasBridgeFunction(bridge, 'preflightCore')) {
-      throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
+      return null;
     }
 
     final JSAny? raw;
@@ -847,13 +933,11 @@ class WebGpuLlamaBackend
       raw = await bridge.preflightCore()?.toDart;
     } catch (error) {
       if (webGpuCoreAssetError(error)?.code == 'CORE_PREFLIGHT_UNSUPPORTED') {
-        throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
+        return null;
       }
       rethrow;
     }
-    if (!raw.isA<JSObject>()) {
-      throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
-    }
+    if (!raw.isA<JSObject>()) return null;
 
     final result = raw as WebGpuCorePreflightResult;
     String? string(JSAny? value) =>
@@ -863,20 +947,23 @@ class WebGpuLlamaBackend
     final fallback = result.fallback;
     final fallbackReason = result.fallbackReason;
     final reason = string(fallbackReason);
-    if (!const {'wasm32', 'memory64'}.contains(variant) ||
-        threading != 'single-thread' ||
+    if ((variant != 'wasm32' && variant != 'memory64') ||
+        threading != (singleThread ? 'single-thread' : 'threaded') ||
         !fallback.isA<JSBoolean>() ||
         (fallbackReason != null &&
             !const {'unsupported', 'timeout', 'init_error'}.contains(reason))) {
-      throw LlamaUnsupportedException(_singleThreadCoreUnavailable);
+      return null;
     }
 
-    return [
-      'core_preflight_variant:$variant',
-      'core_preflight_threading:$threading',
-      'core_preflight_fallback:${(fallback as JSBoolean).toDart ? 1 : 0}',
-      if (reason != null) 'core_preflight_fallback_reason:$reason',
-    ].join(';');
+    return (
+      variant: variant!,
+      notes: [
+        'core_preflight_variant:$variant',
+        'core_preflight_threading:$threading',
+        'core_preflight_fallback:${(fallback as JSBoolean).toDart ? 1 : 0}',
+        if (reason != null) 'core_preflight_fallback_reason:$reason',
+      ].join(';'),
+    );
   }
 
   bool _constructorSupportsJsBackedModelStaging(JSAny? constructor) {
@@ -964,6 +1051,11 @@ class WebGpuLlamaBackend
         userAgent.contains('FxiOS/');
 
     return hasSafariToken && !hasOtherBrowserToken;
+  }
+
+  bool _isChromiumBrowser() {
+    final userAgent = _getBridgeUserAgent() ?? '';
+    return userAgent.contains('Chrome/') || userAgent.contains('Chromium/');
   }
 
   bool _allowSafariWebGpu() {
@@ -1123,6 +1215,11 @@ class WebGpuLlamaBackend
   // intermediate buffers.
   static const int _wasm32SafeModelCeilingBytes = 2 * 1024 * 1024 * 1024;
 
+  // The pinned bridge can mmap a lazy tensor above 4 GiB, while JS-backed
+  // WasmFS reads clamp at INT32_MAX. A GGUF within this bound cannot contain
+  // such a tensor. Without a size hint, keep the bridge policy.
+  static const int _automaticStagingMaxModelBytes = 4 * 1024 * 1024 * 1024;
+
   /// Resolves the effective mem64 preference for a load.
   ///
   /// Size-driven, not model-name based: an explicit [ModelParams.preferMemory64]
@@ -1140,6 +1237,10 @@ class WebGpuLlamaBackend
     }
     return null;
   }
+
+  bool? get _effectivePreferMemory64 =>
+      _preferMemory64Override ??
+      _getGlobalOptionalBool('__llamadartBridgePreferMemory64');
 
   int _webGpuFlashAttentionValue(ModelParams params) {
     return llamaFlashAttentionTypeValueFor(
@@ -1560,6 +1661,14 @@ class WebGpuLlamaBackend
         !allowSingleThreadCore &&
         jsBackedModelStaging != true &&
         _isRemoteFetchBackendOptedIn();
+    final modelBytesHint = params.modelBytesHint;
+    var tryAutomaticStaging =
+        jsBackedModelStaging == null &&
+        modelBytesHint != null &&
+        modelBytesHint > 0 &&
+        modelBytesHint <= _automaticStagingMaxModelBytes &&
+        !remoteFetchBackendOptedIn &&
+        _isChromiumBrowser();
     if (setup.requireGpu && !await webGpuAdapterAvailable()) {
       throw LlamaUnsupportedException(
         'ComputeDevice.gpu needs WebGPU for llama.cpp on the Web, but this '
@@ -1590,7 +1699,6 @@ class WebGpuLlamaBackend
         contextSize: attempt.contextSize,
         gpuLayers: attempt.gpuLayers,
       );
-      LlamaWebGpuBridge? bridgeForAttempt;
       bool? forceRemoteFetchBackend;
       final attemptThreads = _resolveAttemptThreads(
         index,
@@ -1598,22 +1706,20 @@ class WebGpuLlamaBackend
       );
 
       try {
-        await _activateBridge(
+        final preflightNotes = await _activateModelLoadBridge(
           allowSingleThreadCore: allowSingleThreadCore,
-          jsBackedModelStaging: jsBackedModelStaging,
+          requestedStaging: jsBackedModelStaging,
+          tryAutomaticStaging:
+              tryAutomaticStaging && _effectivePreferMemory64 != false,
           sourceUrls: sourceUrls,
         );
         final bridge = _requireBridge();
-        bridgeForAttempt = bridge;
-        final preflightNotes = allowSingleThreadCore
-            ? await _preflightSingleThreadCore(bridge)
-            : null;
         if (allowSingleThreadCore && explicitSelection == null) {
           _warnAboutSingleThreadCore();
         }
         cachedWebModel ??= await _isModelResponseCachedForUrl(bridge, cacheUrl);
 
-        if (jsBackedModelStaging == true) {
+        if (_activeJsBackedModelStaging == true) {
           forceRemoteFetchBackend = false;
         } else if (_forceRemoteFetchBackendOverride != null) {
           forceRemoteFetchBackend = _forceRemoteFetchBackendOverride;
@@ -1657,6 +1763,18 @@ class WebGpuLlamaBackend
 
         if (loadPromise != null) {
           await loadPromise.toDart;
+        }
+        if (tryAutomaticStaging &&
+            _activeJsBackedModelStaging == true &&
+            _collectBridgeRuntimeHints(
+                  bridge,
+                )['llamadart.webgpu.core_variant'] ==
+                'wasm32') {
+          // The bridge can replace an unusable worker during the load.
+          tryAutomaticStaging = false;
+          await _safeDisposeBridge();
+          index -= 1;
+          continue;
         }
         final unverifiedStaging = _verifyJsBackedModelStaging(
           bridge,
@@ -1729,11 +1847,21 @@ class WebGpuLlamaBackend
         }
         final stagingError = webGpuModelStagingError(e, sourceUrls: sourceUrls);
         if (stagingError != null) {
+          final retryWithoutStaging =
+              tryAutomaticStaging &&
+              _activeJsBackedModelStaging == true &&
+              stagingError is WebGpuJsBackedStagingUnsupported;
           await _safeDisposeBridge();
+          if (retryWithoutStaging) {
+            tryAutomaticStaging = false;
+            index -= 1;
+            continue;
+          }
           throw stagingError;
         }
         lastError = e;
         Map<String, String> runtimeHints = const <String, String>{};
+        final bridgeForAttempt = _bridge;
         if (bridgeForAttempt != null) {
           try {
             runtimeHints = _collectBridgeRuntimeHints(bridgeForAttempt);

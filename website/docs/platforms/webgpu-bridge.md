@@ -274,8 +274,14 @@ memory64.
 
 Use `ModelParams.jsBackedModelStaging` or `LlamaCppModelParams.jsBackedModelStaging`:
 
-- Omit it or pass `null` to use the bridge default. Supported WebKit cores use
-  JavaScript-backed staging automatically. Other browsers use standard WASMFS.
+- Omit it or pass `null` to use JavaScript-backed staging on Chromium when
+  v0.1.93+ assets confirm a memory64 core and you supply a positive
+  `modelBytesHint` of at most 4 GiB. Both single-thread and threaded cores
+  support this default with or without Cache Storage. Use the actual GGUF
+  byte size when available. Chromium follows the bridge's policy for
+  wasm32, unknown or larger model sizes, unsupported assets, and explicit
+  fetch-backed loading opt-in. Supported WebKit cores retain the bridge's
+  automatic staging policy.
 - Pass `true` to require JavaScript-backed staging for the GGUF and projector.
   This needs matching v0.1.92+ bridge and worker scripts and a core with
   staging ABI v3 or later.

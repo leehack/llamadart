@@ -1658,7 +1658,9 @@ first, then omit `--dry-run`; the scenario fetches the pinned bridge assets
 automatically.
 The scenario compares omitted, enabled and disabled settings in direct and
 worker runtimes, with both Wasm widths and a WebKit user-agent control. It
-checks unload and reload, and records generation output and runtime notes.
+checks that the omitted setting enables staging on Chromium memory64 for a
+reported GGUF size up to 4 GiB and on supported WebKit cores. It checks
+unload and reload, and records generation output and runtime notes.
 It also checks pre-download refusals for
 old bridge, worker and core assets and for forced fetch-backed loading.
 
