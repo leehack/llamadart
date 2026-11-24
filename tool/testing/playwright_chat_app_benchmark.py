@@ -179,7 +179,7 @@ def run_chat_benchmark(
     page.goto(args.app_url, wait_until="domcontentloaded")
     enable_flutter_semantics(page)
 
-    button = page.get_by_role("button", name=re.compile(r"Load Model"))
+    button = page.get_by_role("button", name=re.compile(r"Load Model", re.I))
     button.wait_for(timeout=120000)
     emit("load_click", model_url=args.model_url)
     button.click()
@@ -457,7 +457,7 @@ def main() -> int:
           typeof window.__llamadartLiteRtLmModuleUrl === 'string' &&
           window.__llamadartLiteRtLmModuleUrl.length > 0
             ? window.__llamadartLiteRtLmModuleUrl
-            : 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm';
+            : 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm';
         const moduleSource = [
           'import * as mod from ' + JSON.stringify(originalModuleUrl) + ';',
           'const summarizeSettings = (settings) => {{',

@@ -23,7 +23,7 @@ typedef _Turn = ({String text, int decoded, int total, String? error});
 void main() {
   test('Web token-limit reports match the published runtime token counts', () async {
     const moduleUrl =
-        'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm';
+        'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm';
     final manifestResponse = await window
         .fetch('http://127.0.0.1:5198/manifest.json'.toJS)
         .toDart;
@@ -59,6 +59,14 @@ void main() {
     final constructor = globalContext.getProperty<JSObject>(
       'LiteRtLmEngine'.toJS,
     );
+    final backends = globalContext.getProperty<JSObject>(
+      'LiteRtLmBackendEnum'.toJS,
+    );
+    int backendId(String name) =>
+        backends.getProperty<JSNumber>(name.toJS).toDartInt;
+    final cpuBackend = backendId('CPU');
+    final gpuBackend = backendId('GPU');
+    final artisanBackend = backendId('GPU_ARTISAN');
 
     const contextSize = 1024;
     const shortPrompt =
@@ -79,7 +87,7 @@ void main() {
           <String, Object>{
             'model': model,
             // GPU keeps the runtime default, as the adapter does.
-            if (device == ComputeDevice.cpu) 'backend': 3,
+            if (device == ComputeDevice.cpu) 'backend': cpuBackend,
             'benchmarkEnabled': true,
             'mainExecutorSettings': {'maxNumTokens': contextSize},
           }.jsify(),
@@ -89,6 +97,12 @@ void main() {
     final directBackend = settings
         .getProperty<JSNumber>('backend'.toJS)
         .toDartInt;
+    expect(
+      directBackend,
+      device == ComputeDevice.cpu
+          ? cpuBackend
+          : anyOf(gpuBackend, artisanBackend),
+    );
     final resolvedContext = settings
         .getProperty<JSObject>('mainExecutorSettings'.toJS)
         .getProperty<JSNumber>('maxNumTokens'.toJS)
@@ -177,7 +191,8 @@ void main() {
     await direct.callMethod<JSPromise<JSAny?>>('delete'.toJS).toDart;
     print(
       'LITERT_TRUNCATION_DIRECT ${jsonEncode({
-        'execution': const {2: 'WebGPU_ARTISAN', 3: 'WASM CPU', 4: 'WebGPU'}[directBackend],
+        'execution': {artisanBackend: 'WebGPU_ARTISAN', cpuBackend: 'WASM CPU', gpuBackend: 'WebGPU'}[directBackend],
+        'backendId': directBackend,
         'resolvedContext': resolvedContext,
         'natural': describe(natural),
         'atSteps': describe(atSteps),
@@ -363,7 +378,7 @@ void main() {
           'create'.toJS,
           <String, Object>{
             'model': model,
-            if (device == ComputeDevice.cpu) 'backend': 3,
+            if (device == ComputeDevice.cpu) 'backend': cpuBackend,
             'benchmarkEnabled': true,
             'mainExecutorSettings': {'maxNumTokens': largeContext},
           }.jsify(),

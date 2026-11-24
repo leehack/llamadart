@@ -104,7 +104,7 @@ void main() {
         isA<LlamaUnsupportedException>().having(
           (e) => e.message,
           'condition',
-          contains('Failed to get external weight'),
+          contains('LiteRT-LM Web CPU embeddings'),
         ),
       ),
     );
@@ -128,10 +128,10 @@ void main() {
             isA<LlamaUnsupportedException>().having(
               (e) => e.message,
               'condition',
-              contains(
-                device == ComputeDevice.cpu
-                    ? 'Failed to get external weight'
-                    : 'parity',
+              allOf(
+                contains(device == ComputeDevice.cpu ? 'Web CPU' : 'WebGPU'),
+                contains('@litert-lm/core@0.20.0'),
+                contains('missed native CPU parity'),
               ),
             ),
           ),
@@ -1094,7 +1094,7 @@ void main() {
             isA<LlamaUnsupportedException>().having(
               (e) => e.message,
               'message',
-              allOf(contains('preface.tools'), contains('@0.19.0')),
+              allOf(contains('preface.tools'), contains('@0.20.0')),
             ),
           ),
         );
@@ -1274,7 +1274,7 @@ void main() {
           isA<api.LlamaUnsupportedException>().having(
             (error) => error.message,
             'diagnostic',
-            contains('@0.19.0'),
+            contains('@0.20.0'),
           ),
         ),
       );
@@ -1491,7 +1491,7 @@ void main() {
             isA<api.LlamaUnsupportedException>().having(
               (error) => error.message,
               'diagnostic',
-              allOf(contains('getTokenCount'), contains('@0.19.0')),
+              allOf(contains('getTokenCount'), contains('@0.20.0')),
             ),
           ),
         );
@@ -1898,7 +1898,7 @@ void main() {
                 'message',
                 allOf(
                   contains('Qwen3'),
-                  contains('@litert-lm/core@0.19.0'),
+                  contains('@litert-lm/core@0.20.0'),
                   contains('native'),
                 ),
               ),

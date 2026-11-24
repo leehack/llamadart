@@ -18,7 +18,7 @@ import 'package:web/web.dart';
 void main() {
   test('text history and system prompts match the published JS runtime', () async {
     const moduleUrl =
-        'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm';
+        'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm';
     final manifestResponse = await window
         .fetch('http://127.0.0.1:5198/manifest.json'.toJS)
         .toDart;
@@ -38,7 +38,7 @@ void main() {
               .map((entry) => entry.name)
               .where(
                 (name) => name.startsWith(
-                  'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/',
+                  'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/',
                 ),
               )
               .toSet()
@@ -82,6 +82,14 @@ void main() {
     final constructor = globalContext.getProperty<JSObject>(
       'LiteRtLmEngine'.toJS,
     );
+    final backends = globalContext.getProperty<JSObject>(
+      'LiteRtLmBackendEnum'.toJS,
+    );
+    int backendId(String name) =>
+        backends.getProperty<JSNumber>(name.toJS).toDartInt;
+    final cpuBackend = backendId('CPU');
+    final gpuBackend = backendId('GPU');
+    final artisanBackend = backendId('GPU_ARTISAN');
     final identity = <String, Object?>{
       ...manifest,
       'module': moduleUrl,
@@ -118,7 +126,7 @@ void main() {
             <String, Object>{
               'model': model,
               // GPU keeps the runtime default, as the adapter does.
-              if (device == ComputeDevice.cpu) 'backend': 3,
+              if (device == ComputeDevice.cpu) 'backend': cpuBackend,
               'mainExecutorSettings': {'maxNumTokens': 1024},
             }.jsify(),
           )
@@ -279,7 +287,8 @@ void main() {
         ...identity,
         'directError': directError,
         'adapterError': adapterError,
-        'execution': const {2: 'WebGPU_ARTISAN', 3: 'WASM CPU', 4: 'WebGPU'}[directBackend],
+        'execution': {artisanBackend: 'WebGPU_ARTISAN', cpuBackend: 'WASM CPU', gpuBackend: 'WebGPU'}[directBackend],
+        'backendId': directBackend,
         'engineResidency': 'serial',
       })}',
     );

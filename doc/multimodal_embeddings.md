@@ -96,8 +96,9 @@ The issue's qualification comment pins llama.cpp to
 `620d2225cc436ab0b001e3200e590e3b286ef9ab`.
 Native LiteRT-LM reference:
 https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/c/embedding_engine.h.
-Web LiteRT-LM contract must be qualified against `@litert-lm/core@0.19.0`, which
-still misses the native parity gate ([details](multimodal_embeddings_litert.md)).
+Web LiteRT-LM embeddings require qualification against the pinned runtime.
+`@litert-lm/core@0.20.0` creates both Web engines, and both miss the native
+CPU parity gate ([details](multimodal_embeddings_litert.md)).
 The default bridge pin supports text and the API-version-1 media
 contract. Image/audio support requires a positive modality probe on the loaded
 model/projector; text retains the legacy string route even when the bridge's

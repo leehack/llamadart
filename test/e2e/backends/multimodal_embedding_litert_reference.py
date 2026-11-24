@@ -39,7 +39,8 @@ fn('embedding_options_set_normalize', None, [P, c.c_bool])(options, True)
 compute = fn('embedding_engine_compute_embedding', P, [P, c.POINTER(P), S, P])
 import glob, math
 vectors = {}
-for key in ['text', 'black', 'checker', 'silence', 'tone', 'mixed']:
+native = json.load(open(args.output + '/native-cpu.json'))
+for key in native:
     parts = []
     for path in sorted(glob.glob(args.output + '/' + key + '-*.bin')):
         kind = int(path.rsplit('-', 1)[1].split('.')[0])
@@ -57,7 +58,6 @@ for key in ['text', 'black', 'checker', 'silence', 'tone', 'mixed']:
         fn('input_data_delete', None, [P])(part)
 with open(args.output + '/reference.json', 'w') as f:
     json.dump(vectors, f)
-native = json.load(open(args.output + '/native-cpu.json'))
 for k, a in vectors.items():
     b = native[k]
     dot = sum((x * y for x, y in zip(a, b)))

@@ -60,6 +60,9 @@ Map<String, LlamaEmbeddingInput> liteRtEmbeddingInputs() {
   );
   return {
     'text': LlamaEmbeddingInput(const [LlamaTextContent('hello world')]),
+    'text2': LlamaEmbeddingInput(const [
+      LlamaTextContent('The quick brown fox jumps over the lazy dog.'),
+    ]),
     'black': LlamaEmbeddingInput([black]),
     'checker': LlamaEmbeddingInput([checker]),
     'silence': LlamaEmbeddingInput([silence]),

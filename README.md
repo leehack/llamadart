@@ -208,7 +208,7 @@ ends the thinking budget and generation continues into the call. This needs
 llamadart-native `v1.0.0-4` or a WebGPU bridge core reporting
 `thinkingBudgetMultiEnd` (assets `v0.1.87+`). An explicit
 `ThinkingBudget.endTag` selects a single delimiter.
-| Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.19.0` |
+| Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.20.0` |
 
 Native LiteRT-LM uses a lazy ABI-aware client for direct calls, services and
 speech. The public selector admits legacy runtimes and C API 1.0.x and 1.1.x; unknown or
@@ -217,7 +217,7 @@ published native
 [v0.19.1-7](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-7),
 owner source `930a3e29` / upstream `7a03724c`. The selected loader requires
 macOS 14+ before owned library loads, including legacy libraries and custom
-paths. Web LiteRT-LM uses `@litert-lm/core@0.19.0`; through
+paths. Web LiteRT-LM uses `@litert-lm/core@0.20.0`; through
 `LlamaBackend.withTextHistory()` it forwards chat history, supports tool
 calling and reports replies cut off at a token limit. Web apps that preload
 `window.LiteRtLmEngine` must also expose `window.LiteRtLmBackendEnum = module.Backend`

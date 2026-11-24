@@ -470,6 +470,6 @@ final reply = await engine.complete(
 ```
 
 Obtain the template from the accessor after every package upgrade. Web
-`@litert-lm/core@0.19.0` cannot apply this override and throws
+`@litert-lm/core@0.20.0` cannot apply this override and throws
 `LlamaUnsupportedException` at load; this example requires native LiteRT-LM
 with the conversation-template setter.

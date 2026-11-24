@@ -38,7 +38,7 @@ import 'litert_lm_templates.dart';
 /// preload the package and expose `window.LiteRtLmEngine = module.Engine`
 /// and `window.LiteRtLmBackendEnum = module.Backend`, or set
 /// `window.__llamadartLiteRtLmModuleUrl` to a module URL such as
-/// `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm`.
+/// `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm`.
 ///
 /// [LiteRtLmBackend.withTextHistory] opts into ordered system/user/assistant
 /// text and manual tool calling through a probed conversation preface. The
@@ -170,7 +170,7 @@ class LiteRtLmBackend
             'getBenchmarkInfo and getTokenCount) and the context size its '
             'executor enforces, so a reply cut off at maxTokens or the '
             'context size cannot be told from a finished one. '
-            '@litert-lm/core@0.19.0 reports them. Use ChatSession.create or '
+            '@litert-lm/core@0.20.0 reports them. Use ChatSession.create or '
             'LlamaEngine.create for manual completion.';
 
   @override
@@ -831,7 +831,7 @@ class LiteRtLmBackend
   }) {
     final settings = JSObject();
     settings.setProperty('model'.toJS, model);
-    // GPU loads keep the runtime's default backend. @litert-lm/core@0.19.0
+    // GPU loads keep the runtime's default backend. @litert-lm/core@0.20.0
     // resolves it to GPU_ARTISAN for Web bundles and GPU for other bundles;
     // 0.18.0, which apps may still preload, defaults to GPU_ARTISAN and fails
     // Web bundles on GPU. No single explicit value loads on both.
@@ -1096,7 +1096,7 @@ class LiteRtLmBackend
 
   /// Why the turn [conversation] just finished ended, from its token counts.
   ///
-  /// `@litert-lm/core@0.19.0` ends a turn at a stop token, once its decode
+  /// `@litert-lm/core@0.20.0` ends a turn at a stop token, once its decode
   /// steps reach `maxOutputTokens`, or once the conversation's tokens reach
   /// the executor's `maxNumTokens` ([contextTokens]), and reports none of
   /// these causes. Fewer decode steps than [maxTokens] and fewer tokens than
@@ -1185,7 +1185,7 @@ class LiteRtLmBackend
         try {
           result = await reader.read().toDart;
         } catch (error) {
-          // @litert-lm/core@0.19.0 forwards the cancelled status message as a
+          // @litert-lm/core@0.20.0 forwards the cancelled status message as a
           // plain Error. Other failures racing cancellation must still surface.
           if (_cancelRequested && _isCancellationError(error)) break;
           rethrow;
@@ -1647,7 +1647,7 @@ class LiteRtLmBackend
         false) {
       throw LlamaUnsupportedException(
         'Qwen3 chatTemplate overrides require a conversation-template setter, '
-        'which LiteRT-LM Web @litert-lm/core@0.19.0 does not expose. '
+        'which LiteRT-LM Web @litert-lm/core@0.20.0 does not expose. '
         'Use native LiteRT-LM with liteRtLmQwen3ChatTemplate to control '
         'enableThinking on renamed Qwen3 text bundles.',
       );
@@ -1655,7 +1655,7 @@ class LiteRtLmBackend
 
     if (_textHistoryEnabled && params.chatTemplate != null) {
       throw LlamaUnsupportedException(
-        'LiteRT-LM Web @litert-lm/core@0.19.0 has no custom chat-template '
+        'LiteRT-LM Web @litert-lm/core@0.20.0 has no custom chat-template '
         'setter. Use the model-provided template or native LiteRT-LM.',
       );
     }
@@ -1918,9 +1918,9 @@ final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
     _wireMessages(messages);
   }
 
-  static const String _runtime = 'LiteRT-LM Web @litert-lm/core@0.19.0';
+  static const String _runtime = 'LiteRT-LM Web @litert-lm/core@0.20.0';
 
-  /// [messages] as `@litert-lm/core@0.19.0` `Message` objects, in the shape
+  /// [messages] as `@litert-lm/core@0.20.0` `Message` objects, in the shape
   /// native LiteRT-LM sends: assistant calls in `tool_calls`, results as
   /// `tool_response` parts of one `tool` message.
   List<Map<String, Object?>> _wireMessages(List<LlamaChatMessage> messages) {
@@ -2012,7 +2012,7 @@ final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
       throw LlamaUnsupportedException(
         'The loaded LiteRT-LM Web runtime did not consume preface.messages '
         'or expose getHistory. Text history and system prompts require '
-        'the published @litert-lm/core@0.19.0 conversation APIs.',
+        'the published @litert-lm/core@0.20.0 conversation APIs.',
       );
     }
     if (carriesTools && !supportsToolCalling) throw _toolsUnavailable();
@@ -2022,7 +2022,7 @@ final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
   LlamaUnsupportedException _toolsUnavailable() => LlamaUnsupportedException(
     'The loaded LiteRT-LM Web runtime did not read preface.tools when it '
     'created a conversation, so tool calling is unavailable. It requires '
-    'the published @litert-lm/core@0.19.0 conversation tools and a backend '
+    'the published @litert-lm/core@0.20.0 conversation tools and a backend '
     'from LlamaBackend.withTextHistory().',
   );
 
@@ -2185,15 +2185,20 @@ extension type _LiteRtLmStreamReadResult._(JSObject _) implements JSObject {
 
 /// Throws [LlamaUnsupportedException] for what a LiteRT-LM Web load rejects
 /// from [params] alone, before it fetches the model: an NPU, and the
-/// embedding engine, unqualified on `@litert-lm/core@0.19.0`.
+/// embedding engine, which missed native CPU parity on both Web backends in
+/// `@litert-lm/core@0.20.0`.
 /// [preferredBackend] is the backend's deprecated preferred backend.
 void liteRtLmWebCheckLoad(ModelParams params, {String? preferredBackend}) {
   if (params.liteRtLmEmbeddingEngine) {
+    final device =
+        liteRtLmWebBackendName(params, preferredBackend: preferredBackend) ==
+            'cpu'
+        ? 'Web CPU'
+        : 'WebGPU';
     throw LlamaUnsupportedException(
-      liteRtLmWebBackendName(params, preferredBackend: preferredBackend) ==
-              'cpu'
-          ? 'LiteRT-LM Web CPU embeddings are unavailable in @litert-lm/core@0.19.0: upstream streams text-encoder weights only for WebGPU (Failed to get external weight).'
-          : 'LiteRT-LM WebGPU embeddings are unavailable in @litert-lm/core@0.19.0: EmbeddingGemma-2 qualification missed native CPU parity (cosine >= 0.9998 and relative L2 < 2%). A qualified runtime is required.',
+      'LiteRT-LM $device embeddings are unavailable in @litert-lm/core@0.20.0: '
+      'EmbeddingGemma-2 qualification missed native CPU parity '
+      '(cosine >= 0.9998 and relative L2 < 2%). A qualified runtime is required.',
     );
   }
   _liteRtLmWebDeviceBackendName(params, preferredBackend);

@@ -109,8 +109,10 @@ Android arm64 (Galaxy S24 and arm64 emulators), Linux x64 and arm64, and
 Windows x64. This uses the separate embedding engine with a compatible
 bundle.
 
-LiteRT-LM Web is unsupported. Web CPU cannot load the external text-encoder
-weights, and the pinned WebGPU vectors missed the native CPU parity gate.
+LiteRT-LM Web is unsupported. Web CPU and WebGPU both create embedding
+engines on `@litert-lm/core@0.20.0` and miss the native CPU parity gate with
+EmbeddingGemma-2. See the
+[per-input comparison](https://github.com/leehack/llamadart/blob/main/doc/multimodal_embeddings_litert.md).
 See the [basic app](../examples/basic-app#run) for the native CPU recipe and
 its platform and bundle requirements.
 

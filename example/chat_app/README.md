@@ -275,7 +275,7 @@ flutter test --run-skipped -t local-only \
    - LiteRT-LM `.litertlm` presets, when present, use the same model library
      flow. The example `pubspec.yaml` enables the `litert_lm` native runtime
      family for supported native targets, while Web builds load web-compatible
-     `.litertlm` URLs through `@litert-lm/core@0.19.0`; `web/index.html` sets a
+     `.litertlm` URLs through `@litert-lm/core@0.20.0`; `web/index.html` sets a
      default module URL that apps can override with
      `window.__llamadartLiteRtLmModuleUrl`.
    - The chat app explicitly uses `LlamaBackend.withTextHistory()` to forward
@@ -284,7 +284,7 @@ flutter test --run-skipped -t local-only \
      Thinking controls remain unavailable: the app uses model-default
      thinking without changing saved preferences. Function Calling runs when
      the loaded runtime reports replies cut off at a token limit
-     (`@litert-lm/core@0.19.0`,
+     (`@litert-lm/core@0.20.0`,
      [#919](https://github.com/leehack/llamadart/issues/919)). Media and
      template/thinking controls are outside this slice.
      Existing core default backends and the Genkit adapter do not opt in

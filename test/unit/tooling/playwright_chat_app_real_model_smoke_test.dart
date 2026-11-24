@@ -99,6 +99,8 @@ class _Page(_Anything):
     def evaluate(self, script, *args):
         _CAPTURE["evaluateScripts"].append(script)
         _save()
+        if "window.__llamadartRealLiteRtLmLastError = null" in script:
+            _SCENARIO["pageState"].pop("liteRtLmError", None)
         for marker, result in _SCENARIO.get("scriptResults", {}).items():
             if marker in script:
                 if isinstance(result, dict) and "sequence" in result:
@@ -181,7 +183,7 @@ def execute(script, args):
     if 'liteRtLmResponse:' in script:
         return {'liteRtLmResponse': '4'}
     if "getEntriesByType('resource')" in script:
-        return ['https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm']
+        return ['https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm']
     return None
 
 
@@ -623,7 +625,7 @@ void main() {
         expect(result['ok'], isTrue);
         expect(result['bridgeResponse'], '4');
         expect(result['liteRtLmRuntimeRequests'], [
-          'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm',
+          'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm',
         ]);
         final commands = run.commands.map((c) => c['command']).toList();
         expect(commands.where((c) => c == 'url'), hasLength(2));
@@ -918,7 +920,12 @@ void main() {
       runLoadedChat() => runChat(
         'loaded_chat',
         body: 'Model loaded successfully! Ready to chat.',
-        pageState: {'liteRtLmResponse': '4'},
+        pageState: {
+          'liteRtLmResponse': '4',
+          'liteRtLmError':
+              'Error: Input token ids are too long. '
+              'Exceeding the maximum number of tokens allowed: 4168 >= 1024',
+        },
       );
 
       Future<({ProcessResult result, Map<String, dynamic> capture})>
@@ -1392,7 +1399,8 @@ process.exit(0);
         },
       );
 
-      test('the result names the LiteRT-LM runtime files requested', () async {
+      test('the smoke ignores the load-probe error and names the LiteRT-LM '
+          'runtime files requested', () async {
         final run = await runLoadedChat();
 
         expect(run.result.exitCode, 0, reason: '${run.result.stderr}');

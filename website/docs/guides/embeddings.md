@@ -144,9 +144,9 @@ Future<List<double>> embedLiteRtImage(LlamaEngine engine, Uint8List png) async {
 }
 ```
 
-LiteRT-LM Web embeddings remain unsupported: Web CPU cannot load external
-text-encoder weights, and pinned WebGPU vectors missed the native CPU parity
-gate. Media inputs accept encoded PNG/JPEG bytes, mono 16 kHz PCM16/Float32 WAV
+LiteRT-LM Web embeddings remain unsupported. Both Web CPU and WebGPU missed
+the native CPU parity gate on `@litert-lm/core@0.20.0`.
+Media inputs accept encoded PNG/JPEG bytes, mono 16 kHz PCM16/Float32 WAV
 bytes, or mono 16 kHz Float32 samples. Paths, image URLs, video and multiple
 sources per part are unsupported. All parts are decoded before inference. No
 task prefix is inserted. Embedding mode rejects generation and tokenizer APIs.

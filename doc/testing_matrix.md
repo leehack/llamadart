@@ -159,7 +159,7 @@ Pick targeted rows based on the touched surface:
 | Text embedding profiles, task/document titles or output dimensions | `text-embedding-retrieval` |
 | Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke`, `web-tool-choice-grammar` (Web LFM2) |
 | Tool-result media (`LlamaToolResultContent.content`, `LlamaToolOutput`) | `root-vm`, `tool-result-image-smoke`, validation `qwen3vl-gguf-cpu` / `-metal` (`M01`) |
-| LiteRT-LM embedding engine | `litert-lm-multimodal-embedding`; includes the documented local-only upstream WebGPU parity diagnostic |
+| LiteRT-LM embedding engine | `litert-lm-multimodal-embedding`; includes the documented local-only upstream Web CPU and WebGPU parity diagnostic |
 | LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-json-schema`, `litert-lm-asr-smoke`, `litert-lm-asr-preservation`, `litert-lm-media-preservation`, `litert-lm-utility-preservation` |
 | Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-real-model-smoke-safari`, `web-real-model-smoke-firefox`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `web-webgpu-generation`, `web-tool-choice-grammar` |
 | WebGPU multimodal | `webgpu-multimodal-regression`, `web-speech-task-cancel`, plus `web-speech-to-text-smoke` for typed Qwen3-ASR and `web-text-to-speech-smoke` for typed Qwen3-TTS |
@@ -1388,7 +1388,7 @@ unsupported roles/options.
 `litert-lm-web-tool-calling` runs the same local server and Chrome
 configuration with `test/e2e/backends/litert_lm_tool_calling_web_e2e_test.dart`.
 It downloads no model. The published runtime alone must parse a `get_weather`
-call into `tool_calls`, emit none without tools, and answer from a 0.19.0 tool
+call into `tool_calls`, emit none without tools, and answer from a tool
 message; the adapter must then return that call from `ChatSession.create`,
 answer from the `LlamaToolResultContent`, and pass cancel-after-first-chunk,
 reset and reuse. Dry-run before execution:
