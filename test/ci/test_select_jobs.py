@@ -16,11 +16,34 @@ spec = importlib.util.spec_from_file_location('select_jobs', ROOT / 'tool/ci/sel
 ci = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ci)
 
+EXAMPLE_TEST_PACKAGES = {
+    'basic_app', 'laya_command_bar', 'laya_tetris', 'llamadart_cli',
+    'llamadart_server', 'tui_coding_agent',
+}
+WAVE4_EXAMPLE_ROOTS = tuple(
+    'example/' + name for name in sorted(EXAMPLE_TEST_PACKAGES | {'training_notebook'})
+)
+
 
 def tracked_paths(*roots):
     return subprocess.check_output(
         ['git', 'ls-files', '-z', '--', *roots], cwd=ROOT,
     ).decode().rstrip('\0').split('\0')
+
+
+def example_file_references():
+    # Match tracked file names, including those with spaces, within literal paths.
+    files = '|'.join(re.escape(path) for path in tracked_paths(*WAVE4_EXAMPLE_ROOTS))
+    pattern = re.compile(
+        rb'(?<![\w.-])(?:' + files.encode() + rb')(?![\w./+-])',
+    )
+    for reader in tracked_paths('test', 'tool', 'scripts', 'packages', '.github'):
+        if reader.endswith('.md'):
+            continue
+        source = (ROOT / reader).read_bytes()
+        if b'\0' not in source:
+            for path in sorted(set(pattern.findall(source))):
+                yield reader, path.decode()
 
 
 def root_suite_imports():
@@ -398,8 +421,6 @@ class SelectionTest(unittest.TestCase):
                 self.assertEqual(mixed, runtime)
 
     def test_remaining_examples_select_every_tracked_paths_consumers(self):
-        packages = {'basic_app', 'laya_command_bar', 'laya_tetris', 'llamadart_cli',
-                    'llamadart_server', 'tui_coding_agent'}
         markdown = {'docs-check', 'docs-versions', 'markdown-tests'}
         static = {'analyze', 'markdown-tests'}
         example = static | {'example-packages'}
@@ -419,7 +440,10 @@ class SelectionTest(unittest.TestCase):
             set(root_consumers),
             'Trace the root test platforms for any new Basic App imports.',
         )
-        roots = sorted('example/' + name for name in packages | {'training_notebook'})
+        for relative in ('test/image_generation_smoke.yaml',
+                         'test/fixtures/image_container_native_reference.cpp'):
+            root_consumers[basic_app + relative] = example_vm | {'test-other-os'}
+        roots = WAVE4_EXAMPLE_ROOTS
         paths = tracked_paths(*roots) + [root + '/nested/.gitignore' for root in roots]
         paths += [root + '/new_input' for root in roots]
         for path in paths:
@@ -432,11 +456,91 @@ class SelectionTest(unittest.TestCase):
                         expected['reasons'] = ['shared/runtime or example path: ' + path]
                         self.assertEqual(plan, expected)
                     else:
-                        jobs = root_consumers.get(path, example if name in packages else static)
+                        jobs = root_consumers.get(
+                            path, example if name in EXAMPLE_TEST_PACKAGES else static,
+                        )
                         if path.endswith('.md'):
                             jobs = markdown
                         host = 'test-other-os' in jobs
                         self.assert_narrow_plan(plan, jobs, macos=host, windows=host)
+
+    def test_literal_example_references_keep_their_readers(self):
+        basic = 'example/basic_app/'
+        vm = {'test-linux-coverage'}
+        macos_vm = vm | {'macos-native'}
+        host_vm = macos_vm | {'windows-native'}
+        chrome_vm = vm | {'test-web'}
+        readers = {
+            'test/unit/core/engine/engine_lifecycle_contract_test.dart': {
+                basic + 'bin/llamadart_engine_lifecycle_example.dart': chrome_vm,
+            },
+            'test/unit/tooling/image_warmup_comparison_test.dart': {
+                basic + 'test/fixtures/image_warmup_comparison.dart': chrome_vm,
+            },
+            'test/unit/tooling/macos_mic_asr_test.dart': {
+                basic + 'bin/src/live_asr_pcm.dart': vm,
+                basic + 'bin/src/macos_mic_asr.dart': vm,
+            },
+            'test/unit/tooling/run_local_e2e_test.dart': {
+                basic + 'test/image_generation_smoke.yaml': host_vm,
+            },
+            'test/unit/tooling/sd_original_mode_public_test.dart': {
+                basic + 'test/fixtures/image_original_container_model.dart': host_vm,
+            },
+            # sd_original_mode_test.dart runs this suite and skips on Windows.
+            'packages/llamadart_validation/native/sd_original_mode/test_native.py': {
+                basic + 'test/fixtures/image_container_native_reference.cpp': macos_vm,
+            },
+            'tool/release/check_core_archive.py': {
+                basic + 'pubspec.yaml': {'analyze'},
+                basic + 'bin/llamadart_litert_embedding_example.dart': {'analyze'},
+            },
+            'test/unit/tooling/pubignore_test.dart': dict.fromkeys((
+                basic + 'README.md',
+                basic + 'pubspec.yaml',
+                basic + 'bin/llamadart_litert_embedding_example.dart',
+                'example/llamadart_server/lib/src/features/openai_api/presentation/docs/docs.dart',
+            ), {'markdown-tests'}),
+        }
+        non_readers = {
+            # The preparation test opens a synthetic workspace.
+            'test/unit/tooling/prepare_workspace_test.dart': {
+                'example/llamadart_server/pubspec.yaml',
+            },
+            # A comment points to the local E2E suite.
+            'test/unit/backends/stable_diffusion/stable_diffusion_image_worker_test.dart': {
+                basic + 'test/image_generation_e2e_test.dart',
+            },
+            # Operator steps are tested as rendered commands and help text.
+            'tool/testing/run_local_e2e.dart': {
+                basic + 'test/fixtures/split_local_checkpoint.py',
+                basic + 'test/image_exit_teardown_e2e_test.dart',
+            },
+        }
+        changes_readers = {
+            'test/ci/test_core_archive.py', 'test/ci/test_deploy_guard.py',
+            'test/ci/test_select_jobs.py', 'tool/ci/select_jobs.py',
+        }
+        references = set(example_file_references())
+        for reader, path in sorted(references):
+            if path in non_readers.get(reader, ()):
+                continue
+            required = {'changes'} if reader in changes_readers else readers.get(reader, {}).get(path)
+            for pull_request in (True, False):
+                with self.subTest(reader=reader, path=path, pull_request=pull_request):
+                    self.assertIsNotNone(required, f'Classify the reader {reader} of {path}')
+                    plan = ci.select([path], pull_request=pull_request)
+                    enabled = {'changes'} | {job for job, value in plan['jobs'].items() if value}
+                    enabled.update(job for job in ('macos-native', 'windows-native') if plan[job])
+                    if 'test-linux-coverage' in enabled:
+                        enabled.add('markdown-tests')  # Linux VM includes the Markdown inventory.
+                    self.assertFalse(
+                        required - enabled,
+                        f'{reader} reads {path}; missing {sorted(required - enabled)}',
+                    )
+        for reader, paths in readers.items():
+            for path in paths:
+                self.assertIn((reader, path), references, f'Stale reader mapping: {reader} → {path}')
 
     def test_example_rules_union_with_docs_other_examples_and_full_fallback(self):
         cases = (

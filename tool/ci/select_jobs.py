@@ -72,7 +72,7 @@ EXAMPLE_PACKAGES = (
 )
 EXAMPLE_NOTEBOOK = 'example/training_notebook/'
 
-# The Linux VM also runs each root suite that imports one of these files.
+# The Linux VM also runs each root suite that imports or reads these files.
 BASIC_APP_ROOT_VM = (
     'example/basic_app/bin/src/live_asr_pcm.dart',
     'example/basic_app/bin/src/macos_mic_asr.dart',
@@ -81,7 +81,11 @@ BASIC_APP_ROOT_CHROME = (
     'example/basic_app/bin/llamadart_engine_lifecycle_example.dart',
     'example/basic_app/test/fixtures/image_warmup_comparison.dart',
 )
-BASIC_APP_ROOT_HOST_VM = 'example/basic_app/test/fixtures/image_original_container_model.dart'
+BASIC_APP_ROOT_HOST_VM = (
+    'example/basic_app/test/fixtures/image_container_native_reference.cpp',
+    'example/basic_app/test/fixtures/image_original_container_model.dart',
+    'example/basic_app/test/image_generation_smoke.yaml',
+)
 
 # Use exact paths so new tools and fixtures default to full CI. Workflow and
 # bundle entrypoints and their dependencies stay out of these sets.
@@ -330,7 +334,7 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
                 jobs.add('test-linux-coverage')
             elif path in BASIC_APP_ROOT_CHROME:
                 jobs.update(('test-linux-coverage', 'test-web'))
-            elif path == BASIC_APP_ROOT_HOST_VM:
+            elif path in BASIC_APP_ROOT_HOST_VM:
                 jobs.add('test-linux-coverage')
                 macos_native = True
                 windows_native = True
