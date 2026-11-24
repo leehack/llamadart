@@ -255,6 +255,10 @@ physical playback, intelligibility or speaker-reference fidelity.
   is above 960 MiB through 3.75 GiB. This covers selection of wasm32 and
   fallback from memory64. A hint above 3.75 GiB on the confirmed wasm32
   single-thread core fails before the bridge starts the model download.
+  `modelBytesHint` is the total GGUF byte size across all shards. Sharding can
+  help when it reduces per-file or tensor allocations, and the 3.75 GiB check
+  still applies to the total hint. If `preferMemory64` is `false`, unset it or
+  set it to `true` on a browser with memory64, or choose a smaller GGUF.
   Measurements on the released bridge below set these limits. The default
   writer staged 1 GiB without preallocation and failed at 1,025 MiB. With a usable
   Content-Length it staged 2,047 MiB. JS-backed staging loaded a

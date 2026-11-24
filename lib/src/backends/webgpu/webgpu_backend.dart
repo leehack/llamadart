@@ -680,10 +680,13 @@ class WebGpuLlamaBackend
 
   void _checkWasm32StagingLimit(int modelBytes) {
     if (modelBytes <= _wasm32JsStagingMaxModelBytes) return;
+    final memory64Advice = _effectivePreferMemory64 == false
+        ? 'Unset preferMemory64 or set it to true on a browser with memory64'
+        : 'Use a browser with memory64';
     throw LlamaUnsupportedException(
       'Automatic JS-backed model staging on the wasm32 single-thread core '
       'supports size hints up to 3.75 GiB. This GGUF size hint is $modelBytes '
-      'bytes. Use a browser with memory64 or choose a smaller or sharded GGUF.',
+      'bytes. $memory64Advice or choose a smaller GGUF.',
     );
   }
 

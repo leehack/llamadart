@@ -253,7 +253,8 @@ const params = LlamaCppModelParams(
   source: names such as `chatml` are not mapped to llama.cpp's built-in
   templates. `engine.getMetadata()` still reports the GGUF template.
 - `preferMemory64` / `modelBytesHint` (web/WebGPU only): select the 64-bit
-  (mem64) bridge core; see
+  (mem64) bridge core. Give `modelBytesHint` the total GGUF size in bytes
+  across all shards. See
   [Model size and memory64](../platforms/webgpu-bridge#model-size-and-memory64).
   Native loads reject them.
 - `jsBackedModelStaging` (Web llama.cpp only) defaults to JavaScript-backed
@@ -261,7 +262,9 @@ const params = LlamaCppModelParams(
   `modelBytesHint` up to 4 GiB, v0.1.93+ assets, and no fetch-backed loading
   opt-in. On confirmed wasm32 single-thread cores, hints above 960 MiB
   through 3.75 GiB enable staging with capable assets. Larger hints on that
-  core fail before download. Other loads follow the bridge's browser policy.
+  core fail before download. Sharding can reduce per-file or tensor allocations,
+  and the 3.75 GiB check still applies to the total hint. Other loads follow
+  the bridge's browser policy.
   `true` requires staging on v0.1.92+ assets.
   `false` disables it, including on WebKit. Native llama.cpp and LiteRT-LM
   reject explicit values. See

@@ -252,7 +252,8 @@ core, though a load that aborts or runs out of memory on it is retried on
 memory64. Otherwise, the pinned bridge starts on memory64 whenever
 `__llamadartBridgeCoreModuleUrlMem64` is set, as in the snippet above; set
 `window.__llamadartBridgePreferMemory64 = false` to start on the 32-bit core
-instead. Pass the model size when you know it:
+instead. Pass the total GGUF size in bytes when you know it. For a split
+GGUF, add the sizes of all shards.
 
 ```dart
 await engine.setModel(
@@ -277,13 +278,14 @@ Use `ModelParams.jsBackedModelStaging` or `LlamaCppModelParams.jsBackedModelStag
 - Omit it or pass `null` to use JavaScript-backed staging on Chromium when
   v0.1.93+ assets confirm a memory64 core and you supply a positive
   `modelBytesHint` of at most 4 GiB. Both single-thread and threaded cores
-  support this default with or without Cache Storage. Use the actual GGUF
-  byte size when available. On a confirmed wasm32 single-thread core with
-  staging-capable assets, hints above 960 MiB through 3.75 GiB also enable
-  JavaScript-backed staging. A hint above 3.75 GiB on that core raises
-  `LlamaUnsupportedException` before downloading. Use a browser with
-  memory64 or a smaller or suitably sharded GGUF. These thresholds guide
-  staging. Actual load capacity also depends on tensor sizes, memory and
+  support this default with or without Cache Storage. On a confirmed wasm32
+  single-thread core with staging-capable assets, hints above 960 MiB through
+  3.75 GiB also enable JavaScript-backed staging. A larger hint on that core raises
+  `LlamaUnsupportedException` before downloading. Use a browser with memory64
+  or choose a smaller GGUF. If `preferMemory64` is `false`, unset it or set it
+  to `true` on a browser with memory64. Sharding can help when it reduces
+  per-file or tensor allocations, and the 3.75 GiB check still applies to the
+  total hint. Actual load capacity also depends on tensor sizes, memory and
   context settings.
   Other loads use the bridge's browser policy, including automatic staging on
   supported WebKit cores.

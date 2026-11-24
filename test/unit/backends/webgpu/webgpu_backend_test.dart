@@ -3730,6 +3730,15 @@ void main() {
           });
         }
 
+        test('keeps preflight notes out of threaded model metadata', () async {
+          await backend.modelLoadFromUrl(url, automatic);
+
+          expect(probes, 1);
+          expect(loadStaging, [true]);
+          final metadata = await backend.modelMetadata(1);
+          expect(metadata[notesKey], 'model_staging_js_backed');
+        });
+
         test(
           'leaves the default unset when memory64 falls back to wasm32',
           () async {
@@ -3800,6 +3809,25 @@ void main() {
             expect(loadStaging, [true]);
           });
 
+          test(
+            'uses default staging for a small model after fallback',
+            () async {
+              preflight
+                ..['fallback'] = true.toJS
+                ..['fallbackReason'] = 'unsupported'.toJS;
+              await backend.modelLoadFromUrl(
+                url,
+                automatic.copyWith(
+                  preferMemory64: true,
+                  modelBytesHint: wasm32DefaultLimit,
+                ),
+              );
+
+              expect(probes, 2);
+              expect(loadStaging, [null]);
+            },
+          );
+
           for (final size in [wasm32StagingLimit + 1, 5 * 1024 * 1024 * 1024]) {
             test('rejects size hint $size before the bridge loads', () async {
               await expectLater(
@@ -3815,8 +3843,8 @@ void main() {
                       contains('JS-backed model staging'),
                       contains('wasm32 single-thread'),
                       contains('3.75 GiB'),
-                      contains('memory64'),
-                      contains('smaller or sharded GGUF'),
+                      contains('Use a browser with memory64'),
+                      contains('choose a smaller GGUF'),
                     ),
                   ),
                 ),
@@ -3826,6 +3854,31 @@ void main() {
               expect(loadStaging, isEmpty);
             });
           }
+
+          test('explains how to recover when memory64 was disabled', () async {
+            const size = wasm32StagingLimit + 1;
+            await expectLater(
+              backend.modelLoadFromUrl(
+                url,
+                automatic.copyWith(modelBytesHint: size, preferMemory64: false),
+              ),
+              throwsA(
+                isA<LlamaUnsupportedException>().having(
+                  (error) => error.message,
+                  'message',
+                  allOf(
+                    contains('3.75 GiB'),
+                    contains('$size bytes'),
+                    contains('Unset preferMemory64 or set it to true'),
+                    contains('on a browser with memory64'),
+                    contains('choose a smaller GGUF'),
+                  ),
+                ),
+              ),
+            );
+            expect(probes, 1);
+            expect(loadStaging, isEmpty);
+          });
 
           for (final (explicit, size) in [
             (true, wasm32DefaultLimit),
@@ -3847,6 +3900,19 @@ void main() {
             });
           }
         });
+
+        test(
+          'defers to non-Chromium policy on single-thread memory64',
+          () async {
+            selectSingleThreadCore();
+            globalContext['__llamadartBridgeUserAgent'] =
+                'Mozilla/5.0 Gecko/20100101 Firefox/158.0'.toJS;
+            await backend.modelLoadFromUrl(url, automatic);
+
+            expect(probes, 2);
+            expect(loadStaging, [null]);
+          },
+        );
 
         test('keeps the separate memory64 single-thread size limit', () async {
           selectSingleThreadCore();
