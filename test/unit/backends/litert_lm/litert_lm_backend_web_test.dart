@@ -2963,6 +2963,45 @@ void main() {
       },
     );
 
+    test('refuses MTP without a WebGPU adapter before model I/O', () async {
+      addTearDown(fakeNavigatorGpu(FakeWebGpu.noAdapter));
+      final fake = _installCountingFakeEngine(
+        counts: (_, budget) => (decoded: budget, total: budget + 4),
+        mtpRounds: (mode) => mode == 11 ? 1 : 0,
+      );
+      final backend = LiteRtLmBackend();
+      addTearDown(backend.dispose);
+      await expectLater(
+        backend.modelLoad(url, loadMtp),
+        throwsA(_mtpUnsupported('no WebGPU adapter')),
+      );
+      expect(fake.settings, isEmpty);
+    });
+
+    test(
+      'refuses a non-GPU engine even when its MTP probe reports a round',
+      () async {
+        final fake = _installCountingFakeEngine(
+          counts: (_, budget) => (decoded: budget, total: budget + 4),
+          mtpRounds: (mode) => mode == 11 ? 1 : 0,
+          reportedBackend: 1,
+        );
+        final backend = LiteRtLmBackend();
+        addTearDown(backend.dispose);
+        await expectLater(
+          backend.modelLoad(url, loadMtp),
+          throwsA(_mtpUnsupported('Backend.GPU')),
+        );
+        expect(fake.countReads, 1);
+        expect(fake.enginesDeleted, 1);
+        expect(
+          (await backend.generationCapabilities())
+              .speculativeDecodingStrategies,
+          isEmpty,
+        );
+      },
+    );
+
     test(
       'missing mode export refuses before the runtime receives the model',
       () async {
@@ -4784,6 +4823,7 @@ _CountingFake _installCountingFakeEngine({
   List<JSAny?> Function(int turn)? chunks,
   bool countsApi = true,
   int? Function(int? mode)? mtpRounds,
+  int reportedBackend = 3,
   int? maxNumTokens = 4096,
   int? executorTokens,
   String? Function(String prompt)? reject,
@@ -4809,7 +4849,7 @@ _CountingFake _installCountingFakeEngine({
           ..setProperty(
             'settings'.toJS,
             {
-              'backend': 3,
+              'backend': reportedBackend,
               'mainExecutorSettings': {'maxNumTokens': ?maxNumTokens},
             }.jsify(),
           )

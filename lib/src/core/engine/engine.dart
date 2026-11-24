@@ -3519,11 +3519,11 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   /// exports the reasoning-budget API. Its MTP strategy supports an external
   /// draft model; in-file MTP requires a model with an MTP head and
   /// [ModelParams.loadMtp]. Other draft strategies require a draft model.
-  /// LiteRT-LM applies none but
-  /// speculative decoding, which native LiteRT-LM runs for
+  /// LiteRT-LM supports speculative decoding for
   /// [SpeculativeDecodingStrategy.backendDefault] and
-  /// [SpeculativeDecodingStrategy.mtp] on a bundle with a speculative
-  /// drafter. WebGPU applies those its bridge assets
+  /// [SpeculativeDecodingStrategy.mtp] on a drafter-bearing bundle. LiteRT-LM
+  /// WebGPU requires [ModelParams.loadMtp] at load and a passing drafter probe.
+  /// Web llama.cpp applies the controls its bridge assets
   /// report. Each of these runtimes rejects a non-default value of a control
   /// it does not apply with [LlamaUnsupportedException]. Every control is
   /// `false`, and no speculative strategy is reported, before a model loads

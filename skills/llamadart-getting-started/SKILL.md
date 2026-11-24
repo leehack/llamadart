@@ -178,8 +178,11 @@ interface does not establish backend/model support; read `await engine.capabilit
   with it.
 - A load throws `LlamaUnsupportedException` naming every `ModelParams` field
   the model's runtime would ignore: `liteRtLm*` fields on a GGUF model,
-  llama.cpp tuning such as `batchSize` or `loadMtp` on a `.litertlm` model,
+  llama.cpp tuning such as `batchSize` on a `.litertlm` model,
   `preferMemory64`, `modelBytesHint` or `jsBackedModelStaging` off the Web.
+  LiteRT-LM accepts `loadMtp: true` only on WebGPU with a drafter-bearing
+  bundle that passes the load probe. Use `@litert-lm/core` 0.20.0 or later
+  and opt in to speculative decoding on each request.
   Web llama.cpp with `null` uses automatic staging on confirmed Chromium
   memory64 cores (v0.1.93+ assets and a positive `modelBytesHint` up to
   4 GiB) and supported WebKit cores. On confirmed wasm32 single-thread cores

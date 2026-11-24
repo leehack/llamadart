@@ -38,6 +38,34 @@ void main() {
   });
 
   test(
+    'the Web MTP scenario is recorded on the speculative decoding exemption',
+    () {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'litert-lm-web-speculative',
+      );
+      final data = registry();
+      final mapping = (data['mappings'] as List).cast<Map>().singleWhere(
+        (entry) => (entry['surfaces'] as List).contains(
+          'capability:LlamaEngineCapabilities.speculativeDecodingStrategies',
+        ),
+      );
+      final exemption = mapping['exemption'] as Map;
+      expect(exemption['id'], 'speculative-decoding');
+      expect(
+        exemption['reason'],
+        allOf(
+          contains(row.id),
+          contains('https://github.com/leehack/llamadart/issues/1156'),
+        ),
+      );
+      final embeddings = (data['packs'] as List).cast<Map>().singleWhere(
+        (pack) => pack['id'] == 'embeddings',
+      );
+      expect(embeddings['notes'], isNot(contains(row.id)));
+    },
+  );
+
+  test(
     'every exported API, capability report and runtime row is accounted for',
     () {
       final inventory = validationSurfaces(root);
