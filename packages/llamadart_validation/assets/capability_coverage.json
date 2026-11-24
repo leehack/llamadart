@@ -203,6 +203,16 @@
     },
     {
       "surfaces": [
+        "matrix:Streamed GGUF load cancellation"
+      ],
+      "exemption": {
+        "id": "web-streamed-gguf-load-cancellation",
+        "issue": "https://github.com/leehack/llamadart/issues/2166",
+        "reason": "The WebGPU backend Chrome tests check signal transport, no retry, staged cleanup, late success, explicit reload and disposal. Validation-pack profiles do not encode browser transfer timing, staged memory ownership or WasmFS signal support."
+      }
+    },
+    {
+      "surfaces": [
         "matrix:GPU device list and split (gpuDevices, tensorSplit)"
       ],
       "exemption": {

@@ -21,6 +21,8 @@ import '../../core/models/inference/gpu_layer_count.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/model_params_runtime_support.dart';
 import '../../core/models/inference/next_token_scores.dart';
+import '../../core/models/model_format.dart';
+import '../../core/models/model_load_options.dart';
 import '../../core/template/media_placeholders.dart';
 import '../../core/template/resolved_thinking_budget.dart';
 import '../../core/template/tool_call_grammar_utils.dart';
@@ -72,6 +74,7 @@ String? webTextToSpeechModelUnsupportedReason(BackendTextToSpeechModel model) =>
 class WebGpuLlamaBackend
     implements
         BackendRuntimeIdentity,
+        BackendUrlModelLoadCancellation,
         LlamaBackend,
         BackendAvailability,
         BackendLoraSupport,
@@ -149,6 +152,7 @@ class WebGpuLlamaBackend
   String? _singleThreadPreflightNotes;
   LlamaLogLevel _logLevel = LlamaLogLevel.info;
   _GenerationAbort? _generationAbort;
+  AbortController? _modelLoadAbort;
   AbortController? _textToSpeechAbortController;
   int? _lastNCtx;
   bool _mmContextActive = false;
@@ -1621,7 +1625,10 @@ class WebGpuLlamaBackend
       requestedGpuLayers = resolvedGpuLayers;
     }
 
-    final progressCallback = onProgress == null
+    final reportProgress = onProgress == null
+        ? null
+        : Zone.current.bindUnaryCallback(onProgress);
+    final progressCallback = reportProgress == null
         ? null
         : (JSAny p) {
             if (p.isA<JSObject>()) {
@@ -1632,14 +1639,14 @@ class WebGpuLlamaBackend
                 final l = (loaded as JSNumber).toDartDouble;
                 final t = (total as JSNumber).toDartDouble;
                 if (t > 0) {
-                  onProgress(l / t);
+                  reportProgress(l / t);
                   return;
                 }
               }
             }
 
             if (p.isA<JSNumber>()) {
-              onProgress((p as JSNumber).toDartDouble);
+              reportProgress((p as JSNumber).toDartDouble);
             }
           }.toJS;
 
@@ -1656,10 +1663,70 @@ class WebGpuLlamaBackend
     String url,
     ModelParams params, {
     void Function(double progress)? onProgress,
+  }) => modelLoadFromUrlWithCancellation(
+    url,
+    params,
+    cancelToken: ModelDownloadCancelToken(),
+    onProgress: onProgress,
+  );
+
+  @override
+  bool supportsUrlModelLoadCancellation(String url, ModelFormat? format) =>
+      format == null || format == ModelFormat.gguf;
+
+  @override
+  Future<int> modelLoadFromUrlWithCancellation(
+    String url,
+    ModelParams params, {
+    required ModelDownloadCancelToken cancelToken,
+    ModelFormat? format,
+    void Function(double progress)? onProgress,
   }) async {
+    final controller = AbortController();
+    final signal = controller.signal;
+    _modelLoadAbort = controller;
+    final unlisten = listenForModelDownloadCancellation(cancelToken, () {
+      controller.abort();
+      _bridge?.cancel();
+    });
+    try {
+      return await _loadModelFromUrl(url, params, signal, onProgress);
+    } catch (_) {
+      if (!signal.aborted) rethrow;
+      try {
+        await _safeDisposeBridge();
+      } catch (_) {}
+      throw LlamaStateException('Model loading was cancelled.');
+    } finally {
+      unlisten();
+      if (identical(_modelLoadAbort, controller)) _modelLoadAbort = null;
+    }
+  }
+
+  Future<int> _loadModelFromUrl(
+    String url,
+    ModelParams params,
+    AbortSignal signal,
+    void Function(double progress)? onProgress,
+  ) async {
+    void checkCancellation() {
+      if (signal.aborted) {
+        throw LlamaStateException('Model loading was cancelled.');
+      }
+    }
+
+    checkCancellation();
     url = webGpuDocumentUrl(url);
     final cacheUrl = webGpuPersistentCacheUrl(url);
-    final setup = _prepareUrlLoad(url, params, onProgress);
+    final setup = _prepareUrlLoad(
+      url,
+      params,
+      onProgress == null
+          ? null
+          : (progress) {
+              if (!signal.aborted) onProgress(progress);
+            },
+    );
     final allowSingleThreadCore = _isNonIsolatedPage && !_canPostSharedMemory();
     final explicitSelection = _getGlobalOptionalBool(_singleThreadCoreFlag);
     if (allowSingleThreadCore && explicitSelection == false) {
@@ -1718,6 +1785,7 @@ class WebGpuLlamaBackend
       remoteFetchChunkBytes: _resolveRemoteFetchChunkBytes(),
     );
     for (var index = 0; index < loadAttempts.length; index += 1) {
+      checkCancellation();
       final attempt = loadAttempts[index];
       _lastNCtx = attempt.contextSize;
       final batchSizes = _resolveWebBatchSizes(
@@ -1740,6 +1808,7 @@ class WebGpuLlamaBackend
           automaticStagingModelBytes: automaticStagingModelBytes,
           sourceUrls: sourceUrls,
         );
+        checkCancellation();
         final bridge = _requireBridge();
         if (allowSingleThreadCore && explicitSelection == null) {
           _warnAboutSingleThreadCore();
@@ -1756,6 +1825,7 @@ class WebGpuLlamaBackend
           forceRemoteFetchBackend = false;
         }
 
+        checkCancellation();
         final loadPromise = bridge.loadModelFromUrl(
           cacheUrl ?? url,
           WebGpuLoadModelOptions(
@@ -1785,12 +1855,14 @@ class WebGpuLlamaBackend
                 ? params.speculativeRollbackTokenMax
                 : null,
             progressCallback: setup.progressCallback,
+            signal: signal,
           ),
         );
 
         if (loadPromise != null) {
           await loadPromise.toDart;
         }
+        checkCancellation();
         if (tryAutomaticStaging &&
             _activeJsBackedModelStaging == true &&
             preflight?.variant != 'wasm32' &&
@@ -1846,11 +1918,14 @@ class WebGpuLlamaBackend
         _decisionHeads.clear();
         _resetWebGpuMultimodalWarmupState();
         _completionCapabilities = await _probeCompletionCapabilities(bridge);
+        checkCancellation();
         return 1;
       } on LlamaUnsupportedException {
         await _safeDisposeBridge();
         rethrow;
       } catch (e) {
+        // The bridge also reports model_fs_write_abort on a user abort.
+        checkCancellation();
         if (webGpuCoreAssetError(e) case (
           code: 'CORE_ASSET_UNAVAILABLE',
           :final asset,
@@ -2934,6 +3009,7 @@ class WebGpuLlamaBackend
   @override
   void cancelGeneration() {
     _embeddingCancelEpoch++;
+    _modelLoadAbort?.abort();
     final generationAbort = _generationAbort;
     if (generationAbort != null) {
       generationAbort.cancelRequested = true;
@@ -4047,6 +4123,7 @@ class WebGpuLlamaBackend
 
   @override
   Future<void> dispose() async {
+    _modelLoadAbort?.abort();
     cancelTextToSpeech();
     await _safeDisposeBridge();
   }

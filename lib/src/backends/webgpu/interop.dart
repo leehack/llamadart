@@ -276,6 +276,7 @@ extension type WebGpuLoadModelOptions._(JSObject _) implements JSObject {
     @JS('loadMtp') bool? loadMtp,
     @JS('speculativeRollbackTokenMax') int? speculativeRollbackTokenMax,
     @JS('progressCallback') JSFunction? progressCallback,
+    @JS('signal') JSObject? signal,
   });
 }
 

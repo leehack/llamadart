@@ -620,6 +620,229 @@ void main() {
       clearBridgeGlobals();
     });
 
+    group('URL model load cancellation', () {
+      const url = 'https://example.com/model.gguf';
+      final model = LlamaModel(ModelSource.parse(url));
+      const params = LlamaCppModelParams(device: ComputeDevice.cpu);
+      late LlamaEngine engine;
+      late ModelDownloadCancelToken token;
+      late int loads;
+      late int disposals;
+
+      setUp(() {
+        // Exercise the public format router as well as the runtime.
+        engine = LlamaEngine(WebAutoBackend(webBackend: backend));
+        addTearDown(engine.dispose);
+        token = ModelDownloadCancelToken();
+        loads = 0;
+        disposals = 0;
+        bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
+        bridge['dispose'] = (() {
+          disposals++;
+          return Future<void>.value().toJS;
+        }).toJS;
+      });
+
+      Future<void> load({
+        bool withToken = true,
+        ModelDownloadProgressCallback? onProgress,
+      }) => engine.setModel(
+        model,
+        params: params,
+        download: withToken
+            ? ModelLoadOptions(cancelToken: token)
+            : ModelLoadOptions.defaults,
+        onProgress: onProgress,
+      );
+
+      Future<AbortSignal?> installTransfer({
+        bool reportProgress = false,
+        bool lateSuccess = false,
+      }) {
+        final started = Completer<AbortSignal?>();
+        late JSFunction settle;
+        void cancel() {
+          if (lateSuccess) {
+            settle.callAsFunction();
+          } else {
+            settle.callAsFunction(
+              null,
+              DOMException('Model load was cancelled.', 'AbortError'),
+            );
+          }
+        }
+
+        bridge['cancel'] = (() {
+          if (loads == 1) cancel();
+        }).toJS;
+        bridge['loadModelFromUrl'] = ((String url, JSObject options) {
+          loads++;
+          if (loads != 1) return Future<void>.value().toJS;
+          final signal = options.getProperty<AbortSignal?>('signal'.toJS);
+          return JSPromise<JSAny?>(
+            ((JSFunction resolve, JSFunction reject) {
+              settle = lateSuccess ? resolve : reject;
+              signal?.addEventListener('abort', ((Event _) => cancel()).toJS);
+              started.complete(signal);
+              if (reportProgress) {
+                final progress = options['progressCallback'] as JSFunction;
+                progress.callAsFunction(null, 0.25.toJS);
+              }
+              if (reportProgress && signal?.aborted != true) {
+                resolve.callAsFunction();
+              }
+            }).toJS,
+          );
+        }).toJS;
+        bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+            'model_fs_write_abort';
+        return started.future;
+      }
+
+      test(
+        'rejects a pre-cancelled token and keeps the loaded model',
+        () async {
+          await load(withToken: false);
+          token.cancel();
+
+          await expectLater(load(), throwsA(isA<LlamaStateException>()));
+
+          expect(engine.isReady, isTrue);
+          expect(disposals, 0);
+        },
+      );
+
+      test(
+        'aborts the pending fetch before its first byte and can reload',
+        () async {
+          final started = installTransfer();
+          final result = load();
+          final outcome = expectLater(
+            result,
+            throwsA(isA<LlamaStateException>()),
+          );
+          final signal = await Future.any<AbortSignal?>([
+            started,
+            result.then<AbortSignal?>((_) => null, onError: (Object _) => null),
+          ]);
+          token.cancel();
+          expect(signal?.aborted, isTrue);
+          await outcome;
+          expect(loads, 1);
+          expect(disposals, 1);
+          expect(engine.isReady, isFalse);
+
+          await load(withToken: false);
+          expect(loads, 2);
+          expect(engine.isReady, isTrue);
+        },
+      );
+
+      for (final lateSuccess in [false, true]) {
+        test('stops during staged progress with bridge late success: '
+            '$lateSuccess', () async {
+          final started = installTransfer(
+            reportProgress: true,
+            lateSuccess: lateSuccess,
+          );
+          final progress = <double?>[];
+          await expectLater(
+            load(
+              onProgress: (event) {
+                progress.add(event.fraction);
+                token.cancel();
+              },
+            ),
+            throwsA(isA<LlamaStateException>()),
+          );
+          expect((await started)?.aborted, isTrue);
+          expect(loads, 1);
+          expect(progress, [0.25]);
+          expect(disposals, 1);
+          expect(engine.isReady, isFalse);
+        });
+      }
+
+      test('legacy bridge cancel never enters wasm32 fallback', () async {
+        final console = globalContext['console'] as JSObject;
+        final originalWarn = console['warn'];
+        final warnings = <String>[];
+        console['warn'] = ((String warning) => warnings.add(warning)).toJS;
+        addTearDown(() => console['warn'] = originalWarn);
+        await backend.setLogLevel(LlamaLogLevel.warn);
+
+        final started = installTransfer(reportProgress: true);
+        await expectLater(
+          backend.modelLoadFromUrl(
+            url,
+            params,
+            onProgress: (_) => backend.cancelGeneration(),
+          ),
+          throwsA(isA<LlamaStateException>()),
+        );
+        expect((await started)?.aborted, isTrue);
+        expect(loads, 1);
+        expect(backend.isReady, isFalse);
+        expect(warnings, isNot(contains(contains('wasm32 memory pressure'))));
+      });
+
+      test('dispose aborts staging before waiting for the load', () async {
+        final started = installTransfer(reportProgress: true);
+        Future<void>? disposed;
+        final zone = Zone.current;
+        await expectLater(
+          load(
+            withToken: false,
+            onProgress: (_) {
+              expect(Zone.current, same(zone));
+              disposed = engine.dispose();
+            },
+          ),
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              contains('disposed while loading'),
+            ),
+          ),
+        );
+        await disposed;
+        expect((await started)?.aborted, isTrue);
+        expect(loads, 1);
+        expect(disposals, 1);
+        expect(engine.isReady, isFalse);
+        expect(token.isCancelled, isFalse);
+      });
+
+      test(
+        'cancelling a completed load token leaves the model ready',
+        () async {
+          bridge['loadModelFromUrl'] = ((String url, JSObject config) {
+            loads++;
+            return Future<void>.value().toJS;
+          }).toJS;
+
+          await load();
+          token.cancel();
+
+          expect(loads, 1);
+          expect(disposals, 0);
+          expect(engine.isReady, isTrue);
+        },
+      );
+
+      test('still refuses cancellation on a LiteRT-LM URL', () async {
+        await expectLater(
+          engine.setModel(
+            LlamaModel(ModelSource.parse('https://example.com/model.litertlm')),
+            download: ModelLoadOptions(cancelToken: token),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(loads, 0);
+      });
+    });
+
     test('names the subtype mismatch before the embedding-engine '
         'rejection', () async {
       await expectLater(

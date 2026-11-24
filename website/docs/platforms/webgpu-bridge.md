@@ -308,6 +308,18 @@ An explicit projector load stops on a typed transfer-length failure. Restoring
 a previously loaded projector after a worker restart can still trigger another
 restart. See [llama-web-bridge#329](https://github.com/leehack/llama-web-bridge/issues/329).
 
+## Cancel a streamed GGUF load
+
+Pass a `ModelDownloadCancelToken` in `ModelLoadOptions` to
+`LlamaEngine.load` or `setModel`. Cancelling aborts the streamed download
+or staging, releases the partial load, and settles with `LlamaStateException`.
+Wait for the load to settle before reusing the engine. Disposing the engine
+also aborts a streamed transfer and waits for its cleanup.
+
+With the opt-in WasmFS fetch backend, the bridge can continue fetching until
+the current load attempt settles. Dart stops its retry loop once cancelled.
+Use streamed loading when the transfer must stop promptly.
+
 ## What differs from native
 
 The feature-by-runtime table is in the

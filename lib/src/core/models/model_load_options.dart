@@ -20,14 +20,35 @@ enum ModelCachePolicy {
 /// Cooperative cancellation token for model downloads and resolution.
 class ModelDownloadCancelToken {
   bool _isCancelled = false;
+  final _listeners = <void Function()>{};
 
   /// Whether [cancel] has been requested.
   bool get isCancelled => _isCancelled;
 
   /// Requests cancellation. Calling this method more than once is safe.
   void cancel() {
+    if (_isCancelled) return;
     _isCancelled = true;
+    final listeners = _listeners.toList();
+    _listeners.clear();
+    for (final listener in listeners) {
+      listener();
+    }
   }
+}
+
+/// Registers an internal cancellation callback. The return value unregisters
+/// it when the operation settles, so a reusable token cannot retain a load.
+void Function() listenForModelDownloadCancellation(
+  ModelDownloadCancelToken token,
+  void Function() listener,
+) {
+  if (token.isCancelled) {
+    listener();
+    return () {};
+  }
+  token._listeners.add(listener);
+  return () => token._listeners.remove(listener);
 }
 
 /// Options used when resolving and loading model sources.
@@ -40,7 +61,7 @@ class ModelDownloadCancelToken {
 /// rejected for local paths. URL-loading web backends can load remote URLs
 /// directly and reject options that require native cache IO, such as
 /// authenticated headers, checksum verification, and explicit cache policy
-/// changes.
+/// changes. The Web GGUF loader supports [cancelToken] for the model transfer.
 class ModelLoadOptions {
   /// Creates model load options.
   factory ModelLoadOptions({

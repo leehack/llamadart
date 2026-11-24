@@ -41,7 +41,6 @@ Then apply the platform setup:
 import 'dart:async';
 import 'dart:ui';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:llamadart/llamadart.dart';
 
@@ -104,10 +103,7 @@ class _ChatScreenState extends State<ChatScreen> {
       await _engine.setModel(
         LlamaModel(ModelSource.parse(modelUri)),
         params: const ModelParams(contextSize: 2048),
-        // Web backends own the download and reject cancellation tokens.
-        download: kIsWeb
-            ? ModelLoadOptions.defaults
-            : ModelLoadOptions(cancelToken: _downloadCancel),
+        download: ModelLoadOptions(cancelToken: _downloadCancel),
         onProgress: (ModelDownloadProgress progress) {
           if (mounted) {
             setState(() => _downloadFraction = progress.fraction);

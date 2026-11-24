@@ -139,7 +139,8 @@ export 'src/core/models/model_format.dart';
 export 'src/core/models/model_source.dart';
 export 'src/core/models/model_resolver.dart';
 export 'src/core/models/model_file_store.dart';
-export 'src/core/models/model_load_options.dart';
+export 'src/core/models/model_load_options.dart'
+    show ModelCachePolicy, ModelDownloadCancelToken, ModelLoadOptions;
 export 'src/core/models/download/model_download_manager.dart';
 
 // Models - Chat

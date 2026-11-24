@@ -309,6 +309,15 @@ removes the projector copy behind the earlier abort (measured on the pinned asse
 memory64 stays recommended for headroom. See
 [multimodal embedding qualification](multimodal_embeddings_web.md).
 
+### Model load cancellation
+
+The bridge accepts an operation `AbortSignal` for streamed loads. The
+pinned WasmFS path uses a separate fetch worker and does not forward the
+signal. When the owner adds support, probe the active bridge and worker for
+a published WasmFS cancellation capability. Older assets already accept the
+generic `signal` option. Qualify with a pending WasmFS request and verify
+that cancellation aborts it and starts no further request.
+
 ### Per-request cancellation
 
 A generation subscription cancel, including `SpeechToTextTask.cancel()`, aborts

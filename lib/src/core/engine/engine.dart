@@ -118,6 +118,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   Future<void>? _disposal;
   // Fails every pending file resolution when disposal abandons its load.
   final Set<void Function()> _abandonResolutions = {};
+  ModelDownloadCancelToken? _urlModelLoadCancellation;
   bool _isReadyState = false;
   // Changes on every load and unload, so a probe that awaits can tell whether
   // the model it started on is still the loaded one.
@@ -545,14 +546,17 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   /// A URL-loading backend, as on the Web, fetches each file itself during
   /// the load, so the old model is unloaded before the new one is fetched,
   /// and a fetch that fails leaves nothing loaded. There a local path is a
-  /// URL relative to the document, or a `blob:` URL, [download] must leave
-  /// every option at its default, and [onProgress] reports a fraction: the
-  /// model's fetch fills it, or with a projector its first half, and 1 once
-  /// the projector has loaded.
+  /// URL relative to the document, or a `blob:` URL. [download] must leave
+  /// other options at their defaults. Its cancel token stops streamed GGUF
+  /// transfers, including staging, and prevents another attempt. LiteRT-LM
+  /// Web rejects a cancel token. Opt-in WasmFS fetches can continue inside
+  /// the bridge until it settles. [onProgress] reports a fraction: the model's
+  /// fetch fills it, or with a projector its first half, and 1 once the
+  /// projector has loaded.
   ///
   /// While a call runs, another [setModel] and [unloadModel] throw
   /// [LlamaStateException]; stop it with [download]'s cancel token.
-  /// [dispose] stops its downloads at once.
+  /// [dispose] stops package-managed downloads and streamed GGUF transfers.
   ///
   /// Throws:
   /// - [LlamaArgumentException] for an invalid [params], and when [download]
@@ -633,6 +637,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       final location = locations.first;
       final projector = model.projector == null ? null : locations[1];
       if (backend.supportsUrlLoading) {
+        throwIfCancelled();
         final fileCount = projector == null ? 1 : 2;
         await _loadModelFromUrl(
           location,
@@ -643,6 +648,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
                   ModelDownloadProgress.fraction(fraction / fileCount),
                 ),
           format: source.format,
+          cancelToken: download.cancelToken,
         );
       } else {
         await _loadModel(
@@ -662,10 +668,13 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
         throwIfCancelled();
         await _captureObservedModel(location);
         _throwIfDisposedDuringLoad();
+        if (backend.supportsUrlLoading) throwIfCancelled();
         if (projector != null && backend.supportsUrlLoading) {
           // The runtime reports no progress for the projector fetch, so its
           // half completes once the projector has loaded.
           onProgress?.call(const ModelDownloadProgress.fraction(1));
+          _throwIfDisposedDuringLoad();
+          throwIfCancelled();
         }
       } catch (_) {
         try {
@@ -790,12 +799,32 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     final List<String> locations;
     var options = download;
     if (backend.supportsUrlLoading) {
+      final source = sources.first;
+      final allowCancelToken =
+          _cancellableUrlModelLoader(
+            source.path ?? '${source.resolvedUri}',
+            source.format,
+          ) !=
+          null;
+      if (allowCancelToken && (download.cancelToken?.isCancelled ?? false)) {
+        rejectUnsupportedUrlBackendOptions(
+          download,
+          assetType: assetType,
+          allowCancelToken: true,
+        );
+        throw LlamaStateException('$operation was cancelled.');
+      }
       locations = await resolveModelSourceUrls(
         sources,
         resolver: modelResolver,
         download: download,
         assetType: assetType,
+        allowCancelToken: allowCancelToken,
       );
+      if (download.cancelToken != null &&
+          _cancellableUrlModelLoader(locations.first, source.format) == null) {
+        rejectUnsupportedUrlBackendOptions(download, assetType: assetType);
+      }
     } else {
       final callerToken = download.cancelToken;
       options = _withCancelToken(
@@ -1260,6 +1289,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     ModelParams modelParams = const ModelParams(),
     void Function(double progress)? onProgress,
     ModelFormat? format,
+    ModelDownloadCancelToken? cancelToken,
   }) async {
     _ensureNotReady();
     final modelName = _displayNameForSource(url);
@@ -1280,19 +1310,45 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       format: format,
     );
 
+    final loader = _cancellableUrlModelLoader(url, format);
+    final cancellation = loader == null ? null : ModelDownloadCancelToken();
+    _urlModelLoadCancellation = cancellation;
+    final unlisten = cancelToken == null || cancellation == null
+        ? null
+        : listenForModelDownloadCancellation(cancelToken, cancellation.cancel);
+
+    void checkCancellation() {
+      if (cancellation == null) return;
+      _throwIfDisposedDuringLoad();
+      if (cancellation.isCancelled || (cancelToken?.isCancelled ?? false)) {
+        throw LlamaStateException('Model loading was cancelled.');
+      }
+    }
+
     try {
       await backend.setLogLevel(LlamaLogging.nativeLevel);
+      checkCancellation();
       _completionModel = _modelNameForSource(url);
       _cachedModelMetadata = null;
 
-      _modelHandle = await _backendModelLoad(
-        url,
-        modelParams,
-        format,
-        fromUrl: true,
-        onProgress: onProgress,
-      );
+      _modelHandle = loader == null
+          ? await _backendModelLoad(
+              url,
+              modelParams,
+              format,
+              fromUrl: true,
+              onProgress: onProgress,
+            )
+          : await loader.modelLoadFromUrlWithCancellation(
+              url,
+              modelParams,
+              cancelToken: cancellation!,
+              format: format,
+              onProgress: onProgress,
+            );
+      checkCancellation();
       _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
+      checkCancellation();
       _modelChatTemplate = modelParams.chatTemplate;
       _isReady = true;
       _loraLocations.addAll(loraLocations);
@@ -1300,6 +1356,8 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       LlamaLogger.instance.info(_modelLoadedMessage(modelName, redactedUrl));
     } catch (e, stackTrace) {
       await _cleanupFailedLoadState();
+      checkCancellation();
+      if (loader != null && e is LlamaStateException) rethrow;
 
       LlamaLogger.instance.error(
         'Failed to load model $modelName from URL $redactedUrl',
@@ -1316,7 +1374,22 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
         'Failed to load model from $redactedUrl',
         _redactedErrorDetails(e, url),
       );
+    } finally {
+      unlisten?.call();
+      _urlModelLoadCancellation = null;
     }
+  }
+
+  BackendUrlModelLoadCancellation? _cancellableUrlModelLoader(
+    String url,
+    ModelFormat? format,
+  ) {
+    final candidate = backend;
+    if (candidate is BackendUrlModelLoadCancellation) {
+      final loader = candidate as BackendUrlModelLoadCancellation;
+      if (loader.supportsUrlModelLoadCancellation(url, format)) return loader;
+    }
+    return null;
   }
 
   Future<int> _backendModelLoad(
@@ -1623,10 +1696,11 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   /// model queries such as [getMetadata] and [getContextSize] return their
   /// no-model values; and [unloadModel] and [cancelGeneration] do nothing. A
   /// load running when this is called throws [LlamaStateException], and a
-  /// model it loaded is unloaded. The downloads of a running [setModel],
-  /// [loadModelSource] or [loadMultimodalProjectorSource] stop, and their
-  /// resolution or download work does not hold this call up, even when a
-  /// custom resolver or manager ignores cancellation.
+  /// model it loaded is unloaded. Cancels package-managed downloads for
+  /// [setModel], [loadModelSource] and [loadMultimodalProjectorSource] and
+  /// abandons their resolution, even when a custom resolver or manager ignores
+  /// cancellation. Cancels active streamed Web GGUF transfers and waits for
+  /// the bridge to clean up.
   @override
   Future<void> dispose() {
     final existing = _disposal;
@@ -1641,6 +1715,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   }
 
   Future<void> _dispose() async {
+    _urlModelLoadCancellation?.cancel();
     for (final abandon in _abandonResolutions.toList()) {
       abandon();
     }
