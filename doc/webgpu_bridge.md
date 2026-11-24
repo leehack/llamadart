@@ -249,8 +249,8 @@ physical playback, intelligibility or speaker-reference fidelity.
   is above 960 MiB through 3.75 GiB. This covers selection of wasm32 and
   fallback from memory64. A hint above 3.75 GiB on the confirmed wasm32
   single-thread core fails before the bridge starts the model download.
-  The limits are based on bridge v0.1.94 measurements. The default writer
-  staged 1 GiB without preallocation and failed at 1,025 MiB. With a usable
+  Measurements on the released bridge below set these limits. The default
+  writer staged 1 GiB without preallocation and failed at 1,025 MiB. With a usable
   Content-Length it staged 2,047 MiB. JS-backed staging loaded a
   4,294,176,864-byte Gemma 4 E2B GGUF, while the 4,501,721,184-byte variant
   exceeded the native 4 GiB tensor-payload limit.
