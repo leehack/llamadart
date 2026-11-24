@@ -1,4 +1,5 @@
 """Behavioral trigger and aggregate tests. Run without Dart or third-party deps."""
+from hashlib import sha256
 import importlib.util
 import json
 import os
@@ -14,6 +15,12 @@ ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('select_jobs', ROOT / 'tool/ci/select_jobs.py')
 ci = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ci)
+
+
+def tracked_paths(*roots):
+    return subprocess.check_output(
+        ['git', 'ls-files', '-z', '--', *roots], cwd=ROOT,
+    ).decode().rstrip('\0').split('\0')
 
 
 def root_suite_imports():
@@ -63,43 +70,47 @@ class SelectionTest(unittest.TestCase):
         marker = 'tool/release/recoveries/' + 'a' * 40 + '.json'
         self.assertTrue(ci.select([marker], pull_request=True)['jobs']['analyze'])
 
+    def assert_narrow_plan(self, plan, jobs, *, macos=False, windows=False):
+        self.assertEqual({job for job, selected in plan['jobs'].items() if selected}, jobs)
+        self.assertEqual(plan['macos-native'], macos)
+        self.assertEqual(plan['windows-native'], windows)
+        self.assertEqual(plan['test-other-os-matrix'], [
+            *(ci.MACOS_SHARDS if macos else ()),
+            *(ci.WINDOWS_SHARDS if windows else ()),
+        ])
+        for key in ('companions', 'desktops', 'apps', 'reasons'):
+            self.assertEqual(plan[key], [], key)
+        for key in ('studio-macos', 'macos-validation-memory', 'apple-cache'):
+            self.assertFalse(plan[key], key)
+
     def test_tool_paths_select_their_consumers(self):
         static = {'analyze', 'markdown-tests'}
         vm = {'analyze', 'test-linux-coverage'}
         hosts = vm | {'test-other-os'}
+        # Pin membership independently of the selector without a second path list.
         cases = (
-            ('scripts/android_runtime_smoke.sh', static, False, False),
-            ('tool/gen_litert_lm_templates.dart', static, False, False),
-            ('tool/git/pr_head_update_evidence.schema.json', static, False, False),
-            ('tool/macos_llamadart_benchmark.dart', static, False, False),
-            ('tool/native/fixtures/litert_lm_v0191_owner_SHA256SUMS', static, False, False),
-            ('tool/testing/playwright_chat_app_benchmark.py', static, False, False),
-            ('tool/testing/run_llama_cpp_chat_tests.sh', vm, False, False),
-            ('tool/litert_lm_templates/qwen3.jinja', vm, False, False),
-            ('tool/testing/without_app_nap.sh', hosts, True, False),
-            ('tool/testing/build_llama_cpp_runtime_gbnf_validator.sh', hosts, True, False),
-            ('tool/litert_lm_templates/gemma4.jinja', hosts, True, True),
-            ('tool/native/fixtures/litert_lm_v019_apple_inventory_projection.json', hosts, True, True),
-            ('tool/litert_lm_asr_smoke.dart', hosts, True, True),
-            ('tool/testing/test_matrix.dart', hosts, True, True),
-            ('tool/testing/playwright_web_js_backed_model_staging.py', hosts, True, True),
+            ('TOOLS_STATIC', 'f04534c726523fd8909566c2e8bc034b63b08cb0336b12549c0a51674ebfd990',
+             static, False, False),
+            ('TOOLS_LINUX_VM', '4ad9b53eb752fd2040d3708cd61cf04368ba4cbe75ef72be333efa35bbcb66b7',
+             vm, False, False),
+            ('TOOLS_MACOS_VM', 'a149081b75f50d5bd6e6c1db2de4b9a923c21f72eb01757c6ce9fa9135a47caa',
+             hosts, True, False),
+            ('TOOLS_ALL_HOST_VM', '16a1e80f72b56844b50c6509995e14ad5b15c00dc7e292727bb66678a676e33b',
+             hosts, True, True),
         )
-        for path, jobs, macos, windows in cases:
-            for pull_request in (True, False):
-                with self.subTest(path=path, pull_request=pull_request):
-                    plan = ci.select([path], pull_request=pull_request)
-                    self.assertEqual({job for job, selected in plan['jobs'].items() if selected}, jobs)
-                    self.assertEqual(plan['macos-native'], macos)
-                    self.assertEqual(plan['windows-native'], windows)
-                    self.assertEqual(plan['test-other-os-matrix'], [
-                        *(ci.MACOS_SHARDS if macos else ()),
-                        *(ci.WINDOWS_SHARDS if windows else ()),
-                    ])
-                    for key in ('companions', 'desktops', 'apps', 'reasons'):
-                        self.assertEqual(plan[key], [], key)
-                    for key in ('studio-macos', 'macos-validation-memory', 'apple-cache'):
-                        self.assertFalse(plan[key], key)
-                    self.assertEqual(plan['coverage'], not pull_request)
+        for group, fingerprint, jobs, macos, windows in cases:
+            paths = sorted(getattr(ci, group))
+            with self.subTest(group=group):
+                self.assertEqual(
+                    sha256('\n'.join(paths).encode()).hexdigest(), fingerprint,
+                    f'{group} membership changed. Trace readers before updating the pin: {paths}',
+                )
+            for path in paths:
+                for pull_request in (True, False):
+                    with self.subTest(path=path, pull_request=pull_request):
+                        plan = ci.select([path], pull_request=pull_request)
+                        self.assert_narrow_plan(plan, jobs, macos=macos, windows=windows)
+                        self.assertEqual(plan['coverage'], not pull_request)
 
     def test_tool_workflow_inputs_and_unknown_paths_stay_full(self):
         paths = (
@@ -386,17 +397,121 @@ class SelectionTest(unittest.TestCase):
                                   pull_request=pull_request)
                 self.assertEqual(mixed, runtime)
 
-    def test_every_example_directory_is_explicitly_classified(self):
-        narrow = {'chat_app', 'dartpad_gguf'}
-        full = {'basic_app', 'laya_command_bar', 'laya_tetris', 'llamadart_cli',
-                'llamadart_server', 'training_notebook', 'tui_coding_agent'}
-        directories = {path.name for path in (ROOT / 'example').glob('*') if path.is_dir()}
-        self.assertEqual(directories, narrow | full)
-        for name in sorted(directories):
-            with self.subTest(example=name):
-                plan = ci.select([f'example/{name}/lib/probe.dart'], pull_request=True)
-                self.assertEqual(bool(plan['reasons']), name in full)
-                self.assertEqual(plan['macos-native'], name in full)
+    def test_remaining_examples_select_every_tracked_paths_consumers(self):
+        packages = {'basic_app', 'laya_command_bar', 'laya_tetris', 'llamadart_cli',
+                    'llamadart_server', 'tui_coding_agent'}
+        markdown = {'docs-check', 'docs-versions', 'markdown-tests'}
+        static = {'analyze', 'markdown-tests'}
+        example = static | {'example-packages'}
+        example_vm = {'analyze', 'example-packages', 'test-linux-coverage'}
+        basic_app = 'example/basic_app/'
+        root_consumers = {
+            basic_app + 'bin/src/live_asr_pcm.dart': example_vm,
+            basic_app + 'bin/src/macos_mic_asr.dart': example_vm,
+            basic_app + 'bin/llamadart_engine_lifecycle_example.dart': example_vm | {'test-web'},
+            basic_app + 'test/fixtures/image_warmup_comparison.dart': example_vm | {'test-web'},
+            basic_app + 'test/fixtures/image_original_container_model.dart': (
+                example_vm | {'test-other-os'}
+            ),
+        }
+        self.assertEqual(
+            {path for path in root_suite_imports() if path.startswith(basic_app)},
+            set(root_consumers),
+            'Trace the root test platforms for any new Basic App imports.',
+        )
+        roots = sorted('example/' + name for name in packages | {'training_notebook'})
+        paths = tracked_paths(*roots) + [root + '/nested/.gitignore' for root in roots]
+        paths += [root + '/new_input' for root in roots]
+        for path in paths:
+            name = path.split('/')[1]
+            for pull_request in (True, False):
+                with self.subTest(path=path, pull_request=pull_request):
+                    plan = ci.select([path], pull_request=pull_request)
+                    if path.endswith('/.gitignore'):
+                        expected = ci.select(['lib/llamadart.dart'], pull_request=pull_request)
+                        expected['reasons'] = ['shared/runtime or example path: ' + path]
+                        self.assertEqual(plan, expected)
+                    else:
+                        jobs = root_consumers.get(path, example if name in packages else static)
+                        if path.endswith('.md'):
+                            jobs = markdown
+                        host = 'test-other-os' in jobs
+                        self.assert_narrow_plan(plan, jobs, macos=host, windows=host)
+
+    def test_example_rules_union_with_docs_other_examples_and_full_fallback(self):
+        cases = (
+            ('example/basic_app/bin/llamadart_engine_lifecycle_example.dart',
+             'example/basic_app/test/fixtures/image_original_container_model.dart',
+             {'analyze', 'example-packages', 'test-linux-coverage', 'test-web', 'test-other-os'}),
+            ('example/laya_tetris/lib/main.dart', 'example/laya_command_bar/README.md',
+             {'analyze', 'example-packages', 'docs-check', 'markdown-tests'}),
+            ('example/training_notebook/lora_training.ipynb', 'example/llamadart_cli/pubspec.yaml',
+             {'analyze', 'example-packages', 'markdown-tests'}),
+        )
+        for pull_request in (True, False):
+            for left, right, jobs in cases:
+                with self.subTest(left=left, right=right, pull_request=pull_request):
+                    plan = ci.select([left, right], pull_request=pull_request)
+                    host = 'test-other-os' in jobs
+                    self.assert_narrow_plan(plan, jobs, macos=host, windows=host)
+                    self.assertEqual(plan, ci.select([right, left], pull_request=pull_request))
+                    for full in ('example/new_example/README.md', 'example/basic_app/.gitignore'):
+                        expected = ci.select([full], pull_request=pull_request)
+                        self.assertTrue(expected['reasons'])
+                        self.assertEqual(
+                            ci.select([left, full, right], pull_request=pull_request), expected,
+                        )
+                        self.assertEqual(
+                            ci.select([right, full, left], pull_request=pull_request), expected,
+                        )
+
+    def test_tracked_directory_boundaries_are_explicitly_classified(self):
+        root_files = {
+            False: {'.dockerignore', '.pubignore', 'AGENTS.md', 'CHANGELOG.md',
+                    'CONTRIBUTING.md', 'LICENSE', 'MIGRATION.md', 'README.md',
+                    'codecov.yml', 'dartdoc_options.yaml'},
+            True: {'.flutter-version', '.gitattributes', '.gitignore', 'analysis_options.yaml',
+                   'dart_test.yaml', 'ffigen.yaml', 'ffigen_litert_lm_embedding.yaml',
+                   'ffigen_stable_diffusion.yaml', 'pubspec.yaml'},
+        }
+        directories = {
+            '': {
+                False: {'doc', 'docker', 'skills', 'test', 'website'},
+                True: {'.github', 'bin', 'example', 'hook', 'lib', 'packages', 'scripts', 'tool'},
+            },
+            'example/': {
+                False: {'basic_app', 'chat_app', 'dartpad_gguf', 'laya_command_bar',
+                        'laya_tetris', 'llamadart_cli', 'llamadart_server',
+                        'training_notebook', 'tui_coding_agent'},
+                True: set(),
+            },
+            'tool/': {
+                False: {'docs'},
+                True: {'ci', 'git', 'litert_lm_templates', 'native', 'release', 'testing'},
+            },
+        }
+        paths = tracked_paths()
+        self.assertEqual(
+            {path for path in paths if '/' not in path}, root_files[False] | root_files[True],
+            'Classify new root files before narrowing their CI coverage.',
+        )
+        for prefix, groups in directories.items():
+            descendants = [path[len(prefix):] for path in paths if path.startswith(prefix)]
+            actual = {path.split('/', 1)[0] for path in descendants if '/' in path}
+            self.assertEqual(
+                actual, groups[False] | groups[True],
+                f'Classify new directories under {prefix or "the root"} before narrowing CI.',
+            )
+        for full, files in root_files.items():
+            probes = files | {
+                prefix + directory + '/ci_selection_probe'
+                for prefix, groups in directories.items() for directory in groups[full]
+            }
+            for probe in sorted(probes):
+                for pull_request in (True, False):
+                    with self.subTest(path=probe, pull_request=pull_request):
+                        plan = ci.select([probe], pull_request=pull_request)
+                        self.assertEqual(bool(plan['reasons']), full)
 
     def test_genkit_gateway_runs_package_snippet_compilation_with_docs(self):
         plan = ci.select(['website/docs/integrations/genkit.md'])
@@ -555,12 +670,13 @@ class SelectionTest(unittest.TestCase):
                 self.assertEqual(plan['apps'], list(ci.APPS))
 
     def test_unknown_example_keeps_the_full_runtime_plan(self):
-        path = 'example/foo/lib/main.dart'
-        for pull_request in (True, False):
-            with self.subTest(pull_request=pull_request):
-                expected = ci.select(['lib/llamadart.dart'], pull_request=pull_request)
-                expected['reasons'] = ['shared/runtime or example path: ' + path]
-                self.assertEqual(ci.select([path], pull_request=pull_request), expected)
+        for path in ('example/foo/lib/main.dart', 'example/foo/README.md',
+                     'example/laya_tetris_extra/lib/main.dart'):
+            for pull_request in (True, False):
+                with self.subTest(path=path, pull_request=pull_request):
+                    expected = ci.select(['lib/llamadart.dart'], pull_request=pull_request)
+                    expected['reasons'] = ['shared/runtime or example path: ' + path]
+                    self.assertEqual(ci.select([path], pull_request=pull_request), expected)
 
     def test_companions_name_every_checked_out_flutter_apple_companion(self):
         checked_out = sorted(
