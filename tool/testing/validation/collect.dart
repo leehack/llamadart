@@ -268,6 +268,8 @@ Future<bool> assessCollectedRun(
       (plan.firebase ||
           (manifest['environment'] as Map?)?['runtime_bundle_sha256'] ==
               plan.json['bundle_sha256']) &&
+      (!plan.androidStagedModel ||
+          (manifest['preparation'] as Map?)?['source'] == 'android_staged') &&
       canonical(manifest['profile']) == canonical(profile);
 }
 

@@ -24,6 +24,7 @@ Future<void> main(List<String> arguments) async {
         '  voice --out <new-directory> [--chat-profile <primary-cpu-profile>] [--chat-model <file>]\n'
         '  speech --pack stt|tts|litert-asr --backend cpu|metal|vulkan|cuda --out <new-directory> [--model <file>] [--projector <file>]\n'
         '  build --target desktop|android|web|ios|ios-inputs --out <new-directory> [--profile <id>] [--internal-diagnostic-run-id <new-id>]\n'
+        '    Android LiteRT chat instrumentation: --model <private-local-file>\n'
         '    Android NPU: --kit <directory> --model <file> [--execution-path public_api|native_c_api]\n'
         '  local --profile <id> [--model <path>] [--projector <path>] [--out <new-directory>]\n'
         '  report --out <run-directory>\n'
@@ -261,6 +262,8 @@ Future<void> main(List<String> arguments) async {
         'project': config['project'],
         'settings': config['settings'],
         'bundle': bundle.path,
+        if (manifest['android_staged_model'] == true)
+          'android_staged_model': true,
         'bundle_sha256':
             (await sha256
                     .bind(

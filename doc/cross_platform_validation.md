@@ -773,6 +773,36 @@ flaky retries and no video. It records the matrix ID, polls terminal state, copi
 the default Test Lab results, then verifies completion or cancellation. It does
 not enable billing or create a custom result bucket.
 
+### Private model staging for Android instrumentation
+
+Use `--model` on an Android LiteRT chat validation bundle to supply a local
+copy of the profile's locked model. Keep the bundle under an ignored local
+directory. The bundle includes a separate model file with its SHA-256 and
+size in the inventory. Both APKs remain model-free.
+
+```sh
+dart run tool/testing/validation.dart build --target android \
+  --profile gemma4-litert-gpu --model /path/to/gemma-4-E2B-it.litertlm \
+  --out .dart_tool/validation/bundles/android-gemma4-staged
+```
+
+Create the `firebase-android` plan with the staged bundle and the usual quota
+and budget receipts. The adapter sends the verified model as a Test Lab
+`--other-files` upload via the project's default results bucket. That bucket
+retains the uploaded model according to its retention policy. The device needs
+space for the shell transfer and an app-private copy, plus APKs and runtime
+cache. For Gemma 4 E2B the two model copies require about 5.2 GB.
+
+Instrumentation copies the file into app-private persistent storage before
+Flutter starts. The validation host verifies its size and SHA-256 against
+the compiled profile before passing the original model filename to inference.
+Missing or altered staged bytes fail preparation. The journal records
+`preparation.source: android_staged`, which the collector requires for the
+staged plan. To test a local install, pass the same staging arguments as the
+adapter and push the file to `/data/local/tmp/llamadart-validation-model.litertlm`
+before starting instrumentation. The interactive APK and bundles built without
+`--model` use the locked download path. NPU bundles use their own kit flow.
+
 ### Explicit Blaze runs
 
 Blaze is an opt-in mode for separately authorized runs. Copy

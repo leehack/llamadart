@@ -16,6 +16,83 @@ import 'internal_diagnostic.dart';
 import 'npu.dart';
 import 'runtime_bundle.dart';
 
+const androidStagedModelPayload = 'staged-model.litertlm';
+
+Map<String, dynamic> _androidStagedModelLock(Map<String, dynamic> profile) {
+  final model = profile['model'];
+  if (profile['runtime'] != 'litert' ||
+      !const ['cpu', 'gpu', 'auto'].contains(profile['backend']) ||
+      model is! Map<String, dynamic> ||
+      model['kind'] != 'chat' ||
+      model['filename'] is! String ||
+      !RegExp(
+        r'^[A-Za-z0-9][A-Za-z0-9._-]{0,118}\.litertlm$',
+      ).hasMatch(model['filename'] as String) ||
+      model['sha256'] is! String ||
+      !RegExp(r'^[0-9a-f]{64}$').hasMatch(model['sha256'] as String) ||
+      model['bytes'] is! int ||
+      (model['bytes'] as int) <= 0) {
+    throw StateError(
+      'Android staged models require a locked LiteRT chat profile',
+    );
+  }
+  return model;
+}
+
+Future<void> _stageAndroidModel(
+  String source,
+  Directory destination,
+  Map<String, dynamic> lock,
+) async {
+  try {
+    final input = File(source);
+    if (await input.length() != lock['bytes']) {
+      throw StateError('Android staged model has the wrong byte size');
+    }
+    await destination.create(recursive: true);
+    final copy = await input.copy(
+      p.join(destination.path, androidStagedModelPayload),
+    );
+    if (await copy.length() != lock['bytes'] ||
+        (await sha256.bind(copy.openRead()).first).toString() !=
+            lock['sha256']) {
+      throw StateError(
+        'Android staged model does not match the profile SHA256 and size',
+      );
+    }
+  } on FileSystemException {
+    throw StateError('Cannot read or copy the Android staged model');
+  }
+}
+
+void _requireAndroidStagedModel(
+  Directory directory,
+  Map<String, dynamic> manifest,
+  Map<String, dynamic> files,
+) {
+  if (manifest.containsKey('android_staged_model') ||
+      files.containsKey(androidStagedModelPayload)) {
+    final model = files[androidStagedModelPayload];
+    if (manifest['target'] != 'android' ||
+        manifest['android_staged_model'] != true ||
+        model is! Map ||
+        !files.containsKey('profile.json')) {
+      throw StateError('Invalid Android staged model bundle');
+    }
+    final profile =
+        jsonDecode(
+              File(p.join(directory.path, 'profile.json')).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final lock = _androidStagedModelLock(profile);
+    if (model['bytes'] != lock['bytes'] || model['sha256'] != lock['sha256']) {
+      throw StateError(
+        'Android staged model inventory disagrees with the profile lock',
+      );
+    }
+  }
+}
+
 /// Reads committed source and runtime identities for local runs and bundles.
 Future<Map<String, dynamic>> readValidationProvenance(
   String root, {
@@ -167,6 +244,14 @@ Future<Directory> buildValidationBundle(
       ? imageProfileTestTarget(selectedProfile)
       : 'integration_test/validation_test.dart';
   final npu = selectedProfile['backend'] == 'npu';
+  final stagedModel = target == 'android' && !npu && model != null
+      ? _androidStagedModelLock(selectedProfile)
+      : null;
+  if (stagedModel != null && internalDiagnosticRunId != null) {
+    throw const FormatException(
+      'Android staged models require the shared validation instrumentation target',
+    );
+  }
   requireExecutableValidationProfile(
     selectedProfile,
     supportsLocalModelPath: target == 'desktop',
@@ -223,6 +308,7 @@ Future<Directory> buildValidationBundle(
     'profile': profile,
     'execution_path': executionPath,
     'mode': ['desktop', 'web', 'ios'].contains(target) ? 'release' : mode,
+    if (stagedModel != null) 'android_staged_model': true,
     if (image) ...{
       'test_target': testTarget,
       'stable_diffusion_tag': readStableDiffusionTag(root),
@@ -284,6 +370,9 @@ Future<Directory> buildValidationBundle(
     ),
   )..createSync(recursive: true);
   try {
+    if (stagedModel != null) {
+      await _stageAndroidModel(model!, destination, stagedModel);
+    }
     if (npu) {
       final stage = Directory(p.join(scratch.path, 'npu'));
       provenance['npu'] = await stageNpuAndroid(
@@ -404,6 +493,9 @@ Future<Directory> buildValidationBundle(
             'app-debug.apk',
           ),
         ).copySync(p.join(destination.path, 'qa-app.apk'));
+      }
+      if (stagedModel != null) {
+        defines.add('VALIDATION_ANDROID_STAGED_MODEL=true');
       }
       await command('flutter', [
         'build',
@@ -578,7 +670,11 @@ Future<Directory> buildValidationBundle(
     File(p.join(destination.path, 'RUN.txt')).writeAsStringSync(
       'llamadart validation bundle\nTarget: $target\nSource: $source\n'
       'Desktop: bin/llamadart-validate --profile $profile --environment-file environment.json --out results\n'
-      '${npu ? 'NPU model and licensed vendor libraries are embedded and SHA256-verified.' : 'Models are downloaded and SHA256-verified; weights are not in this bundle.'}\n'
+      '${npu
+          ? 'NPU model and licensed vendor libraries are embedded and SHA256-verified.'
+          : stagedModel != null
+          ? 'The private model sidecar is SHA256-verified and sent with the instrumentation pair. The interactive app uses the download path.'
+          : 'Models are downloaded and SHA256-verified; weights are not in this bundle.'}\n'
       '${image ? 'Image generation: app.apk plus test.apk (or tests.zip) run $testTarget; there is no qa-app.apk.' : 'Android: install qa-app.apk for interactive use; app.apk plus test.apk are a matched instrumentation pair.'}\n'
       'iOS: build/sign XCTest on a Mac. Web: serve with required isolation headers.\n',
     );
@@ -629,6 +725,7 @@ Future<void> writeBundleManifest(
       'bytes': await entity.length(),
     };
   }
+  _requireAndroidStagedModel(directory, provenance, inventory);
   File(p.join(directory.path, 'bundle-manifest.json')).writeAsStringSync(
     const JsonEncoder.withIndent(
       '  ',
@@ -681,5 +778,6 @@ Future<Map<String, dynamic>> verifyBundle(Directory directory) async {
       throw FormatException('Bundle checksum mismatch: ${entry.key}');
     }
   }
+  _requireAndroidStagedModel(directory, manifest, files);
   return manifest;
 }

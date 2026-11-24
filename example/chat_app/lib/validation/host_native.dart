@@ -15,10 +15,17 @@ import 'host.dart';
 import 'internal_diagnostic_output.dart';
 
 /// Creates the mobile/desktop Flutter filesystem host.
-ValidationHost createHost() => _NativeHost();
+ValidationHost createHost({
+  bool androidStagedModel = const bool.fromEnvironment(
+    'VALIDATION_ANDROID_STAGED_MODEL',
+  ),
+}) => _NativeHost(androidStagedModel);
 
 class _NativeHost implements ValidationHost {
+  _NativeHost(this._androidStagedModel);
+
   static const _npuChannel = MethodChannel('llamadart_validation/npu');
+  final bool _androidStagedModel;
   AndroidNpuMonitor? _npu;
   String? _embeddingProjector;
   String? _probeLibrary;
@@ -107,6 +114,23 @@ class _NativeHost implements ValidationHost {
         'models',
       ),
     );
+    if (_androidStagedModel) {
+      final model = await prepareModel(
+        profile,
+        cache,
+        suppliedPath: p.join(
+          cache.path,
+          profile.modelHash,
+          pid.toString(),
+          profile.filename,
+        ),
+        onProgress: _journal!.emitPreparation,
+      );
+      return (
+        path: model.path,
+        evidence: {...model.evidence, 'source': 'android_staged'},
+      );
+    }
     _client = http.Client();
     try {
       final model = await prepareModel(
