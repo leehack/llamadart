@@ -910,6 +910,17 @@ class _Collector {
         continue;
       }
       final resolution = number == null ? _readPrResolution(sha) : null;
+      if (landed != null && resolution != null) {
+        rows.add(
+          _unresolved(
+            sha,
+            resolution.pr,
+            'git',
+            'PR resolution cannot replace a landed Changelog.',
+          ),
+        );
+        continue;
+      }
       final associatedNumber = number ?? resolution?.pr;
       if (associatedNumber == null) {
         rows.add(

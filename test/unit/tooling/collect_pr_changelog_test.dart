@@ -370,6 +370,51 @@ void main() {
       expect(output, isNot(contains(path)));
     });
 
+    test('uses the anchored subject PR on the API path', () async {
+      final repo = _repo();
+      final numbered = repo.commit('Keep the authored note (#4)');
+      final path = '$_resolutions/$numbered.json';
+      repo.pr(43, 'N/A: Reviews the resolution.', {
+        path: _resolutionRecord(numbered, digest, pr: 9),
+      });
+      final pull = _pull(4, numbered, body: '## Changelog\n- Authored note.');
+      final calls = <String>[];
+      final output = await _collect(repo, repo.args(), {
+        'commits/$numbered/pulls': [
+          [pull],
+        ],
+        'pulls/4': pull,
+      }, calls);
+      expect(calls, ['commits/$numbered/pulls', 'pulls/4']);
+      expect(_ledgerRow(output, 4)['source'], 'api');
+      expect(output, contains('- Authored note.'));
+      expect(output, isNot(contains(path)));
+    });
+
+    test('rejects a resolution for an unnumbered landed changelog', () async {
+      final repo = _repo();
+      final landed = repo.commit(
+        'Prepare the companion package\n\n## Changelog\n- Landed note.',
+      );
+      repo.pr(43, 'N/A: Reviews the resolution.', {
+        '$_resolutions/$landed.json': _resolutionRecord(landed, digest),
+      });
+      final pull = _pull(42, landed, body: body);
+      final calls = <String>[];
+      await expectLater(
+        _collect(repo, repo.args(), {
+          'commits/$landed/pulls': [
+            [pull],
+          ],
+          'pulls/42': {...pull, 'commits': 1},
+        }, calls),
+        throwsA(
+          _formatError('PR resolution cannot replace a landed Changelog'),
+        ),
+      );
+      expect(calls, isEmpty);
+    });
+
     for (final (kind, message) in [
       ('wrong version', 'PR resolution version 0.20.4 does not match 0.20.3'),
       ('wrong SHA', 'invalid canonical PR resolution record'),

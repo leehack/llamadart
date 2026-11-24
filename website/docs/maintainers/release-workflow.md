@@ -509,9 +509,12 @@ Land individual PRs, including independent package release preps, with
 section in the squash message. Reserve rebase merges for batch integration
 PRs whose constituent commits already carry both.
 
-To resolve an already-landed, single-commit PR without a trailing `(#N)`,
-commit a reviewed record at `tool/release/pr_resolutions/<40-hex-sha>.json`.
-Use one compact JSON line with the keys in the order below and a final LF.
+To resolve an already-landed, single-commit PR whose commit lacks both a
+trailing `(#N)` and a readable `## Changelog` section, commit a reviewed
+record at `tool/release/pr_resolutions/<40-hex-sha>.json`. Never use a
+resolution record for a batch integration PR, even one with a single
+constituent commit. Use one compact JSON line with the keys in the order
+below and a final LF.
 Run `dart tool/release/collect_pr_changelog.dart --section-sha256 PR_BODY.md`
 on the reviewed PR description to compute the digest.
 
