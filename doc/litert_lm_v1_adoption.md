@@ -3,9 +3,17 @@
 The public lazy facade, default service probes and speech worker now share
 ABI-aware discovery. Public production selection now admits C API 1.0.x and 1.1.x;
 unknown/future versions remain unsupported. The native hook and Apple companion
-source now pin published [v0.19.1-2](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-2),
-owner `0b15fb34` / upstream `7a03724cece417f1724c923b3d527b4319730841`, which
-keeps C API 1.0.0 and the v0.19.0 exports and adds the in-process LiteRT marker. The adoption below used published
+source pin `v0.20.0` (upstream `95df4c2a`, C API 1.1.0). The upstream
+step-zero reset fix replaces the recurrent-state and macOS lookahead carries,
+and iOS Metal uses a statically registered accelerator. The spatial-tensor
+staging carry and the Android Dawn rollbacks remain in the owner build. See the
+[owner qualification record](https://github.com/leehack/litert-lm-native/blob/main/docs/v020_qualification.md)
+for the scope of each retirement.
+
+The earlier published [v0.19.1-2](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-2),
+owner `0b15fb34` / upstream `7a03724cece417f1724c923b3d527b4319730841`,
+kept C API 1.0.0 and the v0.19.0 exports and added the in-process LiteRT marker.
+The adoption below used published
 [v0.19.0](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.0),
 owner `f173fe9b` / upstream `83ce6067f2e2a3fb697556928f93936693ded971`.
 All 21 public owner assets were independently matched to the qualified bytes.

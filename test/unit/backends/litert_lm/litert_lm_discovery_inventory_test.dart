@@ -32,87 +32,94 @@ void main() {
     'libLiteRt.dylib',
     'libLiteRtWebGpuAccelerator.dylib',
   };
+  const retiredDesktopAccelerators = {
+    Abi.linuxArm64: {'libLiteRtWebGpuAccelerator.so'},
+    Abi.linuxX64: {'libLiteRtWebGpuAccelerator.so'},
+    Abi.windowsX64: {'libLiteRtWebGpuAccelerator.dll', 'libwebgpu_dawn.dll'},
+  };
   bool isRetiredByOwner(Abi abi, String file) =>
       file == unusedMetalAccelerator ||
-      (abi == Abi.macosArm64 && unusedMacOsLiteRtCompanions.contains(file));
+      (abi == Abi.macosArm64 && unusedMacOsLiteRtCompanions.contains(file)) ||
+      (retiredDesktopAccelerators[abi]?.contains(file) ?? false);
   for (final abi in desktopAbis) {
-    test(
-      '$abi v1 keeps all owner companions except retired TopK libraries, '
-      'the unused Metal and macOS LiteRT companions and a linked-in LiteRT',
-      () {
-        final legacy = liteRtLmRequiredLibrariesForAbi(abi);
-        final modern = liteRtLmRequiredLibrariesForAbi(abi, cApiV1: true);
-        expect(modern.length, switch (abi) {
-          Abi.macosArm64 => 4,
-          Abi.windowsX64 => 11,
-          _ => 4,
-        });
-        final retired = legacy.toSet().difference(modern.toSet());
-        expect(
-          retired.where(
+    test('$abi v1 keeps all owner companions except retired TopK libraries, '
+        'split GPU accelerators and a linked-in LiteRT', () {
+      final legacy = liteRtLmRequiredLibrariesForAbi(abi);
+      final modern = liteRtLmRequiredLibrariesForAbi(abi, cApiV1: true);
+      expect(modern.length, switch (abi) {
+        Abi.macosArm64 => 4,
+        Abi.windowsX64 => 9,
+        _ => 3,
+      });
+      final retired = legacy.toSet().difference(modern.toSet());
+      expect(
+        retired.where(
+          (file) => file != linkedInLiteRt[abi] && !isRetiredByOwner(abi, file),
+        ),
+        everyElement(contains('TopK')),
+      );
+      if (linkedInLiteRt[abi] case final liteRt?) {
+        expect(retired, contains(liteRt));
+      }
+      expect(modern, containsAll(liteRtLmNonPreloadedLibrariesForAbi(abi)));
+      expect(
+        liteRtLmCompanionLibrariesForAbi(abi, cApiV1: true),
+        unorderedEquals(
+          modern.where(
             (file) =>
-                file != linkedInLiteRt[abi] && !isRetiredByOwner(abi, file),
+                file != liteRtLmPrimaryLibraryForAbi(abi) &&
+                !liteRtLmNonPreloadedLibrariesForAbi(abi).contains(file),
           ),
-          everyElement(contains('TopK')),
-        );
-        if (linkedInLiteRt[abi] case final liteRt?) {
-          expect(retired, contains(liteRt));
-        }
-        expect(modern, containsAll(liteRtLmNonPreloadedLibrariesForAbi(abi)));
-        expect(
-          liteRtLmCompanionLibrariesForAbi(abi, cApiV1: true),
-          unorderedEquals(
-            modern.where(
-              (file) =>
-                  file != liteRtLmPrimaryLibraryForAbi(abi) &&
-                  !liteRtLmNonPreloadedLibrariesForAbi(abi).contains(file),
-            ),
-          ),
-        );
-      },
-    );
+        ),
+      );
+    });
   }
 
-  test('v1 discovery matches the frozen owner 0.19 desktop inventory', () {
-    final projection =
-        jsonDecode(
-              File(
-                'tool/native/fixtures/litert_lm_v019_apple_inventory_projection.json',
-              ).readAsStringSync(),
+  test(
+    'v1 discovery retains the shared subset of the 0.19 desktop inventory',
+    () {
+      final projection =
+          jsonDecode(
+                File(
+                  'tool/native/fixtures/litert_lm_v019_apple_inventory_projection.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      expect(projection['compatibilityTag'], 'v0.19.0');
+      final platforms = projection['platforms'] as List<dynamic>;
+      for (final entry in {
+        Abi.macosArm64: ('macos', 'arm64'),
+        Abi.linuxArm64: ('linux', 'arm64'),
+        Abi.linuxX64: ('linux', 'x64'),
+        Abi.windowsX64: ('windows', 'x64'),
+      }.entries) {
+        final platform = platforms.cast<Map<String, dynamic>>().singleWhere(
+          (item) =>
+              item['platform'] == entry.value.$1 &&
+              item['arch'] == entry.value.$2,
+        );
+        final owner =
+            (platform['artifactPaths'] as List<dynamic>)
+                .cast<String>()
+                .where((file) => !file.endsWith('.lib'))
+                .map(path.basename)
+                .toList()
+              ..sort();
+        final linked = linkedInLiteRt[entry.key];
+        if (linked != null) expect(owner, contains(linked));
+        final expected = owner
+            .where(
+              (file) => file != linked && !isRetiredByOwner(entry.key, file),
             )
-            as Map<String, dynamic>;
-    expect(projection['compatibilityTag'], 'v0.19.0');
-    final platforms = projection['platforms'] as List<dynamic>;
-    for (final entry in {
-      Abi.macosArm64: ('macos', 'arm64'),
-      Abi.linuxArm64: ('linux', 'arm64'),
-      Abi.linuxX64: ('linux', 'x64'),
-      Abi.windowsX64: ('windows', 'x64'),
-    }.entries) {
-      final platform = platforms.cast<Map<String, dynamic>>().singleWhere(
-        (item) =>
-            item['platform'] == entry.value.$1 &&
-            item['arch'] == entry.value.$2,
-      );
-      final owner =
-          (platform['artifactPaths'] as List<dynamic>)
-              .cast<String>()
-              .where((file) => !file.endsWith('.lib'))
-              .map(path.basename)
-              .toList()
-            ..sort();
-      final linked = linkedInLiteRt[entry.key];
-      if (linked != null) expect(owner, contains(linked));
-      final expected = owner
-          .where((file) => file != linked && !isRetiredByOwner(entry.key, file))
-          .toList();
-      expect(
-        liteRtLmRequiredLibrariesForAbi(entry.key, cApiV1: true),
-        expected,
-        reason: '${entry.key} owner inventory',
-      );
-    }
-  });
+            .toList();
+        expect(
+          liteRtLmRequiredLibrariesForAbi(entry.key, cApiV1: true),
+          expected,
+          reason: '${entry.key} owner inventory',
+        );
+      }
+    },
+  );
 
   for (final abi in linkedInLiteRt.keys) {
     test('$abi explicit directories open a present libLiteRt for older '
@@ -127,16 +134,23 @@ void main() {
             cApiV1: cApiV1,
           ).map((file) => file.split('/').last).toList();
 
-      expect(liteRtLmOptionalCompanionLibrariesForAbi(abi), [liteRt]);
+      expect(liteRtLmOptionalCompanionLibrariesForAbi(abi), [
+        liteRt,
+        ...retiredDesktopAccelerators[abi]!,
+      ]);
       expect(
         names(cApiV1: true),
         liteRtLmCompanionLibrariesForAbi(abi, cApiV1: true),
-        reason: 'a v0.19.1-1 directory without it is unchanged',
+        reason: 'the pinned runtime has only the current companions',
       );
       File(path.join(directory.path, liteRt)).writeAsStringSync('');
+      for (final file in retiredDesktopAccelerators[abi]!) {
+        File(path.join(directory.path, file)).writeAsStringSync('');
+      }
       expect(names(cApiV1: true), [
         ...liteRtLmCompanionLibrariesForAbi(abi, cApiV1: true),
         liteRt,
+        ...retiredDesktopAccelerators[abi]!,
       ]);
       expect(
         names(cApiV1: false).where((file) => file == liteRt),
@@ -150,10 +164,16 @@ void main() {
   });
 
   test('v1 Windows still loads CRT and Dawn before their importers', () {
-    final order = liteRtLmCompanionLibrariesForAbi(
+    final directory = Directory.systemTemp.createTempSync('litert_win_');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    File(
+      path.join(directory.path, 'libLiteRtWebGpuAccelerator.dll'),
+    ).writeAsStringSync('');
+    final order = liteRtLmExplicitDirectoryCompanionPathsForAbi(
       Abi.windowsX64,
+      directory,
       cApiV1: true,
-    );
+    ).map(path.basename).toList();
     for (final entry in {
       'msvcp140.dll': ['vcruntime140.dll', 'vcruntime140_1.dll'],
       'vcruntime140_1.dll': ['vcruntime140.dll'],

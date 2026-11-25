@@ -1752,6 +1752,21 @@ included final completion. The export omitted standalone sidecars. Replay
 verified 259 embedded captures and reconstructed 15 sidecars from the
 journal. Provider logcat independently confirmed the OpenCL graph counts.
 
+The `v0.20.0` Android arm64 candidate from owner `d73bca7c` passed the same
+graph on Galaxy S24 SC-51E, API 36. [Test Lab matrix `5127024656427413663`](https://console.firebase.google.com/project/llamadart-cuda-qa-20260916/testlab/histories/bh.192ffd589740b368/matrices/5127024656427413663)
+(`matrix-2emjwj2q3ld4o`, run `core021-litert020-s24-20261125`) used consumer
+`c33f1cdc` and archive SHA-256
+`93e00094fb080f4355ca3a385f71844e44376807fb2771600e1d6e0ad1b316e2`, which
+matches the published asset. All 20 cases passed, and the 12 corrected
+replies matched `v0.19.1-7` byte for byte. Corrected GPU and auto used
+fully delegated OpenCL (1306/1306 decode and 1358/1358 prefill).
+
+The same archive passed all 18 focused Qwen3-0.6B cases on a Pixel 9 Pro,
+API 35, with the retained Dawn/Vulkan path. The test APK omitted the vendor
+OpenCL library declaration to exercise Vulkan. The run reported neither
+a Vulkan device loss nor a Dawn validation error.
+[Test Lab matrix `6720190835810639683`](https://console.firebase.google.com/project/llamadart-cuda-qa-20260916/testlab/histories/bh.192ffd589740b368/matrices/6720190835810639683)
+
 ## Linux x64 strict JSON Schema on CPU and GPU (2026-11-14)
 
 `run_local_e2e.dart --scenario litert-lm-json-schema` on a GCE g2-standard-8

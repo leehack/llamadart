@@ -20,7 +20,7 @@ description: >-
 
 - Native LiteRT-LM speech probes and workers share the text client's ABI-aware
   discovery. Public selection admits legacy runtimes and C API 1.0.x and 1.1.x; the
-  pinned runtime is published native v0.19.1-7. The selector checks macOS 14+
+  pinned native v0.20.0 runtime reports C API 1.1.0. The selector checks macOS 14+
   before owned loads, including legacy libraries and custom paths. ASR also
   requires its independent bridge version, layout and complete export group; a
   text C API version proves none of those capabilities.

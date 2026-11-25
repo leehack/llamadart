@@ -78,8 +78,7 @@ void main() {
       'libggml-base.so',
       'libggml-cpu.so',
     ]);
-    // The owner archive also carries the prebuilt libLiteRt.so that the
-    // Linux host links in instead of loading.
+    // Ignore a stale split LiteRT library in the extracted cache.
     await _writeBundleLibraries(litertBundleDir, [
       ..._linuxLiteRtLibraries,
       'libLiteRt.so',
@@ -2884,10 +2883,7 @@ void _expectSpecChecksum(String source, String bundleKey) {
 
 const List<String> _androidLiteRtLibraries = [
   'libGemmaModelConstraintProvider.so',
-  'libLiteRtGpuAccelerator.so',
   'libLiteRtLm.so',
-  'libLiteRtOpenClAccelerator.so',
-  'libLiteRtWebGpuAccelerator.so',
   'libwebgpu_dawn.so',
 ];
 
@@ -2909,14 +2905,12 @@ const List<String> _linuxLiteRtLibraries = [
   'libGemmaModelConstraintProvider.so',
   'libLiteRtLm.so',
   'libwebgpu_dawn.so',
-  'libLiteRtWebGpuAccelerator.so',
 ];
 
 const List<String> _linuxLiteRtAssetNames = [
   'litert_lm_GemmaModelConstraintProvider',
   'litert_lm_LiteRtLm',
   'litert_lm_webgpu_dawn',
-  'litert_lm_LiteRtWebGpuAccelerator',
 ];
 
 const List<String> _windowsLiteRtLibraries = [
@@ -2924,9 +2918,7 @@ const List<String> _windowsLiteRtLibraries = [
   'dxcompiler.dll',
   'dxil.dll',
   'libGemmaModelConstraintProvider.dll',
-  'libwebgpu_dawn.dll',
   'webgpu_dawn.dll',
-  'libLiteRtWebGpuAccelerator.dll',
   'msvcp140.dll',
   'vcruntime140.dll',
   'vcruntime140_1.dll',

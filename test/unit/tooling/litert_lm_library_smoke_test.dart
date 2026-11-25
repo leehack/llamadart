@@ -108,8 +108,9 @@ void main() {
     expect(liteRtLmSmokeUsesCApiV1('v0.19.1-5'), isTrue);
     expect(liteRtLmSmokeUsesCApiV1('v0.19.1-6'), isTrue);
     expect(liteRtLmSmokeUsesCApiV1('v0.19.1-7'), isTrue);
+    expect(liteRtLmSmokeUsesCApiV1('v0.20.0'), isTrue);
     expect(liteRtLmSmokeUsesCApiV1('v0.18.1-4'), isFalse);
-    for (final tag in ['v0.19.0-1', 'v0.19.2', 'v0.20.0', 'g0123456789ab']) {
+    for (final tag in ['v0.19.0-1', 'v0.19.2', 'v0.20.1', 'g0123456789ab']) {
       expect(
         () => liteRtLmSmokeUsesCApiV1(tag),
         throwsA(

@@ -59,8 +59,7 @@ void main() {
       'libggml-vulkan.so',
     ]);
     await markExtractedBundle(historicalBundleDir);
-    // The owner archive also carries the prebuilt libLiteRt.so that the
-    // Linux host links in instead of loading.
+    // Ignore a stale split LiteRT library in the extracted cache.
     await _writeBundleLibraries(litertBundleDir, [
       ..._linuxLiteRtLibraries,
       'libLiteRt.so',
@@ -555,14 +554,12 @@ const List<String> _linuxLiteRtLibraries = [
   'libGemmaModelConstraintProvider.so',
   'libLiteRtLm.so',
   'libwebgpu_dawn.so',
-  'libLiteRtWebGpuAccelerator.so',
 ];
 
 const List<String> _linuxLiteRtAssetNames = [
   'litert_lm_GemmaModelConstraintProvider',
   'litert_lm_LiteRtLm',
   'litert_lm_webgpu_dawn',
-  'litert_lm_LiteRtWebGpuAccelerator',
 ];
 
 const String _edgeAiLlama = 'flutter_edge_ai_llama';
