@@ -669,6 +669,8 @@ workflow grants read-only contents and pull-request permissions, validates the
 PR number, fetches metadata/files through the read-only GitHub API, verifies the
 complete paginated file count, rejects ambiguous control-character paths, and
 classifies both current and previous rename paths.
+It accepts PRs targeting the default branch or a `release/M.m.x` branch in
+the same repository.
 
 It does not check out or execute the PR branch and does not consume PR comments,
 PR-authored evidence files, workflow artifacts, or PR-authored workflows.
@@ -688,6 +690,13 @@ required check, so it deliberately does not fail merely because the protected
 publisher was never adopted; that absence is reported, not enforced.
 Configuring it as a required check could make standard-risk PRs depend on a
 gate that is not intended for them.
+
+## High-risk backport audits
+
+Classify each backport diff. An exact high-risk backport of an independently
+audited main commit needs a delta audit covering patch equivalence,
+release branch dependencies, and CI at the backport head.
+An adapted backport needs a full audit.
 
 ## Missing external prerequisites
 

@@ -1231,7 +1231,7 @@ void main() {
               'number': 10,
               'title': title,
               'body': body,
-              'base': {'sha': through},
+              'base': {'ref': 'release/0.20.x', 'sha': through},
               'head': {'sha': head},
             },
           }),

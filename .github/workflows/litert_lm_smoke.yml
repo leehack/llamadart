@@ -18,7 +18,7 @@ on:
       - "tool/litert_lm_engine_smoke.dart"
       - "tool/litert_lm_library_smoke.dart"
   pull_request:
-    branches: [main]
+    branches: [main, 'release/[0-9]+.[0-9]+.x']
     paths:
       - ".github/workflows/litert_lm_smoke.yml"
       - "hook/**"

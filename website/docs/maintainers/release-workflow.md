@@ -9,14 +9,15 @@ companion and is not released by this checklist.
 
 ## Patch branches
 
-**Rollout status.** Patch publication from a release branch is unavailable
-until the workflow rollout is complete. The automation and guards below are
-planned.
+**Rollout status.** Before the first patch from a branch cut before this
+rollout, backport the patch guards (PR2), branch-aware changelog collector
+(PR3a), docs cut (PR4), and workflow wiring (PR5) to `release/M.m.x`.
+Backport the patch changelog import (PR3b) before the `0.22.0` prep.
 
 - Squash work for the next minor into `main`. When the latest released minor
   needs a patch, cut `release/M.m.x` from `vM.m.0`. Maintain only the latest
   released minor. Prepare and publish `M.m.N` patches (`N >= 1`) from that
-  branch, and minor releases from `main`. Release verification will check
+  branch, and minor releases from `main`. Release verification checks
   that the version matches its base branch.
 - Land each fix on `main` first. Create a backport branch from
   `origin/release/M.m.x` and run `git cherry-pick -x <main-squash-sha>`.
@@ -31,9 +32,9 @@ planned.
 
 - A version-specific fix that cannot land on `main` first needs a triaged
   forward-port issue. Add `Forward-port: <issue URL>` under `## Summary`.
-  The planned parity check will verify backport provenance and changelog
-  entries, and require forward-port issues to be closed at the next minor
-  prep. Never merge a release branch back into `main`.
+  The Backport and parity checks verify the metadata. Close forward-port
+  issues before the next minor prep. Never merge a release branch back into
+  `main`.
 - Classify each backport diff. For a high-risk exact backport of an audited
   main commit, run a delta audit covering patch equivalence, dependencies on
   the release branch, and CI at the backport head. An adapted high-risk
@@ -49,9 +50,9 @@ Configure the GitHub ruleset manually for `release/*.x`. Restrict deletion
 and force pushes, require squash PRs and Copilot review, and start with no
 required status checks. Allow branch creation and leave the bypass list
 empty. Use the branch preview to confirm the ruleset covers the release
-branch and excludes prep and Genkit PR branches. The rollout will add native
-release digests, LiteRT-LM smoke, and validation bundles to release-branch
-PRs. Hosted demos stay on `main`.
+branch and excludes prep and Genkit PR branches. Release-branch PRs run
+native release digests, LiteRT-LM smoke, and validation bundle checks. Hosted
+demos stay on `main`.
 
 [Genkit releases](./genkit-package) continue from `main`. Drop Genkit package
 changes from a core backport and treat the backport as adapted.
@@ -80,6 +81,26 @@ locally with the Flutter SDK pinned in
 `TMPDIR="$(mktemp -d)"` for VM tests so LiteRT-LM cache pruning stays isolated.
 
 Ensure migration/changelog docs reflect behavior in the release branch.
+
+**Backport** checks release-branch PRs using the tool from the PR's base.
+It verifies the main source commit, copied PR description and core
+changelog notes, or checks that the linked forward-port issue is open.
+
+Before and after the squash merge, `verify_release_candidate.sh` requires
+`main` for `M.m.0` or `release/M.m.x` for `M.m.N` with `N >= 1`. On a patch
+branch the version must advance by exactly one patch within the same line,
+using unsuffixed stable versions. Parity checks the patch branch through the
+prep's parent. For a minor prep it checks all patch lines and requires
+closed forward-port issues. To rehearse, fetch the
+owner branches and tags in a clean clone. Set `through` to the exact
+pre-prep SHA and `line` to the patch branch's `M.m` if applicable.
+
+```bash
+dart run tool/release/patch_branch.dart parity --line "$line" \
+  --branch "$through" --main refs/remotes/origin/main
+dart run tool/release/patch_branch.dart parity --main "$through" \
+  --require-closed-forward-ports
+```
 
 Review the capability inventory's printed exemptions against the release scope.
 Pack/case/profile bindings do not establish device qualification or waive
@@ -127,7 +148,8 @@ version alignment:
 ## 2. Version and docs updates
 
 - Update `pubspec.yaml` version.
-- Generate both core changelogs from the exact reviewed main revision as described below.
+- Generate both core changelogs from the exact reviewed target-branch revision
+  as described below.
 - Regenerate tracked path-dependency locks after the core bump. Workspace
   preparation updates the chat-app lock; run `dart pub get` in
   `packages/llamadart_validation` and `website/examples/observability` too.
@@ -416,18 +438,18 @@ rsync -a --delete \
   archives. CI's companion publish dry-run points the same override at the
   checkout; the real publish drops it.
 
-- `docs_version_cut.yml` generates the site snapshot from the core release
-  tag, rebases the snapshot-only commit onto current main, and pushes it
-  with `GITHUB_TOKEN`. This direct push starts no CI or demo deployment.
+- `docs_version_cut.yml` reads the docs from the core release tag and
+  commits only the snapshot files in a worktree based on current `main`.
+  It pushes with `GITHUB_TOKEN`, which starts no CI or demo deployment.
 - `docs_pages.yml`: deploys docs to GitHub Pages after successful
   `docs_version_cut.yml` runs (and can be manually triggered).
 - `ci.yml` (`deploy-chat-app`) and `laya_tetris_hf_static_deploy.yml`: the
   release-prep merge commit redeploys the hosted chat app and Laya Tetris
   demos. Each upload is skipped, without failing, only when a newer `main`
   commit changes that demo's inputs; the docs snapshot commit does not.
-- `release_on_prep_merge.yml`: runs after a release-prep PR is merged into
-  `main`, validates the prepared version, pushes the core release tag, waits
-  for pub.dev, publishes any missing companion package versions, and confirms
+- `release_on_prep_merge.yml` runs after a release-prep PR is merged into
+  `main` or `release/M.m.x`. It validates the version, pushes the core tag,
+  waits for pub.dev, publishes any missing companion versions, and confirms
   the GitHub Release exists. Before pushing any tag,
   `tool/release/companion_pub_preflight.dart` checks that every companion
   under `packages/` exists on pub.dev and otherwise stops with the
@@ -470,7 +492,7 @@ rsync -a --delete \
 ## 5. If automation is blocked
 
 If **Validate release state** fails after the prep lands, record the failed
-run, landed prep SHA and current main SHA. Reproduce the failure at the
+run, landed prep SHA and current target-branch SHA. Reproduce the failure at the
 landed SHA with its immutable message from `git show -s --format=%B`.
 Retry a transient failure at the same SHA after the dependency has recovered.
 
@@ -479,7 +501,7 @@ publication. Stop or drain existing publishers and hold reruns until the
 recovery lands. Reruns that predate the consumed-record guard can still use
 their original workflow.
 
-1. Look up the merged prep PR and its main ref update in GitHub repository
+1. Look up the merged prep PR and its target ref update in GitHub repository
    activity. The update must end at the landed prep SHA and start at its sole
    Git parent. The start of that update is `before`.
 2. Confirm the owner repository has no exact tag or GitHub Release for the
@@ -489,8 +511,8 @@ their original workflow.
    companion versions can stay. If any attempted version reached a tag,
    GitHub Release or pub.dev, use the partial-publication and resume procedure
    in [Propagation waits](#propagation-waits).
-3. Start an ordinary branch at current main. Apply the inverse with
-   `git revert --no-commit "$prep"`. If a later main change overlaps the
+3. Start an ordinary branch at the current target tip. Apply the inverse with
+   `git revert --no-commit "$prep"`. If a later change overlaps the
    prep, keep publication held and take the conflict to the blocking issue.
    Add one regular, nonexecutable record at
    `tool/release/recoveries/<full-landed-sha>.json`. Use the exact key order
@@ -501,8 +523,10 @@ their original workflow.
    {"version":"0.20.4","prep":"1111111111111111111111111111111111111111","before":"2222222222222222222222222222222222222222","pr":1234}
    ```
 
-4. Open a same-repository PR to main with an ordinary branch name and a
-   specific Changelog N/A. Run the protected-changelog policy against the
+4. Open a same-repository PR to the original target branch with an ordinary
+   branch name and a specific Changelog N/A. On a patch branch, add the
+   open release-blocking issue as the `Forward-port:` link. Run the
+   protected-changelog policy against the
    immutable event base and head and the tested merge commit. For a local
    check, fetch the PR merge ref with `git fetch origin "refs/pull/$number/merge"`
    using the recovery PR number. Resolve it with `git rev-parse FETCH_HEAD`,
@@ -514,45 +538,49 @@ their original workflow.
    `dart run tool/testing/check_released_changelog_sections.dart`.
    Compare the intended squash tree with the tested tree. Immediately before
    approving that squash, recheck artifact absence and confirm both the PR
-   head and the tested main base are current.
-5. Regenerate release notes from the recovered main and the last published
+   head and the tested base are current.
+5. Regenerate release notes from the recovered branch and the last published
    tag. The ledger records the failed prep and the recovery SHA. Attach the
    new ledger and receipt to a fresh prep for the same version. Run the
    normal CI, pre-tag checks and independent audit.
 
-For a multi-commit main update, a two-parent merge or unavailable GitHub
+For a multi-commit target update, a two-parent merge or unavailable GitHub
 boundary evidence, keep publication held and attach the PR and activity
 evidence, Git graph and candidate path diffs to the release-blocking issue.
 Retry missing reads. If the boundary still cannot be verified, a maintainer
-must independently establish the actual previous main tip and review a
+must independently establish the actual previous target tip and review a
 case-specific repair and its collector impact. Keep the marker absent and the
 protected-changelog policy active during that review.
 
-If the docs snapshot workflow cannot push directly to main, generate the
-snapshot from the release tag with `dart run tool/cut_version.dart VERSION`
-in `website/`. Rebase the versions, versioned docs and versioned sidebars
-onto current main and open a PR with a specific changelog N/A.
+If the docs snapshot workflow cannot push directly to `main`, create a PR
+branch in a worktree at current `origin/main`. From `website/` in a separate
+worktree at the release tag, run
+`dart run tool/cut_version.dart VERSION /absolute/path/to/main-worktree/website`.
+Commit `website/versions.json`, `website/versioned_docs/` and
+`website/versioned_sidebars/` in the PR worktree. Open a PR to `main` with
+a specific changelog N/A.
 
 ## Collect and review core release notes
 
 Use the approved release version, its previous core tag and the exact
-current main SHA. Run from the root with full tag history.
+current target-branch SHA. Set `base_ref` to `main` or `release/M.m.x`. Run
+from the root with full tag history.
 
 ```bash
 dart pub get
 dart tool/release/collect_pr_changelog.dart --version "$version" \
-  --from "$previous_tag" --through "$through"
+  --from "$previous_tag" --through "$through" --base-ref "$base_ref"
 dart tool/release/collect_pr_changelog.dart --version "$version" \
-  --from "$previous_tag" --through "$through" --write
+  --from "$previous_tag" --through "$through" --base-ref "$base_ref" --write
 ```
 
 The collector prefers the landed commit's changelog after removing Git
 attribution. It rejoins adjacent lines that match GitHub's greedy wrap at 72
 Unicode code points. If a `- ` row could be a continuation or a new bullet,
 the ledger identifies the commit and boundary. The collector then reads the
-authored description through the verified merged-main PR association. The
-description uses one physical line per entry. Missing or conflicting
-provenance blocks generation.
+authored description through the verified PR association on the target
+branch. The description uses one physical line per entry. Missing or
+conflicting provenance blocks generation.
 
 Land individual PRs, including independent package release preps, with
 **Squash and merge**. Keep the `(#N)` subject suffix and the `## Changelog`
@@ -572,10 +600,10 @@ on the reviewed PR description to compute the digest.
 {"version":"0.20.7","sha":"48af8ec5bc294620bd63a1e1818f6c6593afb5d3","pr":2180,"sectionSha256":"c99db03b6bdb4ef1bc771c35d31d2c766d52dd77f21fe94896266271ceb0a14e"}
 ```
 
-Land the record on `main` before pinning `--through`. The collector reads
+Land the record on the target branch before pinning `--through`. The collector reads
 the regular non-executable file from that commit and requires the record's
 version to match the release being prepared. It verifies through GitHub
-that the PR merged a single commit to this repository's `main`, that its
+that the PR merged a single commit to this repository's target branch, that its
 merge SHA matches the record, and that its changelog still has the reviewed
 digest. The ledger records the resolution path.
 
@@ -600,13 +628,14 @@ same-repository PR recheck the protected changelogs. After removing
 `release-prep` from an ordinary branch, later title or label changes continue
 to apply the ordinary PR rules.
 
-A push to `main` or completion of **Docs Version Cut** runs the verifier for
-open core release preps. Find **Verify release prep (#PR)** in the **PR
-changelog** run on `main`. Its log records the PR head and the tested base.
+A push to a target branch rechecks its open core release preps. Completion
+of **Docs Version Cut** rechecks open preps targeting `main`. Find
+**Verify release prep (#PR)** in the **PR changelog** run. Its log records the
+PR head and the tested base.
 GitHub Actions cache access is disabled for the verifier job, which runs
 code from the tested merge tree.
-When `main` advances, regenerate the ledger, review and receipt and update the
-PR description to trigger a fresh PR run. GitHub's **Re-run jobs** button
+When the target branch advances, regenerate the ledger, review and receipt
+and update the PR description. GitHub's **Re-run jobs** button
 reuses the original event. Before merging, require a completed success from
 the latest run for the current head, base and description.
 End the receipt block with no trailing attribution or whitespace.
@@ -616,7 +645,8 @@ message or the exact PR title and body. A rebase merge, a merge commit or an
 edited squash message can fail the publisher after merge. Before creating a
 tag, the publisher reads the receipt from the immutable squash message and
 verifies it with the landed tree. Refresh the ledger, review and receipt if
-main moves. Retry at the same landed SHA even when its tag already exists.
+the target branch moves. Retry at the same landed SHA even when its tag
+already exists.
 
 For a local rehearsal, fetch the same headline and body. Set `number` to the
 release-prep PR number.
