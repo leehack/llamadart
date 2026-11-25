@@ -9,23 +9,35 @@ final _releaseVersion = RegExp(r'^\d+\.\d+\.\d+$');
 /// `docusaurus docs:version` produced: `docs/` is copied to
 /// `versioned_docs/version-<version>/`, `sidebars.json` to
 /// `versioned_sidebars/version-<version>-sidebars.json`, and the version is
-/// prepended to `versions.json`, which makes it the latest release.
+/// inserted in descending version order in `versions.json`.
 ///
+/// Writes the snapshot under [targetSiteRoot] when supplied, otherwise [siteRoot].
 /// Returns false, changing nothing, when [version] is already published.
-bool cutDocsVersion(String siteRoot, String version) {
+bool cutDocsVersion(String siteRoot, String version, {String? targetSiteRoot}) {
   if (!_releaseVersion.hasMatch(version)) {
     throw ArgumentError.value(version, 'version', 'must be MAJOR.MINOR.PATCH');
   }
-  final versionsFile = File(p.join(siteRoot, 'versions.json'));
+  final outputRoot = targetSiteRoot ?? siteRoot;
+  final versionsFile = File(p.join(outputRoot, 'versions.json'));
   final versions = (jsonDecode(versionsFile.readAsStringSync()) as List)
       .cast<String>();
   if (versions.contains(version)) return false;
+  final parts = version.split('.').map(int.parse).toList();
+  final index = versions.indexWhere((existing) {
+    final existingParts = existing.split('.').map(int.parse).toList();
+    for (var i = 0; i < parts.length; i++) {
+      final comparison = parts[i].compareTo(existingParts[i]);
+      if (comparison != 0) return comparison > 0;
+    }
+    return false;
+  });
+  versions.insert(index < 0 ? versions.length : index, version);
 
   final target = Directory(
-    p.join(siteRoot, 'versioned_docs', 'version-$version'),
+    p.join(outputRoot, 'versioned_docs', 'version-$version'),
   );
   final sidebarTarget = File(
-    p.join(siteRoot, 'versioned_sidebars', 'version-$version-sidebars.json'),
+    p.join(outputRoot, 'versioned_sidebars', 'version-$version-sidebars.json'),
   );
   if (target.existsSync() || sidebarTarget.existsSync()) {
     throw StateError(
@@ -53,7 +65,7 @@ bool cutDocsVersion(String siteRoot, String version) {
     );
 
   versionsFile.writeAsStringSync(
-    '${const JsonEncoder.withIndent('  ').convert([version, ...versions])}\n',
+    '${const JsonEncoder.withIndent('  ').convert(versions)}\n',
   );
   return true;
 }

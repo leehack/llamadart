@@ -29,36 +29,28 @@ jobs:
       - name: Install website dependencies
         run: (cd website && dart pub get)
 
-      - name: Cut docs version
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "Target docs version: ${VERSION}"
-
-          if [[ -f website/versions.json ]] && grep -q "\"${VERSION}\"" website/versions.json; then
-            echo "Version ${VERSION} already exists; skipping."
-            exit 0
-          fi
-
-          (cd website && dart run tool/cut_version.dart "${VERSION}")
-
-      - name: Commit versioned docs
+      - name: Cut and commit versioned docs
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
+          echo "Target docs version: ${VERSION}"
+
+          git fetch --no-tags origin refs/heads/main
+          worktree="$(mktemp -d)"
+          git worktree add --detach "$worktree" FETCH_HEAD
+          trap 'git worktree remove --force "$worktree"' EXIT
+
+          # Read the tagged docs and stage the snapshot against current main.
+          (cd website && dart run tool/cut_version.dart "$VERSION" "$worktree/website")
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          cd "$worktree"
           git add website/versions.json website/versioned_docs website/versioned_sidebars
           if git diff --cached --quiet; then
             echo "Nothing to push."
             exit 0
           fi
           git commit -m "docs: cut version ${VERSION}"
-          git fetch origin main
-          git rebase origin/main
-          if [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]]; then
-            echo "Nothing to push."
-            exit 0
-          fi
           git push origin HEAD:main
