@@ -10,12 +10,19 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: main-macos
+  cancel-in-progress: false
+
 jobs:
   changes:
     name: Select cumulative macOS checks
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       plan: ${{ steps.select.outputs.plan }}
       companions: ${{ steps.select.outputs.companions }}
@@ -33,6 +40,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - id: select
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: python3 tool/ci/select_jobs.py select --main-macos
 
   studio-macos:

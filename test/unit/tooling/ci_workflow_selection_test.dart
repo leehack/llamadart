@@ -1652,7 +1652,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     },
   );
 
-  test('main macOS evaluates every push and requires every selected job', () {
+  test('main macOS keeps the active run and requires selected jobs', () {
     final workflow = readWorkflow('main_macos');
     expect(workflow['on'], {
       'push': {
@@ -1664,7 +1664,10 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
       ],
     });
     expect(workflow['permissions'], {'contents': 'read'});
-    expect(workflow['concurrency'], isNull);
+    expect(workflow['concurrency'], {
+      'group': 'main-macos',
+      'cancel-in-progress': false,
+    });
     final jobs = workflow['jobs'] as Map;
     expect(jobs.keys.toSet(), {
       'changes',
@@ -1675,6 +1678,14 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
       'result',
     });
     final changes = jobs['changes'] as Map;
+    expect(changes['permissions'], {'contents': 'read', 'actions': 'read'});
+    for (final name in jobs.keys.where((name) => name != 'changes')) {
+      expect(
+        jobs[name]['permissions'],
+        isNull,
+        reason: '$name inherits contents-only access',
+      );
+    }
     expect(changes['if'], "github.ref == 'refs/heads/main'");
     const outputs = [
       'plan',
@@ -1701,6 +1712,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
       selector.last['run'],
       'python3 tool/ci/select_jobs.py select --main-macos',
     );
+    expect(selector.last['env'], {'GITHUB_TOKEN': r'${{ github.token }}'});
     final result = jobs['result'] as Map;
     expect(result['if'], r'${{ always() }}');
     expect(

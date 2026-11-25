@@ -1303,6 +1303,7 @@ class MainMacosLaneTest(unittest.TestCase):
             'GITHUB_EVENT_NAME': event, 'GITHUB_EVENT_PATH': str(payload),
             'GITHUB_SHA': head, 'GITHUB_REF': ref, 'GITHUB_OUTPUT': str(output),
             'GITHUB_REPOSITORY': 'leehack/llamadart', 'GITHUB_RUN_ID': '100',
+            'GITHUB_TOKEN': 'fixture-token',
         }
         with (patch.dict(os.environ, env), patch.object(sys, 'argv', argv),
               patch.object(sys, 'stdout', stdout), patch.object(sys, 'stderr', stderr),
@@ -1310,11 +1311,17 @@ class MainMacosLaneTest(unittest.TestCase):
                     return_value=io.StringIO(json.dumps({'workflow_runs': list(runs)}))) as api):
             self.assertEqual(ci.main(), 0, stderr.getvalue())
         if macos:
-            api.assert_called_once_with(
+            api.assert_called_once()
+            (request,), options = api.call_args
+            self.assertEqual(
+                request.full_url,
                 'https://api.github.com/repos/leehack/llamadart/actions/workflows/main_macos.yml/runs'
                 '?branch=main&status=success&per_page=2',
-                timeout=10,
             )
+            self.assertEqual(request.get_method(), 'GET')
+            self.assertEqual(request.get_header('Authorization'), 'Bearer fixture-token')
+            self.assertNotIn('Authorization', request.headers)
+            self.assertEqual(options, {'timeout': 10})
         else:
             api.assert_not_called()
         return json.loads(stdout.getvalue())
@@ -1408,6 +1415,34 @@ class MainMacosLaneTest(unittest.TestCase):
         self.assertFalse(ci.companion_job_selected(plan))
         self.assertEqual(plan['test-other-os-matrix'], [])
         self.assertEqual(plan['desktops'], [])
+
+    def test_older_rerun_uses_full_macos_when_successful_baseline_is_ahead(self):
+        self.write('README.md')
+        newer = self.commit('newer successful run')
+        self.git('checkout', '-q', '--detach', self.base)
+        plan = self.select(macos=True, runs=[self.run_at(newer)])
+        self.assertEqual(plan['test-other-os-matrix'], list(ci.MACOS_SHARDS))
+        self.assertEqual(plan['desktops'], ['macos-15'])
+
+    def test_macos_aggregate_requires_companion_job_for_memory_or_cache_alone(self):
+        for path, flag in (
+            ('packages/llamadart_validation/test/process_memory_test.dart', 'macos-validation-memory'),
+            ('example/chat_app/pubspec.lock', 'apple-cache'),
+        ):
+            with self.subTest(path=path):
+                plan = ci.restrict_macos_plan(ci.select([path]), macos=True, other=False)
+                self.assertEqual(plan['companions'], [])
+                self.assertTrue(plan[flag])
+                needs = {
+                    'changes': {'result': 'success'},
+                    'test-other-os': {'result': 'skipped'},
+                    'companion-packages': {'result': 'success'},
+                    'studio-macos': {'result': 'skipped'},
+                    'desktop': {'result': 'skipped'},
+                }
+                self.assertEqual(ci.aggregate(plan, needs, main_macos=True), [])
+                needs['companion-packages']['result'] = 'skipped'
+                self.assertTrue(ci.aggregate(plan, needs, main_macos=True))
 
     def test_main_macos_aggregate_rejects_missing_cancelled_or_skipped_job(self):
         plan = self.select(macos=True)

@@ -537,10 +537,11 @@ def last_successful_main_macos_head():
     run_id = int(os.environ['GITHUB_RUN_ID'])
     if not re.fullmatch(r'[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+', repository):
         raise ValueError('Invalid repository')
-    # The run list is public. No workflow token or Actions permission is needed.
     url = (f'https://api.github.com/repos/{repository}/actions/workflows/main_macos.yml/runs'
            '?branch=main&status=success&per_page=2')
-    with urllib.request.urlopen(url, timeout=10) as response:
+    request = urllib.request.Request(url)
+    request.add_unredirected_header('Authorization', 'Bearer ' + os.environ['GITHUB_TOKEN'])
+    with urllib.request.urlopen(request, timeout=10) as response:
         runs = json.load(response)['workflow_runs']
     for run in runs:
         if (run['head_branch'] == 'main' and run['id'] != run_id
