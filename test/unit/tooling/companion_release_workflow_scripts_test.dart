@@ -71,7 +71,7 @@ case "$1" in
       '-s --format=%P') echo "${STUB_PARENTS:-$STUB_BASE}" ;;
       '-s --format=%s') echo "${STUB_SUBJECT:-Prepare release (#104)}" ;;
       '-s --format=%B') echo 'Immutable release message' ;;
-      *) printf 'name: llamadart\nversion: 0.12.9\n' ;;
+      *) printf 'name: llamadart\nversion: %s\n' "${STUB_PREVIOUS_VERSION:-0.12.9}" ;;
     esac
     ;;
   ls-remote)
@@ -1128,7 +1128,12 @@ void main() {
       () {
         const base = 'release/0.21.x';
         const version = '0.21.1';
-        final run = _runRelease(workflow, patchRelease(version), baseRef: base);
+        final run = _runRelease(
+          workflow,
+          patchRelease(version),
+          baseRef: base,
+          env: {'STUB_PREVIOUS_VERSION': '0.21.0'},
+        );
         expect(run.problems, isEmpty);
         expect(run.validate.exitCode, 0, reason: '${run.validate.stderr}');
         expect(run.publish?.exitCode, 0, reason: '${run.publish?.stderr}');
@@ -1159,6 +1164,34 @@ void main() {
         expect(run.validate.exitCode, isNonZero);
         expect(run.validate.stderr, contains(base));
         expect(run.validate.stderr, contains(version));
+        expect(run.publish, isNull);
+        expect(_pushedAnyTag(run.calls), isFalse);
+      });
+    }
+
+    for (final (base, previous, version) in [
+      ('release/0.21.x', '0.21.0', '0.21.2'),
+      ('release/0.21.x', '0.20.0', '0.21.1'),
+      ('release/0.21.x', '0.21.2', '0.21.1'),
+      ('release/0.21.x', '0.21.2', '0.21.2'),
+      ('release/0.21.x', '0.21.0', '0.21.1+1'),
+      ('release/0.21.x', '0.21.0+1', '0.21.1'),
+      ('release/0.21.x', '0.21.18446744073709551616', '0.21.1'),
+    ]) {
+      test('rejects patch sequence $previous to $version on $base', () {
+        final run = _runRelease(
+          workflow,
+          patchRelease(version),
+          baseRef: base,
+          env: {'STUB_PREVIOUS_VERSION': previous},
+        );
+        expect(run.validate.exitCode, isNonZero);
+        expect(run.validate.stderr, contains('next patch on $base'));
+        expect(run.validate.stderr, contains('$previous -> $version'));
+        expect(
+          run.calls,
+          isNot(contains(startsWith('dart run $_parityScript'))),
+        );
         expect(run.publish, isNull);
         expect(_pushedAnyTag(run.calls), isFalse);
       });

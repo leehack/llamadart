@@ -50,6 +50,15 @@ void main() {
   final jobs = workflow['jobs'] as YamlMap;
   final verify = jobs['release-prep'] as YamlMap;
 
+  test('base pushes use separate concurrency groups', () {
+    final concurrency = workflow['concurrency'] as YamlMap;
+    expect(
+      concurrency['group'],
+      r"pr-changelog-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref_name) || 'main' }}",
+    );
+    expect(concurrency['cancel-in-progress'], isFalse);
+  });
+
   test('the PR workflow keeps body edits separate from heavy CI', () {
     expect(pullRequest['branches'], ['main', patchBranch]);
     expect(pullRequest['types'], [

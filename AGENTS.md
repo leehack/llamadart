@@ -157,6 +157,9 @@ analyze and the relevant tests before the final commit.
 ## Changelog and releases
 
 - Cut patch releases from `release/M.m.x` and land fixes on `main` first.
+  Backport the release tooling before the first patch from a branch that
+  predates the rollout. Backport patch changelog imports before the
+  `0.22.0` prep.
   Follow the [release workflow](website/docs/maintainers/release-workflow.md)
   for backports and forward-port exceptions.
 - Every PR has a top-level `## Changelog` with one-line, column-zero
@@ -194,7 +197,7 @@ analyze and the relevant tests before the final commit.
 
 ## Pull requests
 
-- Use squash merges only on release branches. A backport PR copies the
+- Release branches accept only squash merges. A backport PR copies the
   authored main PR body and adds both `Backport of <PR URL>` and
   `(cherry picked from commit <40-hex main SHA>)` under `## Summary`.
 - `main` stays production-ready. The PR body follows
