@@ -141,6 +141,19 @@ void checkRuntimeGenerationConfig(
   if (params.presencePenalty != 0) {
     require(capabilities?.supportsPresencePenalty, 'presencePenalty');
   }
+  if (params.ignoreEos) {
+    require(capabilities?.supportsIgnoreEos, 'ignoreEos');
+    if (shouldUseStructuredGeneration(request.output) ||
+        ((request.tools?.isNotEmpty ?? false) &&
+            request.toolChoice != genkit.ToolChoice.none)) {
+      throw genkit.GenkitException(
+        'ignoreEos cannot be combined with grammar-constrained output or '
+        'active tools. Set ignoreEos to false or disable output constraints '
+        'and use ToolChoice.none.',
+        status: genkit.StatusCode.unimplemented,
+      );
+    }
+  }
   if (params.thinkingBudget != null) {
     require(capabilities?.supportsThinkingBudget, 'thinkingBudget');
   }

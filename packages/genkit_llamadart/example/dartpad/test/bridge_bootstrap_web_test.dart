@@ -71,7 +71,7 @@ void main() {
     await bootstrapLiteRtLm();
     expect(
       (globalContext[_liteRtModule] as JSString).toDart,
-      'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm',
+      'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm',
     );
     expect(globalContext[_constructor].strictEquals(sentinel).toDart, isTrue);
   });

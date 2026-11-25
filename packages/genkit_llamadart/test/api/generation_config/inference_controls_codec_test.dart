@@ -35,6 +35,24 @@ void main() {
     expect(const LlamaDartGenerationConfig().toJson(), isEmpty);
   });
 
+  test(
+    'ignoreEos is a nullable boolean in the generation schema and codec',
+    () {
+      final properties = generationConfigSchema()['properties'] as Map;
+      expect(properties['ignoreEos'], {
+        'type': ['boolean', 'null'],
+      });
+      for (final value in [true, false]) {
+        final map = {'ignoreEos': value};
+        expect(LlamaDartGenerationConfig.fromJson(map).toJson(), map);
+      }
+      expect(
+        LlamaDartGenerationConfig.fromJson({'ignoreEos': null}).toJson(),
+        isEmpty,
+      );
+    },
+  );
+
   test('every speculative tuning value and source kind round trips', () {
     for (final source in [
       ModelSource.path('/models/draft.gguf', format: ModelFormat.gguf),
@@ -168,6 +186,7 @@ void main() {
     {'streamBatchTokenThreshold': 0},
     {'streamBatchByteThreshold': 1.5},
     {'reusePromptPrefix': 'false'},
+    {'ignoreEos': 'AUDIT_SECRET'},
     {'speculativeDecoding': 1},
     {'thinkingBudget': []},
     {

@@ -42,5 +42,5 @@ Future<void> bootstrapBridge({
 
 Future<void> bootstrapLiteRtLm() async {
   globalContext['__llamadartLiteRtLmModuleUrl'] =
-      'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/+esm'.toJS;
+      'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/+esm'.toJS;
 }

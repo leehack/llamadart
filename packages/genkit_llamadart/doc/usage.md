@@ -367,6 +367,7 @@ defaults:
 - `minP: 0.0`
 - `penalty: 1.1`
 - `presencePenalty: 0.0`
+- `ignoreEos: false`
 - `reusePromptPrefix: true`
 - `streamBatchTokenThreshold: 8` and `streamBatchByteThreshold: 512`
 - `maxTokens: 4096`
@@ -379,6 +380,13 @@ Additional request controls include:
 - `seed`: an optional deterministic sampling seed
 - `sourceLangCode` and `targetLangCode`: language hints for translation-style templates
 - `chatTemplateKwargs`: extra globals passed through to the model chat template
+
+For bounded text benchmarks on native llama.cpp, use
+`LlamaDartGenerationConfig(ignoreEos: true, maxTokens: 128)`. Explicit stops,
+context limits and cancellation still apply. Check
+`(await plugin.inspectModel(name)).capabilities?.supportsIgnoreEos` after
+loading the model. WebGPU, LiteRT-LM, grammar-constrained output and active
+tools reject the option with Genkit `UNIMPLEMENTED`.
 
 ### Model-specific sampling
 
