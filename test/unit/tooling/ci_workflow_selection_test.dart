@@ -17,12 +17,17 @@ Map<String, dynamic> readWorkflow(String name) =>
         )
         as Map<String, dynamic>;
 
-Future<Map<String, dynamic>> selected(List<String> paths) async {
+Future<Map<String, dynamic>> selected(
+  List<String> paths, {
+  bool pullRequest = false,
+}) async {
   final result = await Process.run(Platform.isWindows ? 'python' : 'python3', [
     '-c',
     'import json,runpy,sys; m=runpy.run_path("tool/ci/select_jobs.py"); '
-        'print(json.dumps(m["select"](json.loads(sys.argv[1]))))',
+        'print(json.dumps(m["select"](json.loads(sys.argv[1]), '
+        'pull_request=json.loads(sys.argv[2]))))',
     jsonEncode(paths),
+    jsonEncode(pullRequest),
   ]);
   expect(result.exitCode, 0, reason: '${result.stderr}');
   return jsonDecode(result.stdout as String) as Map<String, dynamic>;
@@ -1587,8 +1592,6 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
         (workflow['on']['pull_request'] as Map).containsKey('paths'),
         isFalse,
       );
-      // Main builds every target its push selects, including the macOS
-      // desktop and Android builds a PR defers when it leaves their inputs.
       expect(workflow['on']['push'], {
         'branches': ['main'],
       });
@@ -1597,7 +1600,16 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
         r"${{ github.event_name == 'pull_request' }}",
       );
       expect(workflow['concurrency']['group'], contains('github.run_id'));
-      expect((await selected(['hook/build.dart']))['desktops'], hasLength(3));
+      const runtime = ['lib/llamadart.dart'];
+      const desktops = ['ubuntu-24.04', 'windows-2022', 'macos-15'];
+      expect((await selected(runtime))['desktops'], desktops);
+      final pr = await selected(runtime, pullRequest: true);
+      expect(pr['desktops'], ['ubuntu-24.04']);
+      expect(pr['windows-native'], isTrue);
+      expect(
+        (await selected(['hook/build.dart'], pullRequest: true))['desktops'],
+        desktops,
+      );
       expect(
         (await selected([
           'packages/llamadart_validation/assets/profiles/chat-gguf-cpu.json',

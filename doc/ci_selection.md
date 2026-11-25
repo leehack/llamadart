@@ -14,7 +14,7 @@ PR. A path filter must not prevent a required workflow from reporting.
 | PR description template | Markdown Tests (template and release-note contracts) | None |
 | Root `.dockerignore` | Markdown Tests | None |
 | `.github/CODEOWNERS` or `.pubignore` | Root static checks and Linux VM tests (ownership and package archive contracts) | None |
-| Root `.gitignore` | Full fallback. Root ignore rules affect the clean-tree checks in the Model Store, Apple companions and validation bundles. | Linux and Windows desktops, Web and iOS inputs on PRs. All targets on pushes. |
+| Root `.gitignore` | Full fallback. Root ignore rules affect the clean-tree checks in the Model Store, Apple companions and validation bundles. | Linux desktop, Web and iOS inputs on PRs. All targets on pushes. |
 | `codecov.yml` | Linux VM tests. Coverage calculation and Codecov upload run after merge. | None |
 | `.gitattributes` | Full fallback. Git attributes can change checkout bytes across platforms, including hash-checked fixtures. | Full fallback targets |
 | Listed local tools, native Python test fixtures and PR head-update evidence schema | Root static checks and Markdown Tests | None |
@@ -36,10 +36,10 @@ PR. A path filter must not prevent a required workflow from reporting.
 | Basic App, Laya Command Bar, Laya Tetris, llamadart CLI, llamadart Server, TUI Coding Agent | Root static checks, Example Package Tests and Markdown Tests. Basic App files imported or read by root suites also select Linux VM and those suites' Chrome or native lanes, including the smoke YAML and native C++ reference | None |
 | Training notebook (`example/training_notebook/`) | Root static checks including the package archive, and Markdown Tests | None |
 | Root `test/**` (extant Linux-only leaf suite on PR vs host-sensitive suite, helper/fixture, deleted/unknown, or push) | Static, all Linux VM tests, Chrome and Windows host tests; Mac native shards only when `test_shards.dart hosts-json` reports host-relevant or on helper/fixture/push/probe-failure; shared fixtures/helpers also run Studio, `studio-macos` and Apple cache | None |
-| Browser backend trees (`lib/src/backends/web/**`, `lib/src/backends/webgpu/**`) | Non-Mac full graph (Linux, Chrome, Windows native, Ubuntu Studio, Web Chat, Genkit, Model Store, examples) with zero Mac allocations | Linux, Windows desktops; apps (PR defers Android) |
-| Root runtime/hooks/dependencies, unclassified example inputs, conditional backend entrypoints | Full behavioral graph | All targets; a PR defers macOS desktop and Android unless it changes their build inputs (`.flutter-version` included for `macos-15`) |
-| Workflow/selector or unclassified paths | Full graph including synthetic artifact transport (workflows/selector) | All targets; a PR defers `macos-15` and `android` unless it changes their build inputs (`validation_bundles.yml`, `select_jobs.py`, `hook/`, `lib/src/hook/`, `pubspec.*`, `.flutter-version` for `macos-15`, `tool/testing/validation*`, or compiled `packages/llamadart_validation/`) |
-| Missing, empty or invalid diff; explicit manual bundle run | Full fallback | All targets (`macos-15` retained) |
+| Browser backend trees (`lib/src/backends/web/**`, `lib/src/backends/webgpu/**`) | Non-Mac full graph (Linux, Chrome, Windows native, Ubuntu Studio, Web Chat, Genkit, Model Store, examples) with zero Mac allocations | Linux desktop, Web and iOS inputs on PRs. Windows desktop and Android also run on pushes. |
+| Root runtime/hooks/dependencies, unclassified example inputs, conditional backend entrypoints | Full behavioral graph | All targets; a PR defers Windows and macOS desktops and Android unless it changes their build inputs (`.flutter-version` included for both desktops) |
+| Workflow/selector or unclassified paths | Full graph including synthetic artifact transport (workflows/selector) | All targets; a PR defers `windows-2022`, `macos-15` and `android` unless it changes their build inputs (`validation_bundles.yml`, `select_jobs.py`, `hook/`, `lib/src/hook/`, `pubspec.*`, `.flutter-version` for Windows and macOS desktops, `tool/testing/validation*`, or compiled `packages/llamadart_validation/`) |
+| Missing, empty or invalid diff; explicit manual bundle run | Full fallback | All targets |
 
 Selections combine for mixed changes. Version checks already executed by the
 root static job are not duplicated in the docs-only job. Root suites import,
@@ -285,16 +285,19 @@ retaining each run preserves the checks selected for every merge (#1646).
 
 Obsolete PR bundle runs cancel. Manual and `main` push bundle runs have unique
 concurrency groups and do not cancel one another. Every push to `main` builds
-the bundle targets its change selects. A pull request defers the macOS desktop
-and Android builds to that push unless it changes their own build inputs
-(`POST_MERGE_TARGETS` and `builds_target` in the selector): the bundle
-workflow or selector, `hook/`, `lib/src/hook/` (native pins), root
+the bundle targets its change selects. A pull request defers Windows and macOS
+desktop builds and the Android build to that push unless it changes their build
+inputs. The selector keeps these builds on PRs that change the bundle workflow,
+the selector, `hook/`, `lib/src/hook/` (native pins), root
 `pubspec.yaml`/`pubspec.lock`, compiled validation package code or bundle
-tooling (`tool/testing/validation*`), and for Android also chat app sources
+tooling (`tool/testing/validation*`). The Windows and macOS desktop builds also
+select on `.flutter-version` changes. Android also selects on chat app sources
 outside its tests and other platforms' folders, and the Apple companions'
 `lib/` and `pubspec.yaml`. Their Dart code still compiles in the PR's Linux
-desktop and Web builds. A deferred target is unselected, so `Validation bundle
-result` expects it skipped. A break in a deferred build first shows on `main`.
+desktop and Web builds. A deferred target is absent from the matrix.
+`Validation bundle result` still requires every selected matrix to pass, even
+when `Desktop windows-2022` is absent. A break in a deferred build first shows on
+`main`.
 
 ## Host OS lanes
 
