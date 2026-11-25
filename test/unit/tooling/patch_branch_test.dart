@@ -41,6 +41,65 @@ String _metadata(String sha, {int pr = 51}) =>
 String _backport(String sha, {int pr = 51, String body = _authored}) => body
     .replaceFirst('## Summary\n', '## Summary\n${_metadata(sha, pr: pr)}\n');
 
+const _historicalPrepDocs = [
+  'CHANGELOG.md',
+  'README.md',
+  'example/dartpad_gguf/README.md',
+  'packages/llamadart_litert_lm_flutter/CHANGELOG.md',
+  'packages/llamadart_litert_lm_flutter/README.md',
+  'packages/llamadart_llama_cpp_flutter/CHANGELOG.md',
+  'packages/llamadart_llama_cpp_flutter/README.md',
+  'packages/llamadart_stable_diffusion_flutter/CHANGELOG.md',
+  'packages/llamadart_stable_diffusion_flutter/README.md',
+  'website/docs/changelog/recent-releases.md',
+  'website/docs/examples/dartpad-gguf.md',
+  'website/docs/getting-started/installation.md',
+  'website/docs/guides/image-generation.md',
+  'website/docs/integrations/choosing-an-api.md',
+];
+const _companion = 'llamadart_llama_cpp_flutter';
+const _companionPubspec = 'packages/$_companion/pubspec.yaml';
+const _chatLock = 'example/chat_app/pubspec.lock';
+
+void _writePrepFiles(_Repository repo, String version, List<String> docs) {
+  final companions = [
+    'llamadart_litert_lm_flutter',
+    _companion,
+    'llamadart_stable_diffusion_flutter',
+  ];
+  repo.write('pubspec.yaml', 'name: llamadart\nversion: $version\n');
+  for (final name in companions) {
+    repo.write(
+      'packages/$name/pubspec.yaml',
+      'name: $name\nversion: $version\ndependencies:\n  llamadart: any\n',
+    );
+  }
+  for (final (path, rootPath) in [
+    (_chatLock, '../..'),
+    ('packages/llamadart_validation/pubspec.lock', '../..'),
+    ('website/examples/observability/pubspec.lock', '../../..'),
+  ]) {
+    repo.write(
+      path,
+      'packages:\n'
+      '${_lockEntry('llamadart', rootPath, version)}'
+      '${path == _chatLock ? companions.map((name) => _lockEntry(name, '../../packages/$name', version)).join() : ''}',
+    );
+  }
+  for (final path in docs) {
+    repo.write(path, 'Install version $version.\n');
+  }
+}
+
+String _lockEntry(String name, String path, String version) =>
+    '  $name:\n'
+    '    dependency: "direct main"\n'
+    '    description:\n'
+    '      path: "$path"\n'
+    '      relative: true\n'
+    '    source: path\n'
+    '    version: "$version"\n';
+
 Matcher _failure(String diagnostic) => isA<FormatException>().having(
   (e) => e.message,
   'diagnostic',
@@ -237,6 +296,115 @@ void main() {
         ),
       );
     }
+  });
+
+  for (final (testName, before, after, docs) in [
+    (
+      'replays the 0.20.8 prep file set through guard and parity',
+      '0.20.7',
+      '0.20.8',
+      _historicalPrepDocs,
+    ),
+    (
+      'replays the 0.21.1 prep file set through guard and parity',
+      '0.21.0',
+      '0.21.1',
+      [
+        ..._historicalPrepDocs,
+        'website/docs/platforms/apple-setup.md',
+        'MIGRATION.md',
+        'doc/changelog_archive.md',
+      ],
+    ),
+  ]) {
+    test(testName, () async {
+      _writePrepFiles(repo, before, docs);
+      repo.anchorPrepBase(before);
+      repo.checkoutRelease();
+      _writePrepFiles(repo, after, docs);
+      final prep = repo.prep(after, pr: 52);
+      repo.git(['tag', 'v$after']);
+      expect(
+        await repo.guard(null, head: 'release/prep-$after'),
+        contains('release prep'),
+      );
+      expect(await repo.parity(), contains('$prep prep'));
+
+      repo.write('lib/branch_only.dart', 'void fix() {}');
+      repo.git(['add', '-A']);
+      repo.git(['commit', '--amend', '--no-edit', '-q']);
+      repo.git(['tag', '-f', 'v$after']);
+      await expectLater(
+        repo.guard(null, head: 'release/prep-$after'),
+        throwsA(_failure('lib/branch_only.dart')),
+      );
+      await expectLater(
+        repo.parity(),
+        throwsA(_failure('lib/branch_only.dart')),
+      );
+    });
+  }
+
+  for (final (path, old, replacement, label) in [
+    (
+      'pubspec.yaml',
+      '',
+      'dependency_overrides:\n  yaml: any\n',
+      'core dependency overrides',
+    ),
+    ('pubspec.yaml', '', 'hooks:\n  user_defines: {}\n', 'core hooks'),
+    (
+      _companionPubspec,
+      'llamadart: any',
+      'llamadart: ^1.0.1',
+      'companion dependencies',
+    ),
+    (_chatLock, '    source: path', '    source: hosted', 'lock source'),
+    (
+      _chatLock,
+      '    version: "1.0.1"',
+      '    version: "1.0.9"',
+      'lock version skew',
+    ),
+  ]) {
+    test('prep rejects $label in guard and parity', () async {
+      _writePrepFiles(repo, '1.0.0', []);
+      repo.anchorPrepBase('1.0.0');
+      repo.checkoutRelease();
+      _writePrepFiles(repo, '1.0.1', []);
+      final original = File('${repo.root.path}/$path').readAsStringSync();
+      repo.write(
+        path,
+        old.isEmpty
+            ? original + replacement
+            : original.replaceFirst(old, replacement),
+      );
+      repo.commit(
+        'Prepare llamadart 1.0.1 release (#52)',
+        file: 'CHANGELOG.md',
+      );
+      repo.git(['tag', 'v1.0.1']);
+      await expectLater(
+        repo.guard(null, head: 'release/prep-1.0.1'),
+        throwsA(_failure(path)),
+      );
+      await expectLater(repo.parity(), throwsA(_failure(path)));
+    });
+  }
+
+  test('prep rejects moving code into a whitelisted README', () async {
+    repo.write('lib/x.dart', 'void fix() {}\n');
+    repo.anchorPrepBase('1.0.0');
+    repo.checkoutRelease();
+    repo.git(['config', 'diff.renames', 'true']);
+    repo.git(['mv', 'lib/x.dart', 'README.md']);
+    repo.prep('1.0.1', pr: 52);
+    repo.git(['tag', 'v1.0.1']);
+    await expectLater(
+      repo.guard(null, head: 'release/prep-1.0.1'),
+      throwsA(_failure('lib/x.dart')),
+    );
+    await expectLater(repo.parity(), throwsA(_failure('lib/x.dart')));
   });
 
   test('a routed prep PR requires event commit identities', () async {
@@ -572,7 +740,8 @@ class _Repository {
   }
 
   final Directory root;
-  late final String minor;
+  late String minor;
+  String line = '1.0';
   final requests = <String>[];
   String prBody = _authored;
   Map<String, Object> issue = {'number': 61, 'state': 'open'};
@@ -620,7 +789,16 @@ class _Repository {
     return sha;
   }
 
-  void checkoutRelease() => git(['checkout', '-qb', 'release/1.0.x', minor]);
+  void anchorPrepBase(String version) {
+    line = version.substring(0, version.lastIndexOf('.'));
+    git(['add', '-A']);
+    git(['commit', '-q', '-m', 'Seed release metadata']);
+    minor = git(['rev-parse', 'HEAD']);
+    git(['tag', '-f', 'v$line.0']);
+    git(['update-ref', _main, minor]);
+  }
+
+  void checkoutRelease() => git(['checkout', '-qb', 'release/$line.x', minor]);
 
   String backport(String sha, {String? body, String file = 'fix'}) {
     if (git(['status', '--short']).isNotEmpty) {
@@ -673,7 +851,7 @@ class _Repository {
 
   Future<String> guard(
     String? body, {
-    String base = 'release/1.0.x',
+    String? base,
     String head = 'backport/51-1.0',
     String headRepository = _repo,
     List<String> labels = const [],
@@ -684,7 +862,7 @@ class _Repository {
     event: {
       'pull_request': {
         'base': {
-          'ref': base,
+          'ref': base ?? 'release/$line.x',
           if (includeShas) 'sha': minor,
           'repo': {'full_name': _repo},
         },
@@ -708,7 +886,7 @@ class _Repository {
           'parity',
           '--main',
           _main,
-          if (!all) ...['--line', '1.0', '--branch', 'HEAD'],
+          if (!all) ...['--line', line, '--branch', 'HEAD'],
           if (closed) '--require-closed-forward-ports',
         ],
         directory: root,

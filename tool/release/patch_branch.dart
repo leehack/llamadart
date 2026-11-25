@@ -18,13 +18,33 @@ const _usage =
 
 const _linePattern = r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)';
 final _releaseRef = RegExp(r'^release/([0-9]+\.[0-9]+)\.x$');
-final _prepPaths = {
-  ...releaseMetadataPaths,
+final _prepPubspecs = {
+  'pubspec.yaml': 'llamadart',
+  for (final companion in companionSwiftPins)
+    companion.pubspecPath: companion.package,
+};
+
+// Patch preps v0.20.1–v0.20.8 and the v0.21.0 prep changed these release
+// files. Exact paths keep unrelated docs and code out of the exemption.
+const _prepPaths = {
+  ...releaseMetadataDocs,
   changelogArchive,
-  for (final companion in companionSwiftPins) ...[
-    companion.pubspecPath,
-    companion.changelogPath,
-  ],
+  'MIGRATION.md',
+  'example/chat_app/pubspec.lock',
+  'example/dartpad_gguf/README.md',
+  'packages/llamadart_litert_lm_flutter/CHANGELOG.md',
+  'packages/llamadart_litert_lm_flutter/pubspec.yaml',
+  'packages/llamadart_llama_cpp_flutter/CHANGELOG.md',
+  'packages/llamadart_llama_cpp_flutter/pubspec.yaml',
+  'packages/llamadart_stable_diffusion_flutter/CHANGELOG.md',
+  'packages/llamadart_stable_diffusion_flutter/pubspec.yaml',
+  'packages/llamadart_validation/pubspec.lock',
+  'pubspec.yaml',
+  'website/docs/examples/dartpad-gguf.md',
+  'website/docs/guides/image-generation.md',
+  'website/docs/integrations/choosing-an-api.md',
+  'website/docs/platforms/apple-setup.md',
+  'website/examples/observability/pubspec.lock',
 };
 final _line = RegExp('^$_linePattern\$');
 final _patchTag = RegExp(r'^v(' + _linePattern + r')\.[1-9][0-9]*$');
@@ -191,15 +211,59 @@ Future<String> _guard(_Git git, Object? event, GithubLookup lookup) async {
 
 void _requirePrepScope(_Git git, String base, String head) {
   final paths = git
-      .text(['diff', '--no-renames', '--name-only', '-z', base, head, '--'])
-      .split('\x00');
-  final extra = paths.where(
-    (path) => path.isNotEmpty && !_prepPaths.contains(path),
-  );
+      .text([
+        'diff',
+        '--no-renames',
+        '--ignore-submodules=none',
+        '--name-only',
+        '-z',
+        base,
+        head,
+        '--',
+      ])
+      .split('\x00')
+      .where((path) => path.isNotEmpty)
+      .toList();
+  final extra = paths.where((path) => !_prepPaths.contains(path));
   if (extra.isNotEmpty) {
     throw FormatException(
       'Core release prep changes unrelated files: ${extra.join(', ')}.',
     );
+  }
+
+  ReadinessFilePair read(String path) =>
+      (base: git.releaseFile(base, path), head: git.releaseFile(head, path));
+  final versions = <String, ReleaseVersionChange>{};
+  for (final path in paths) {
+    final package = _prepPubspecs[path];
+    if (package == null) continue;
+    final version = releasePubspecVersionChange(read(path), package);
+    if (version == null) {
+      throw FormatException(
+        'Release prep may change only the version scalar in $path.',
+      );
+    }
+    versions[package] = version;
+  }
+  for (final path in paths) {
+    final corePath = releaseMetadataLocks[path];
+    if (corePath == null) continue;
+    final updates = <String, LockedReleaseVersion>{
+      if (versions['llamadart'] case final core?)
+        'llamadart': (version: core, relativePath: corePath),
+      if (path == 'example/chat_app/pubspec.lock')
+        for (final companion in companionSwiftPins)
+          if (versions[companion.package] case final version?)
+            companion.package: (
+              version: version,
+              relativePath: '../../${companion.root}',
+            ),
+    };
+    if (!matchesReleaseLockVersions(read(path), updates)) {
+      throw FormatException(
+        'Release prep may change only matching local package versions in $path.',
+      );
+    }
   }
 }
 
@@ -655,6 +719,16 @@ class _Git {
 
   List<String> firstParents(String tip) =>
       lines(['rev-list', '--first-parent', tip]);
+
+  ReadinessFile releaseFile(String revision, String path) {
+    final entry = text(['ls-tree', '-z', revision, '--', path]);
+    if (!entry.startsWith('100644 blob ') || !entry.endsWith('\t$path\x00')) {
+      throw FormatException(
+        'Release prep requires an existing regular file: $path.',
+      );
+    }
+    return (mode: '100644', contents: text(['show', '$revision:$path']));
+  }
 
   String rawDiff(String from, String to, {String? excluding}) => text([
     'diff',
