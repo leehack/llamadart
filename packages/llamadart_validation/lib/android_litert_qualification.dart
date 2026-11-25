@@ -26,6 +26,15 @@ const s24LiteRtNativeLibraries = {
   'libwebgpu_dawn.so',
 };
 
+const _s24LiteRtV020NativeLibraries = {
+  'libLiteRtLm.so',
+  'libGemmaModelConstraintProvider.so',
+  'libwebgpu_dawn.so',
+};
+const _s24LiteRtV020OwnerCommit = 'd73bca7c92503e286895a03e16b9e65f874d0056';
+const _s24LiteRtV020ManifestSha256 =
+    '25f13e745b428e0c427f90f9820655ffa98762aee345595d5d105a471fb58e29';
+
 /// Owner runtime tags the S24 binding admits. `v0.19.1-2` changes only the
 /// Android `libLiteRtLm.so` and passed the full S24 graph again
 /// (Test Lab `matrix-wmalbq6nz437a`, #1830).
@@ -42,6 +51,7 @@ const s24LiteRtRuntimeTags = {
   'v0.19.1-5',
   'v0.19.1-6',
   'v0.19.1-7',
+  'v0.20.0',
 };
 
 // Pin the exact Android archive for every tag, including rebuilds that share
@@ -95,6 +105,12 @@ const _s24LiteRtPublishedDigests =
             'ad437e55e0c2c56b0d76c4711923eca71b027bcdffee293b2b48ffe6de3a7d3a',
         libraries:
             '8ceef81c639c619a5638862b85bf88e8192937e2cf18f0e72c56a68ddfbf1a98',
+      ),
+      'v0.20.0': (
+        archive:
+            '93e00094fb080f4355ca3a385f71844e44376807fb2771600e1d6e0ad1b316e2',
+        libraries:
+            '893c572d4ca9b5b357206abb86c387b5733d3962a2d760e5da7d0c7e6c6dcc49',
       ),
     };
 
@@ -191,6 +207,10 @@ void requireS24LiteRtProfile(Map<String, dynamic> value, String backend) {
 void requireS24LiteRtBinding(Map<String, dynamic> value) {
   final runtimeTag = value['runtime_tag'];
   final published = _s24LiteRtPublishedDigests[runtimeTag];
+  final isV020 = runtimeTag == 'v0.20.0';
+  final requiredLibraries = isV020
+      ? _s24LiteRtV020NativeLibraries
+      : s24LiteRtNativeLibraries;
   _require(
     value['schema'] == 1 &&
         value['source_dirty'] == false &&
@@ -230,6 +250,13 @@ void requireS24LiteRtBinding(Map<String, dynamic> value) {
       'Missing admitted source/artifact/budget binding: $key',
     );
   }
+  if (isV020) {
+    _require(
+      value['owner_commit'] == _s24LiteRtV020OwnerCommit &&
+          value['runtime_manifest_sha256'] == _s24LiteRtV020ManifestSha256,
+      'S24 v0.20.0 requires the published owner commit and manifest',
+    );
+  }
   final inventory = value['libraries'];
   _require(inventory is Map, 'Missing installed native inventory');
   _require(
@@ -250,7 +277,7 @@ void requireS24LiteRtBinding(Map<String, dynamic> value) {
     );
   }
   _require(
-    inventory.keys.toSet().containsAll(s24LiteRtNativeLibraries),
+    inventory.keys.toSet().containsAll(requiredLibraries),
     'Incomplete Android owner runtime inventory',
   );
   _require(
@@ -258,7 +285,7 @@ void requireS24LiteRtBinding(Map<String, dynamic> value) {
         canonicalJson(value['owner_libraries']) ==
             canonicalJson(value['archive_libraries']) &&
         (value['owner_libraries'] as Map).keys.toSet().containsAll(
-          s24LiteRtNativeLibraries,
+          requiredLibraries,
         ),
     'Owner libraries must match the complete admitted archive',
   );

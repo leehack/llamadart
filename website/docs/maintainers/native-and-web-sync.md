@@ -425,11 +425,15 @@ runtime it bundles. Then run the `image-generation-smoke` and
 LiteRT-LM 0.19 changes C function signatures to status returns and output
 parameters. The public lazy facade, service metadata/finish probes and speech
 worker share discovery and ABI selection. `_liteRtLmV1ProductionSelection` in
-`litert_lm_runtime_facade.dart` enables public C API 1.0.x and 1.1.x dispatch. The native
-hook and Apple companion source now pin published
-[v0.19.1-7](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-7),
-owner `930a3e29` / upstream `7a03724c`. It keeps C API 1.0.0, the
-`v0.19.0` exports and the in-process LiteRT marker
+`litert_lm_runtime_facade.dart` enables public C API 1.0.x and 1.1.x dispatch.
+The hook and Apple companion source pin published native v0.20.0
+(owner `d73bca7c` / upstream `95df4c2a`).
+It reports C API 1.1.0, preserves stable status/out-parameter signatures and
+links LiteRT and the GPU accelerators into the runtime. Windows uses
+`webgpu_dawn.dll`. The retained Android Dawn passed the Pixel 9 Pro Vulkan
+qualification for this release. The earlier
+[v0.19.1-7](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-7)
+kept C API 1.0.0, the `v0.19.0` exports and the in-process LiteRT marker
 `litert_lm_native_in_process_litert_abi_version` (1 on every platform). It
 resets recurrent state for independent requests on a reused engine and
 disables sampler lookahead on macOS GPU for models that declare linear
@@ -457,7 +461,7 @@ adopted after independent readback matched all 21 public assets to qualified
 bytes; GitHub reports `immutable: false` for both, so this is verified snapshot
 evidence, not enforced immutability. Public selection retains legacy
 overrides when the version marker is absent; a present marker must report C API
-1.0.x. Failed, malformed and future versions never retry legacy arities, and
+1.0.x or 1.1.x. Failed, malformed and future versions never retry legacy arities, and
 optional capabilities still require their complete export/probe groups. The
 selected path checks macOS 14+ before core or companion discovery, including
 legacy libraries and explicit paths. A caller-opened library cannot retroactively
@@ -485,7 +489,7 @@ blocks unload and dispose. On Linux ext4, releasing a freshly written CPU
 XNNPACK weight cache flushes it to disk, about 4 s for Qwen3 0.6B's 600 MB
 cache on CI disks ([#1814](https://github.com/leehack/llamadart/issues/1814)).
 
-Public ABI-aware selection and the v0.19.1-7 source pin are enabled. Remaining
+Public ABI-aware selection and the v0.20.0 source pin are enabled. Remaining
 consumer, feature and platform gates are recorded in
 `doc/litert_lm_v1_adoption.md`. This transport contract alone does not qualify a
 model or device. The owner proxy's

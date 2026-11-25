@@ -215,19 +215,13 @@ const List<String> _androidArm64Libraries = [
 
 const List<String> _androidLiteRtLibraries = [
   'libGemmaModelConstraintProvider.so',
-  'libLiteRtGpuAccelerator.so',
   'libLiteRtLm.so',
-  'libLiteRtOpenClAccelerator.so',
-  'libLiteRtWebGpuAccelerator.so',
   'libwebgpu_dawn.so',
 ];
 
 const List<String> _androidLiteRtAssetNames = [
   'litert_lm_GemmaModelConstraintProvider',
-  'litert_lm_LiteRtGpuAccelerator',
   'litert_lm_LiteRtLm',
-  'litert_lm_LiteRtOpenClAccelerator',
-  'litert_lm_LiteRtWebGpuAccelerator',
   'litert_lm_webgpu_dawn',
 ];
 

@@ -248,13 +248,11 @@ void main() {
     expect(liteRtLmVersion, liteRtLmReleaseTag.substring(1));
   });
 
-  test('LiteRT-LM SwiftPM targets match the published owner manifest', () {
-    // Published manifest SHA-256 e590f7a562551e0b252c581d2648efb9dd61bd29dcaf86c0221c682ab0ddb68a;
-    // verified against GitHub asset metadata for litert-lm-native#123.
+  test('LiteRT-LM SwiftPM targets match the v0.20.0 manifest', () {
     final manifest =
         jsonDecode(
               File(
-                'test/fixtures/native/litert_lm_v0_19_1_7_manifest.json',
+                'test/fixtures/native/litert_lm_v0_20_0_manifest.json',
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;
@@ -352,7 +350,7 @@ void main() {
     );
   });
 
-  test('desktop bundle specs agree with the C API 1.0 required lists', () {
+  test('desktop bundle specs agree with the C API 1 required lists', () {
     const desktopBundles = {
       'macos-arm64': Abi.macosArm64,
       'linux-arm64': Abi.linuxArm64,
@@ -397,7 +395,12 @@ void main() {
         final modern = liteRtLmRequiredLibrariesForAbi(entry.key, cApiV1: true);
         expect(
           liteRtLmRequiredLibrariesForAbi(entry.key),
-          unorderedEquals([...modern, ...entry.value, ...?liteRt[entry.key]]),
+          unorderedEquals({
+            ...modern,
+            ...entry.value,
+            ...?liteRt[entry.key],
+            ...liteRtLmOptionalCompanionLibrariesForAbi(entry.key),
+          }),
           reason: entry.key.toString(),
         );
         for (final sampler in entry.value) {

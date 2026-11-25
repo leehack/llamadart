@@ -40,14 +40,15 @@ Map<String, dynamic> binding([String tag = 'v0.19.1']) {
     'source_dirty': false,
     'source_commit': repeated('a', 40),
     'source_tree': repeated('b', 40),
-    'owner_commit': repeated('c', 40),
+    'owner_commit': published['owner_commit'] ?? repeated('c', 40),
     for (final key in [
       'source_inventory_sha256',
-      'runtime_manifest_sha256',
       'shared_budget_receipt_sha256',
       'template_sha256',
     ])
       key: repeated('d', 64),
+    'runtime_manifest_sha256':
+        published['manifest_sha256'] ?? repeated('d', 64),
     'runtime_tag': tag,
     'runtime_archive_sha256': published['archive_sha256'],
     'abi': 'android-arm64',
@@ -179,7 +180,8 @@ void main() {
       'v0.19.0',
       'v0.19.1-8',
       'v0.19.2',
-      'v0.20.0',
+      'v0.20.0-pr131',
+      'v0.20.1',
       '0.19.1-1',
       'v0.19.1 ',
       null,
@@ -189,6 +191,22 @@ void main() {
         throwsFormatException,
         reason: '$tag',
       );
+    }
+  });
+  test('v0.20.0 binds the published owner, manifest and hook archive', () {
+    final published = binding('v0.20.0');
+    expect(
+      published['runtime_archive_sha256'],
+      liteRtLmBundleSpecs
+          .singleWhere((spec) => spec.bundle == 'android-arm64')
+          .sha256,
+    );
+    for (final key in ['owner_commit', 'runtime_manifest_sha256']) {
+      final changed = {
+        ...published,
+        key: repeated('f', key == 'owner_commit' ? 40 : 64),
+      };
+      expect(() => requireS24LiteRtBinding(changed), throwsFormatException);
     }
   });
   test('binding rejects v0.19.1-6 payload metadata relabeled as v0.19.1-7', () {

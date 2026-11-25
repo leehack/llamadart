@@ -59,7 +59,7 @@ attempt. This harness does not extend the production guard.
 The public route is the same uninjected default `LiteRtLmService` boundary as
 the accepted macOS public qualifier. It has no explicit library path, runtime
 factory, speech driver or backend override. Its default discovery probe and
-each lifetime check exact mapped payload bytes. C API 1.0 plus frozen default
+each lifetime check exact mapped payload bytes. C API 1.0 or 1.1, the frozen default
 source and the mapped-library binding establish the selected route; no runtime
 selection counter is exposed or claimed measured.
 
@@ -232,7 +232,9 @@ hashes, both unchanged profiles, run id and the existing shared budget receipt
 hash. Owner `7ea10d0` is explicitly rejected as the aborted candidate.
 The validator checks the archive and library digests against the published
 Android arm64 release for the exact tag, including rebuilds with identical
-library bytes.
+library bytes. The published `v0.20.0` binding checks the exact owner commit
+and manifest. Its arm64 archive links the GPU accelerators in and ships
+`libLiteRtLm.so`, `libGemmaModelConstraintProvider.so` and `libwebgpu_dawn.so`.
 
 Use the decoded `assets/profiles/chat-litert-cpu.json` as `profiles.cpu` and
 `assets/fixtures/s24/chat-litert-gpu-legacy.json` as `profiles.gpu` in

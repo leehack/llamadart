@@ -100,8 +100,9 @@ hooks:
   does for the legacy runtime. The ABI-aware selector keeps unsupported
   ABI checks and requires macOS 14+ before loading even an explicit path or
   legacy library; public selection admits C API 1.0.x and 1.1.x while unknown/future
-  versions remain unsupported. The hook and Apple companion pin published
-  native `v0.19.1-7`.
+  versions remain unsupported. The hook and Apple companion source pin native
+  `v0.20.0`, which ships C API 1.1.0 and links the GPU accelerators into
+  LiteRT-LM. The Windows bundle uses `webgpu_dawn.dll`.
 - An empty or all-unknown selection falls back to `llama_cpp` and
   `litert_lm`; one that leaves no runtime, such as `none`, fails the build.
 

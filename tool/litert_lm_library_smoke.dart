@@ -99,7 +99,8 @@ bool liteRtLmSmokeUsesCApiV1(String releaseTag) {
     'v0.19.1-4' ||
     'v0.19.1-5' ||
     'v0.19.1-6' ||
-    'v0.19.1-7' => true,
+    'v0.19.1-7' ||
+    'v0.20.0' => true,
     'v0.18.1-4' => false,
     _ => throw UnsupportedError(
       'LiteRT-LM library smoke has no reviewed C API inventory for $releaseTag.',
@@ -123,13 +124,12 @@ openLiteRtLmSmokeLibrary({
       throw UnsupportedError('LiteRT-LM does not support $abi.');
     }
 
-    final companionPaths = [
-      for (final library in runtime.liteRtLmCompanionLibrariesForAbi(
-        abi,
-        cApiV1: cApiV1,
-      ))
-        '$envDir/$library',
-    ];
+    final companionPaths = runtime
+        .liteRtLmExplicitDirectoryCompanionPathsForAbi(
+          abi,
+          Directory(envDir),
+          cApiV1: cApiV1,
+        );
     // Production discovery can skip absent optional candidates; the smoke
     // must fail if any required inventory entry is missing.
     for (final library in runtime.liteRtLmRequiredLibrariesForAbi(

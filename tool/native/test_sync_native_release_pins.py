@@ -677,33 +677,15 @@ def _run_dart_inventory_checks(
     generated = repo_root / "tool/native/generated_litert_lm_inventory.dart"
     generated.parent.mkdir(parents=True, exist_ok=True)
     if checks is None:
-        projection = _v019_inventory_projection()
+        source_root = Path(__file__).resolve().parents[2]
         pinned_tag = pins.current_litert_lm_release_tag(
-            (Path(__file__).resolve().parents[2] / pins.DEFAULT_NATIVE_RELEASE_PINS).read_text(
-                encoding="utf-8"
-            )
+            (source_root / pins.DEFAULT_NATIVE_RELEASE_PINS).read_text(encoding="utf-8")
         )
-        platforms = copy.deepcopy(projection["platforms"])
-        for platform in platforms:
-            if platform["platform"] == "macos":
-                # The v0.19.0 projection predates the pins that stopped shipping
-                # the Metal accelerator and the embedded LiteRT companions.
-                platform["artifactPaths"] = [
-                    path
-                    for path in platform["artifactPaths"]
-                    if Path(path).name
-                    not in {
-                        "libLiteRtMetalAccelerator.dylib",
-                        "libLiteRt.dylib",
-                        "libLiteRtWebGpuAccelerator.dylib",
-                    }
-                ]
-        manifest = {
-            "upstream": {"compatibilityTag": projection["compatibilityTag"]},
-            "platforms": platforms,
-            # The pinned release decides which owner files its hosts load.
-            "release": {"tag": pinned_tag},
-        }
+        fixture_tag = pinned_tag.replace(".", "_").replace("-", "_")
+        manifest = json.loads(
+            (source_root / f"test/fixtures/native/litert_lm_{fixture_tag}_manifest.json")
+            .read_text(encoding="utf-8")
+        )
         bundles = pins.litert_schema2_runtime_required_libraries(
             pins.litert_schema2_bundle_required_libraries(manifest)
         )
@@ -731,7 +713,7 @@ def _run_dart_inventory_checks(
             },
             frameworks=pins._litert_schema2_macos_framework_entries(bundles)["arm64"],
             native_spm=pins.litert_macos_complete_spm_entries(
-                bundles, pins.litert_schema2_macos_required_native_spm_files(manifest, projection["releaseTag"]),
+                bundles, pins.litert_schema2_macos_required_native_spm_files(manifest, pinned_tag),
             )["arm64"],
         )
     generated.write_text(
@@ -852,11 +834,13 @@ class LiteRtRuntimeInventoryDispatchTest(unittest.TestCase):
         self.assertTrue(pins._litert_lm_runtime_inventory_is_v1(self.manifest))
         self.manifest["upstream"]["compatibilityTag"] = "v0.19.1"
         self.assertTrue(pins._litert_lm_runtime_inventory_is_v1(self.manifest))
+        self.manifest["upstream"]["compatibilityTag"] = "v0.20.0"
+        self.assertTrue(pins._litert_lm_runtime_inventory_is_v1(self.manifest))
         self.manifest["upstream"]["compatibilityTag"] = "v0.18.1"
         self.assertFalse(pins._litert_lm_runtime_inventory_is_v1(self.manifest))
 
     def test_unknown_or_malformed_api_mapping_refuses(self) -> None:
-        for version in ("v0.19.2", "v0.20.0", "v1.0.0", "g83ce6067f2e2", "", None):
+        for version in ("v0.19.2", "v0.20.1", "v0.21.0", "v1.0.0", "g83ce6067f2e2", "", None):
             with self.subTest(version=version):
                 self.manifest["upstream"]["compatibilityTag"] = version
                 with self.assertRaises(ReleaseError):
@@ -1206,7 +1190,7 @@ class LiteRtV019SamplerTransitionTest(unittest.TestCase):
         self.macos["artifactPaths"].remove("bin/macos/arm64/libLiteRtWebGpuAccelerator.dylib")
         with self.assertRaisesRegex(ReleaseError, "owner inventory"):
             self.prepare(self.original)
-        for unreviewed in ("v0.19.2", "v0.20.0"):
+        for unreviewed in ("v0.19.2", "v0.20.1", "v0.21.0"):
             with self.subTest(version=unreviewed):
                 self.setUp()
                 self.manifest["upstream"]["compatibilityTag"] = unreviewed

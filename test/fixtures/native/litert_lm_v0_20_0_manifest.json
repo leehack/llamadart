@@ -1,0 +1,1099 @@
+{
+  "abi": {
+    "asrBridge": 1,
+    "streamProxyCallback": 2,
+    "upstreamC": "c/engine.h"
+  },
+  "artifacts": [
+    {
+      "accelerators": [],
+      "arch": "arm64",
+      "fileName": "libGemmaModelConstraintProvider.so",
+      "path": "bin/android/arm64/libGemmaModelConstraintProvider.so",
+      "platform": "android",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "c7c7188b831ae75fcc7ec6fe613118365b311995805423a4ca265372f07f4783",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64",
+      "fileName": "libLiteRtLm.so",
+      "path": "bin/android/arm64/libLiteRtLm.so",
+      "platform": "android",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "05dd1e34fbdd872ade6777b7d75b85f720cee97b9d5ba857eb66022f75cd5dd8",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [
+        "webgpu"
+      ],
+      "arch": "arm64",
+      "fileName": "libwebgpu_dawn.so",
+      "path": "bin/android/arm64/libwebgpu_dawn.so",
+      "platform": "android",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "x64",
+      "fileName": "libGemmaModelConstraintProvider.so",
+      "path": "bin/android/x64/libGemmaModelConstraintProvider.so",
+      "platform": "android",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "bf6ba9677729631005c921abdd75bb95396b3549814a1b5c3bdf74b5f6ae3a7d",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "x64",
+      "fileName": "libLiteRtLm.so",
+      "path": "bin/android/x64/libLiteRtLm.so",
+      "platform": "android",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "47a611d47534c0f01c87c4c2121e61d88323259a1ccfe4985cdb1bffd217724e",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [
+        "webgpu"
+      ],
+      "arch": "x64",
+      "fileName": "libwebgpu_dawn.so",
+      "path": "bin/android/x64/libwebgpu_dawn.so",
+      "platform": "android",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "fcfb9a0b902f7dd3f81f01295f381c10b22a2d5774f95ee0db813f284a0ab087",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64",
+      "fileName": "CLiteRTLM",
+      "path": "bin/ios/arm64/CLiteRTLM.framework/CLiteRTLM",
+      "platform": "ios",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "6350484ce91fb1ab8d68ea78b90e806eac92274f06173deb15764df321403af6",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64",
+      "fileName": "Info.plist",
+      "path": "bin/ios/arm64/CLiteRTLM.framework/Info.plist",
+      "platform": "ios",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "5873179cbb12c31c333fcbbac89d0f15c93e9befff03a32167f597e97d2fc5ae",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64",
+      "fileName": "Info.plist",
+      "path": "bin/ios/arm64/LiteRtLm.framework/Info.plist",
+      "platform": "ios",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "c37c410a689a5450505826a0ad324404a5974166489c7727b98fbbdc71fc900a",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64",
+      "fileName": "LiteRtLm",
+      "path": "bin/ios/arm64/LiteRtLm.framework/LiteRtLm",
+      "platform": "ios",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "3f0271e0f44bbb47468d9891c7bc667cbbfba7882bfbb672410fa95c904ab102",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64",
+      "fileName": "libLiteRtLm.dylib",
+      "path": "bin/ios/arm64/libLiteRtLm.dylib",
+      "platform": "ios",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "1f4e3e227f6d7d8afe452b0e527fbf68b57c5d0da3531ea1255e9f0e35655b9b",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64-sim",
+      "fileName": "CLiteRTLM",
+      "path": "bin/ios/arm64-sim/CLiteRTLM.framework/CLiteRTLM",
+      "platform": "ios",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "3206ca22c03d8ca9334ef1058e5e8e719564d2145ddff15c29ad7a409ed27a45",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64-sim",
+      "fileName": "Info.plist",
+      "path": "bin/ios/arm64-sim/CLiteRTLM.framework/Info.plist",
+      "platform": "ios",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "154d84161580ebee24030cb901d816f43edecee78b829feb942c98a7eb39b584",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64-sim",
+      "fileName": "Info.plist",
+      "path": "bin/ios/arm64-sim/LiteRtLm.framework/Info.plist",
+      "platform": "ios",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "025b44d8381f1346b86c57dadb6b9a1db39192c815e890ab8e04b39058135567",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64-sim",
+      "fileName": "LiteRtLm",
+      "path": "bin/ios/arm64-sim/LiteRtLm.framework/LiteRtLm",
+      "platform": "ios",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "759f1ad0e0fdd7708c282b6c4ccfe44e78abad10aca7d3a7173c5559c6630264",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64-sim",
+      "fileName": "libLiteRtLm.dylib",
+      "path": "bin/ios/arm64-sim/libLiteRtLm.dylib",
+      "platform": "ios",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "18d094ab11b66589ae927ecced53ff2e9c95ee8a9cd2ac3c5dc4f5b87e64329f",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64",
+      "fileName": "libGemmaModelConstraintProvider.so",
+      "path": "bin/linux/arm64/libGemmaModelConstraintProvider.so",
+      "platform": "linux",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "37c5e71bd7012a65005d483a165c034975763758e0d27d97d926d8557c079e94",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64",
+      "fileName": "libLiteRtLm.so",
+      "path": "bin/linux/arm64/libLiteRtLm.so",
+      "platform": "linux",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "8d151edc4c52fa5fbb7e1f6429cb947e8f005f03b950740d7ee87f05371598a6",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [
+        "webgpu"
+      ],
+      "arch": "arm64",
+      "fileName": "libwebgpu_dawn.so",
+      "path": "bin/linux/arm64/libwebgpu_dawn.so",
+      "platform": "linux",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "94d28a81d315c95c801c3af5ca9492d6156cd86beac602adf3a40d273ad1da2b",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "x64",
+      "fileName": "libGemmaModelConstraintProvider.so",
+      "path": "bin/linux/x64/libGemmaModelConstraintProvider.so",
+      "platform": "linux",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "00718621486f3e498c8c6ef00d81236f51da7513f9279f3a02cd841624ea88fb",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "x64",
+      "fileName": "libLiteRtLm.so",
+      "path": "bin/linux/x64/libLiteRtLm.so",
+      "platform": "linux",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "fa740774ba61ccf6a536704ff18332b59068cfe342097e0a54190a38aa05e271",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [
+        "webgpu"
+      ],
+      "arch": "x64",
+      "fileName": "libwebgpu_dawn.so",
+      "path": "bin/linux/x64/libwebgpu_dawn.so",
+      "platform": "linux",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "5a580dad39418377e75a79e01501ca001611223c1b2f4f844ae6a16c372db0cc",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64",
+      "fileName": "libCLiteRTLM_mac.dylib",
+      "path": "bin/macos/arm64/libCLiteRTLM_mac.dylib",
+      "platform": "macos",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "8fde094d7a7f4eac06c5602e61b8f5587beabf0278f98f59348030226c281052",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64",
+      "fileName": "libGemmaModelConstraintProvider.dylib",
+      "path": "bin/macos/arm64/libGemmaModelConstraintProvider.dylib",
+      "platform": "macos",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "f98767361b14bb4ad12866b32d62611875134c8f2de7e64d071df5f4510fe64a",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64",
+      "fileName": "libLiteRtLm.dylib",
+      "path": "bin/macos/arm64/libLiteRtLm.dylib",
+      "platform": "macos",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "11750671ee1ff447fef782db2107a76812a201292300232920c38cc22d840147",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [
+        "webgpu"
+      ],
+      "arch": "arm64",
+      "fileName": "libwebgpu_dawn.dylib",
+      "path": "bin/macos/arm64/libwebgpu_dawn.dylib",
+      "platform": "macos",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "b8d1fe558c84f31b596e67d030abf3d05dd0fa03e608cb50ed4797661b3b56ea",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "x64",
+      "fileName": "LiteRtLm.dll",
+      "path": "bin/windows/x64/LiteRtLm.dll",
+      "platform": "windows",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "49a5c6d9f7c226d3156343c66e989922a21237340af73a1263386fae5d98cdf1",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "x64",
+      "fileName": "dxcompiler.dll",
+      "path": "bin/windows/x64/dxcompiler.dll",
+      "platform": "windows",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "b86a738ece4c05dbe2d9bbb29668a2ccb28a0740773c9b027cdc61e8d07b4d75",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "x64",
+      "fileName": "dxil.dll",
+      "path": "bin/windows/x64/dxil.dll",
+      "platform": "windows",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "058f2f52a680c38b223a5615b7df969def21f77e577562e5099d971dede992de",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "x64",
+      "fileName": "libGemmaModelConstraintProvider.dll",
+      "path": "bin/windows/x64/libGemmaModelConstraintProvider.dll",
+      "platform": "windows",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "49ca48d969ffcde4b56e0ef7a604d9cc5c7ad37a599f00dc81f093a687796d52",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "x64",
+      "fileName": "libGemmaModelConstraintProvider.lib",
+      "path": "bin/windows/x64/libGemmaModelConstraintProvider.lib",
+      "platform": "windows",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "29c5ec68c097726a659d15cfff10d3344348f6d2094e2335c69b94bd9dcab786",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "x64",
+      "fileName": "msvcp140.dll",
+      "path": "bin/windows/x64/msvcp140.dll",
+      "platform": "windows",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "59d325227321d52b9a523ea401ce6787a5d59f78229a0ff3a6f124e5d3445685",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "x64",
+      "fileName": "vcruntime140.dll",
+      "path": "bin/windows/x64/vcruntime140.dll",
+      "platform": "windows",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "eb1ee979bf02324712346e5bdbfc59c785388bc50d18cc2688aae4b0734915a0",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "x64",
+      "fileName": "vcruntime140_1.dll",
+      "path": "bin/windows/x64/vcruntime140_1.dll",
+      "platform": "windows",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "a14b4a42a2c6df04d6d53a8340816023d953406f7f3d94996c7cab30c414ff63",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "x64",
+      "fileName": "vcruntime140_threads.dll",
+      "path": "bin/windows/x64/vcruntime140_threads.dll",
+      "platform": "windows",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "44a0a0b925242699f2b31bf40a43b54ab3513584dfe7869521d1983e40ea1f06",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [
+        "webgpu"
+      ],
+      "arch": "x64",
+      "fileName": "webgpu_dawn.dll",
+      "path": "bin/windows/x64/webgpu_dawn.dll",
+      "platform": "windows",
+      "releaseTag": "v0.20.0",
+      "runtime": "native",
+      "sha256": "8b694074db202ecc19a68a7e683f3d296b6ccdc75130fb42d6e2b03f6588070f",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": null,
+      "fileName": "CLiteRTLM.xcframework.zip",
+      "path": "dist/official/v0.20.0/CLiteRTLM.xcframework.zip",
+      "platform": null,
+      "releaseTag": "v0.20.0",
+      "runtime": "archive",
+      "sha256": "ae6b2b2ea3e46964152110ad5bd64b754f39273add2eb4cc417bbbbd72c5e6e7",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": null,
+      "fileName": "CLiteRTLM_mac.xcframework.zip",
+      "path": "dist/official/v0.20.0/CLiteRTLM_mac.xcframework.zip",
+      "platform": null,
+      "releaseTag": "v0.20.0",
+      "runtime": "archive",
+      "sha256": "ed5943902177e8df2ec18c5a1e85b5dcb74b55e6cab84da95d0a00776fb4a270",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": null,
+      "fileName": "litert_lm_macos_arm64.tar.gz",
+      "path": "dist/official/v0.20.0/litert_lm_macos_arm64.tar.gz",
+      "platform": null,
+      "releaseTag": "v0.20.0",
+      "runtime": "archive",
+      "sha256": "c6203f0a9d31a4e313e6ec5a75c55e78bb4cee113a5997c9ec0a52f21aefa3ab",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": null,
+      "fileName": "litert-lm-native-apple-CLiteRTLM-xcframework-v0.20.0.zip",
+      "path": "dist/spm/v0.20.0/litert-lm-native-apple-CLiteRTLM-xcframework-v0.20.0.zip",
+      "platform": null,
+      "releaseTag": "v0.20.0",
+      "runtime": "archive",
+      "sha256": "5b0269349e969ff546044b0b19acbb1d8a18f449557f0cf4cd116d371a1661ce",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": null,
+      "fileName": "litert-lm-native-apple-CLiteRTLMMac-xcframework-v0.20.0.zip",
+      "path": "dist/spm/v0.20.0/litert-lm-native-apple-CLiteRTLMMac-xcframework-v0.20.0.zip",
+      "platform": null,
+      "releaseTag": "v0.20.0",
+      "runtime": "archive",
+      "sha256": "8f85d8d37ae3571510937c0c716039b2510f18fb304a58de058dbe75dec9315c",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": null,
+      "fileName": "litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-v0.20.0.zip",
+      "path": "dist/spm/v0.20.0/litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-v0.20.0.zip",
+      "platform": null,
+      "releaseTag": "v0.20.0",
+      "runtime": "archive",
+      "sha256": "8a51838ea3b4bca932bdbc014d9b3bb22ca1dc337e9d16af092c70c536706f5d",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [],
+      "arch": null,
+      "fileName": "litert-lm-native-apple-LiteRtLm-xcframework-v0.20.0.zip",
+      "path": "dist/spm/v0.20.0/litert-lm-native-apple-LiteRtLm-xcframework-v0.20.0.zip",
+      "platform": null,
+      "releaseTag": "v0.20.0",
+      "runtime": "archive",
+      "sha256": "252ff942d0952596935f3807a8eca54c151d3d9e823fff8f2992f7d0e4ec3920",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    },
+    {
+      "accelerators": [
+        "webgpu"
+      ],
+      "arch": null,
+      "fileName": "litert-lm-native-apple-WebgpuDawn-xcframework-v0.20.0.zip",
+      "path": "dist/spm/v0.20.0/litert-lm-native-apple-WebgpuDawn-xcframework-v0.20.0.zip",
+      "platform": null,
+      "releaseTag": "v0.20.0",
+      "runtime": "archive",
+      "sha256": "202b63a7641720b4b73205d78fed8f926398793b0e8bc7b35ac3c0e291da00d0",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+      "upstreamTag": "v0.20.0"
+    }
+  ],
+  "capabilities": {
+    "asr": true,
+    "officialUpstreamAssets": true,
+    "streamChunkAccessors": true,
+    "streaming": true,
+    "textGeneration": true
+  },
+  "native": {
+    "commit": "d73bca7c92503e286895a03e16b9e65f874d0056",
+    "repository": "leehack/litert-lm-native"
+  },
+  "package": "litert-lm-native",
+  "platforms": [
+    {
+      "accelerators": [
+        "webgpu"
+      ],
+      "arch": "arm64",
+      "artifactPaths": [
+        "bin/android/arm64/libGemmaModelConstraintProvider.so",
+        "bin/android/arm64/libLiteRtLm.so",
+        "bin/android/arm64/libwebgpu_dawn.so"
+      ],
+      "platform": "android",
+      "releaseAsset": "litert-lm-native-runtime-android-arm64-v0.20.0.tar.gz"
+    },
+    {
+      "accelerators": [
+        "webgpu"
+      ],
+      "arch": "x64",
+      "artifactPaths": [
+        "bin/android/x64/libGemmaModelConstraintProvider.so",
+        "bin/android/x64/libLiteRtLm.so",
+        "bin/android/x64/libwebgpu_dawn.so"
+      ],
+      "platform": "android",
+      "releaseAsset": "litert-lm-native-runtime-android-x64-v0.20.0.tar.gz"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64",
+      "artifactPaths": [
+        "bin/ios/arm64/CLiteRTLM.framework/CLiteRTLM",
+        "bin/ios/arm64/CLiteRTLM.framework/Info.plist",
+        "bin/ios/arm64/LiteRtLm.framework/Info.plist",
+        "bin/ios/arm64/LiteRtLm.framework/LiteRtLm",
+        "bin/ios/arm64/libLiteRtLm.dylib"
+      ],
+      "platform": "ios",
+      "releaseAsset": "litert-lm-native-runtime-ios-arm64-v0.20.0.tar.gz"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64-sim",
+      "artifactPaths": [
+        "bin/ios/arm64-sim/CLiteRTLM.framework/CLiteRTLM",
+        "bin/ios/arm64-sim/CLiteRTLM.framework/Info.plist",
+        "bin/ios/arm64-sim/LiteRtLm.framework/Info.plist",
+        "bin/ios/arm64-sim/LiteRtLm.framework/LiteRtLm",
+        "bin/ios/arm64-sim/libLiteRtLm.dylib"
+      ],
+      "platform": "ios",
+      "releaseAsset": "litert-lm-native-runtime-ios-arm64-sim-v0.20.0.tar.gz"
+    },
+    {
+      "accelerators": [
+        "webgpu"
+      ],
+      "arch": "arm64",
+      "artifactPaths": [
+        "bin/linux/arm64/libGemmaModelConstraintProvider.so",
+        "bin/linux/arm64/libLiteRtLm.so",
+        "bin/linux/arm64/libwebgpu_dawn.so"
+      ],
+      "platform": "linux",
+      "releaseAsset": "litert-lm-native-runtime-linux-arm64-v0.20.0.tar.gz"
+    },
+    {
+      "accelerators": [
+        "webgpu"
+      ],
+      "arch": "x64",
+      "artifactPaths": [
+        "bin/linux/x64/libGemmaModelConstraintProvider.so",
+        "bin/linux/x64/libLiteRtLm.so",
+        "bin/linux/x64/libwebgpu_dawn.so"
+      ],
+      "platform": "linux",
+      "releaseAsset": "litert-lm-native-runtime-linux-x64-v0.20.0.tar.gz"
+    },
+    {
+      "accelerators": [
+        "webgpu"
+      ],
+      "arch": "arm64",
+      "artifactPaths": [
+        "bin/macos/arm64/libCLiteRTLM_mac.dylib",
+        "bin/macos/arm64/libGemmaModelConstraintProvider.dylib",
+        "bin/macos/arm64/libLiteRtLm.dylib",
+        "bin/macos/arm64/libwebgpu_dawn.dylib"
+      ],
+      "platform": "macos",
+      "releaseAsset": "litert-lm-native-runtime-macos-arm64-v0.20.0.tar.gz"
+    },
+    {
+      "accelerators": [
+        "webgpu"
+      ],
+      "arch": "x64",
+      "artifactPaths": [
+        "bin/windows/x64/LiteRtLm.dll",
+        "bin/windows/x64/dxcompiler.dll",
+        "bin/windows/x64/dxil.dll",
+        "bin/windows/x64/libGemmaModelConstraintProvider.dll",
+        "bin/windows/x64/libGemmaModelConstraintProvider.lib",
+        "bin/windows/x64/msvcp140.dll",
+        "bin/windows/x64/vcruntime140.dll",
+        "bin/windows/x64/vcruntime140_1.dll",
+        "bin/windows/x64/vcruntime140_threads.dll",
+        "bin/windows/x64/webgpu_dawn.dll"
+      ],
+      "platform": "windows",
+      "releaseAsset": "litert-lm-native-runtime-windows-x64-v0.20.0.tar.gz"
+    }
+  ],
+  "realModelSmokes": [
+    {
+      "abiVersion": 1,
+      "arch": "x64",
+      "backend": "cpu",
+      "expectation": {
+        "type": "case-insensitive-substring",
+        "value": "country"
+      },
+      "fixture": {
+        "fileName": "jfk.wav",
+        "sampleCount": 176000,
+        "sampleRateHz": 16000,
+        "sha256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e"
+      },
+      "id": "litert_lm_asr_moonshine",
+      "library": {
+        "fileName": "libLiteRtLm.so",
+        "sha256": "fa740774ba61ccf6a536704ff18332b59068cfe342097e0a54190a38aa05e271"
+      },
+      "model": {
+        "fileName": "moonshine_tiny_5s_i8.tflite",
+        "sha256": "97abdeea122d579229091659c24c59d988c6419d453a200f6471241a53b9a9b9"
+      },
+      "nativeCommit": "d73bca7c92503e286895a03e16b9e65f874d0056",
+      "platform": "linux",
+      "result": "pass",
+      "source": {
+        "fixture": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/592feef04a1802b18cbeffd0fd0eb5d02570c2ec/samples/jfk.wav",
+        "model": "https://huggingface.co/litert-community/moonshine-tiny/resolve/beb49ee5028b4fb21eb989bcbd2db30a433373db/moonshine_tiny_5s_i8.tflite",
+        "runtimeReleaseAsset": "litert-lm-native-runtime-linux-x64-v0.20.0.tar.gz",
+        "tokenizer": "https://huggingface.co/UsefulSensors/moonshine-tiny/resolve/390624ed33d594443aa4aa221f5b9f283b545b5a/tokenizer.json"
+      },
+      "tokenizer": {
+        "fileName": "moonshine_tokenizer.json",
+        "sha256": "6579793438bc4fbafffacf699169ff53e3769c5a0a0f5e71cdee8853e8130deb"
+      },
+      "transcript": "And so my fellow Americans ask not. what your country can do for you. ask what you can do for your country.",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699"
+    },
+    {
+      "abiVersion": 1,
+      "arch": "arm64",
+      "backend": "cpu",
+      "expectation": {
+        "type": "case-insensitive-substring",
+        "value": "country"
+      },
+      "fixture": {
+        "fileName": "jfk.wav",
+        "sampleCount": 176000,
+        "sampleRateHz": 16000,
+        "sha256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e"
+      },
+      "id": "litert_lm_asr_moonshine",
+      "library": {
+        "fileName": "libLiteRtLm.dylib",
+        "sha256": "11750671ee1ff447fef782db2107a76812a201292300232920c38cc22d840147"
+      },
+      "model": {
+        "fileName": "moonshine_tiny_5s_i8.tflite",
+        "sha256": "97abdeea122d579229091659c24c59d988c6419d453a200f6471241a53b9a9b9"
+      },
+      "nativeCommit": "d73bca7c92503e286895a03e16b9e65f874d0056",
+      "platform": "macos",
+      "result": "pass",
+      "source": {
+        "fixture": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/592feef04a1802b18cbeffd0fd0eb5d02570c2ec/samples/jfk.wav",
+        "model": "https://huggingface.co/litert-community/moonshine-tiny/resolve/beb49ee5028b4fb21eb989bcbd2db30a433373db/moonshine_tiny_5s_i8.tflite",
+        "runtimeReleaseAsset": "litert-lm-native-runtime-macos-arm64-v0.20.0.tar.gz",
+        "tokenizer": "https://huggingface.co/UsefulSensors/moonshine-tiny/resolve/390624ed33d594443aa4aa221f5b9f283b545b5a/tokenizer.json"
+      },
+      "tokenizer": {
+        "fileName": "moonshine_tokenizer.json",
+        "sha256": "6579793438bc4fbafffacf699169ff53e3769c5a0a0f5e71cdee8853e8130deb"
+      },
+      "transcript": "And so my fellow Americans ask not. what your country can do for you. ask what you can do for your country.",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699"
+    },
+    {
+      "abiVersion": 1,
+      "arch": "x64",
+      "backend": "cpu",
+      "expectation": {
+        "type": "case-insensitive-substring",
+        "value": "country"
+      },
+      "fixture": {
+        "fileName": "jfk.wav",
+        "sampleCount": 176000,
+        "sampleRateHz": 16000,
+        "sha256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e"
+      },
+      "id": "litert_lm_asr_moonshine",
+      "library": {
+        "fileName": "LiteRtLm.dll",
+        "sha256": "49a5c6d9f7c226d3156343c66e989922a21237340af73a1263386fae5d98cdf1"
+      },
+      "model": {
+        "fileName": "moonshine_tiny_5s_i8.tflite",
+        "sha256": "97abdeea122d579229091659c24c59d988c6419d453a200f6471241a53b9a9b9"
+      },
+      "nativeCommit": "d73bca7c92503e286895a03e16b9e65f874d0056",
+      "platform": "windows",
+      "result": "pass",
+      "source": {
+        "fixture": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/592feef04a1802b18cbeffd0fd0eb5d02570c2ec/samples/jfk.wav",
+        "model": "https://huggingface.co/litert-community/moonshine-tiny/resolve/beb49ee5028b4fb21eb989bcbd2db30a433373db/moonshine_tiny_5s_i8.tflite",
+        "runtimeReleaseAsset": "litert-lm-native-runtime-windows-x64-v0.20.0.tar.gz",
+        "tokenizer": "https://huggingface.co/UsefulSensors/moonshine-tiny/resolve/390624ed33d594443aa4aa221f5b9f283b545b5a/tokenizer.json"
+      },
+      "tokenizer": {
+        "fileName": "moonshine_tokenizer.json",
+        "sha256": "6579793438bc4fbafffacf699169ff53e3769c5a0a0f5e71cdee8853e8130deb"
+      },
+      "transcript": "And so my fellow Americans ask not. what your country can do for you. ask what you can do for your country.",
+      "upstreamCommit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699"
+    }
+  ],
+  "release": {
+    "channel": "stable",
+    "githubPrerelease": false,
+    "kind": "upstream",
+    "rebuild": 0,
+    "tag": "v0.20.0"
+  },
+  "schemaVersion": 2,
+  "upstream": {
+    "commit": "95df4c2a932b4917ace66fcfef6c154e8d2a6699",
+    "compatibilityTag": "v0.20.0",
+    "developmentIdentity": "g95df4c2a932b",
+    "prebuiltOverrides": [
+      {
+        "sha256": "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3",
+        "sourceCommit": "f73637c57f0940b53da184e0d5adfc52a4e55eef",
+        "sourcePath": "prebuilt/android_arm64/libwebgpu_dawn.so",
+        "sourceRepository": "google-ai-edge/LiteRT-LM",
+        "targetPath": "bin/android/arm64/libwebgpu_dawn.so"
+      },
+      {
+        "sha256": "fcfb9a0b902f7dd3f81f01295f381c10b22a2d5774f95ee0db813f284a0ab087",
+        "sourceCommit": "f73637c57f0940b53da184e0d5adfc52a4e55eef",
+        "sourcePath": "prebuilt/android_x86_64/libwebgpu_dawn.so",
+        "sourceRepository": "google-ai-edge/LiteRT-LM",
+        "targetPath": "bin/android/x64/libwebgpu_dawn.so"
+      }
+    ],
+    "repository": "google-ai-edge/LiteRT-LM",
+    "sourcePatches": [
+      {
+        "id": "asr-untimed-overlap",
+        "path": "native/bridge/asr_untimed_overlap_v019.patch",
+        "postimageSha256Lf": "4a7949344fb79d7c7e7c6fc4261b74031b1244f6bb83f741229483775efdd835",
+        "preimageSha256Lf": "f6091439b29114fdb6cb010480e9b9b3961cd7c868925dc08f458f822ddecd65",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "2be46da7db4c25567b6a447ce5faafd2527046ecfc1cd868b563bb672286f9b9",
+        "source": "omni/speech2text/timestamp_text_merger.cc"
+      },
+      {
+        "id": "stream-finish-reason",
+        "path": "native/bridge/stream_finish_reason_v020.patch",
+        "postimageSha256Lf": "546a4e509e368d2d0a3232df4f9c204d9c66beb9fe17fdca089e1ce5a545a777",
+        "preimageSha256Lf": "bcd6bce2a4b986f2cac4ba8869fef944cd3ee2fa47f21f837a1ff5c5876c1504",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "cd9d1549438993949c2dd2e18ab9cc6d567baa60f2085d148fc6da9979506828",
+        "source": "c/c_api_internal.h"
+      },
+      {
+        "id": "stream-finish-reason",
+        "path": "native/bridge/stream_finish_reason_v020.patch",
+        "postimageSha256Lf": "ef6ea2b8ec99fdc04704e93dff71ae1d125b2c3269268fd502eb87f6f7fb06e1",
+        "preimageSha256Lf": "518fe5457b36a020fe49b8370390ee47725afd083f457a7b92877fc55e98c246",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "cd9d1549438993949c2dd2e18ab9cc6d567baa60f2085d148fc6da9979506828",
+        "source": "c/conversation.cc"
+      },
+      {
+        "id": "stream-finish-reason",
+        "path": "native/bridge/stream_finish_reason_v020.patch",
+        "postimageSha256Lf": "e3663bc8be651228f40f6e23cd8ad088bb9975bf85dbc216abf55343157c1ff0",
+        "preimageSha256Lf": "7955c97b6f1c02a8a7828c370d7ec869dc1f1e23b3fa030b1d075e4a6a495af7",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "cd9d1549438993949c2dd2e18ab9cc6d567baa60f2085d148fc6da9979506828",
+        "source": "c/engine_internal.h"
+      },
+      {
+        "id": "stream-finish-reason",
+        "path": "native/bridge/stream_finish_reason_v020.patch",
+        "postimageSha256Lf": "bcd284bc4738df7c2e360e1f14ca734962a4688ee2ea79ba493ef820b68ec15e",
+        "preimageSha256Lf": "2c91850bcc70d953d45ff52084dd29a110a74bb5a83b142d73807c147b87579e",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "cd9d1549438993949c2dd2e18ab9cc6d567baa60f2085d148fc6da9979506828",
+        "source": "runtime/conversation/conversation.cc"
+      },
+      {
+        "id": "stream-finish-reason",
+        "path": "native/bridge/stream_finish_reason_v020.patch",
+        "postimageSha256Lf": "3c4280fe15bbebc003dd9b97bb4a78f9db52cd952afa34279f9826282a7383b3",
+        "preimageSha256Lf": "3d3b936089c13142e65a195fee59ba2449734f5a338074eb9f9e5ccb419639cf",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "cd9d1549438993949c2dd2e18ab9cc6d567baa60f2085d148fc6da9979506828",
+        "source": "runtime/conversation/conversation.h"
+      },
+      {
+        "id": "stream-finish-reason",
+        "path": "native/bridge/stream_finish_reason_v020.patch",
+        "postimageSha256Lf": "38e068714f2995b86fb57121f2261369c471e1d5040a812f2531bacd96cb080a",
+        "preimageSha256Lf": "3970f6f747fc39e05746c3e80d4cadc315be28b01cf4911ed05aee7f40df10df",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "cd9d1549438993949c2dd2e18ab9cc6d567baa60f2085d148fc6da9979506828",
+        "source": "runtime/core/tasks.cc"
+      },
+      {
+        "id": "stream-finish-reason",
+        "path": "native/bridge/stream_finish_reason_v020.patch",
+        "postimageSha256Lf": "2c7c79d5a0f8d6de47fb8c3220de3b8b37230f9c49f8f4772f93dfa3b79f2a89",
+        "preimageSha256Lf": "99da02ec968a379099ca86e25ba5a0f91df820de1b58d9315c4c1215ac9474b3",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "cd9d1549438993949c2dd2e18ab9cc6d567baa60f2085d148fc6da9979506828",
+        "source": "runtime/engine/io_types.h"
+      },
+      {
+        "id": "android-qwen3-gpu-safety",
+        "path": "native/bridge/android_gpu_safety_v020.patch",
+        "postimageSha256Lf": "78699dba1264eb02210c370d5741bcc8ab949cc368e3a3176be32a8feba41efb",
+        "preimageSha256Lf": "cdd78f10cbc226bd45602f868dc07ae44bb9ed9ca1c9bf1c965fa9d47c6b34fe",
+        "scope": "source-built runtimes only; Android C API guard; excludes official upstream prebuilts",
+        "sha256": "c210c243dd950860386e657ef9ac810841a08345e2114e9cd5b2e590b8120e83",
+        "source": "c/BUILD"
+      },
+      {
+        "id": "android-qwen3-gpu-safety",
+        "path": "native/bridge/android_gpu_safety_v020.patch",
+        "postimageSha256Lf": "ff7f6fa7bb692c4bf5cc90c8a5c1f1f10aef74a92a33244a971ad02faf9d540e",
+        "preimageSha256Lf": "7db7cd3001f6060efa7f8c1b8e712098067ba99ed0921b0cb7cb543810599ad5",
+        "scope": "source-built runtimes only; Android C API guard; excludes official upstream prebuilts",
+        "sha256": "c210c243dd950860386e657ef9ac810841a08345e2114e9cd5b2e590b8120e83",
+        "source": "c/engine.cc"
+      },
+      {
+        "id": "android-automatic-gpu",
+        "path": "native/bridge/android_automatic_gpu_v020.patch",
+        "postimageSha256Lf": "062badcf243706b668fa32f6043ad374ec89fa550fc2f3fa331308666d01a0c5",
+        "preimageSha256Lf": "62480789d83f9d1e963dfb07653e4fb8881bb44141f31453d11ad602be0272c7",
+        "scope": "Android source-built runtimes only; combined accelerator and both static samplers",
+        "sha256": "6486c2e3c10c0f79fdcd0f05421afd0e141a1be7bf9e7950c1976a7f15d38778",
+        "source": "runtime/executor/BUILD"
+      },
+      {
+        "id": "android-automatic-gpu",
+        "path": "native/bridge/android_automatic_gpu_v020.patch",
+        "postimageSha256Lf": "e9bb1da7b1d919319b917914495989420864c4583f2a71cb0d2779459871cb8e",
+        "preimageSha256Lf": "a5979921e502c391286e434fa5d567754a9b612bc3257d38ea056b43c999a432",
+        "scope": "Android source-built runtimes only; combined accelerator and both static samplers",
+        "sha256": "6486c2e3c10c0f79fdcd0f05421afd0e141a1be7bf9e7950c1976a7f15d38778",
+        "source": "runtime/components/BUILD"
+      },
+      {
+        "id": "windows-engine-fd",
+        "path": "native/bridge/windows_engine_fd_v020.patch",
+        "postimageSha256Lf": "c6371431aa7d7d95a2ec0ec1a317be83efd5ae4513f14dd46c51fb0c15816b30",
+        "preimageSha256Lf": "ff7f6fa7bb692c4bf5cc90c8a5c1f1f10aef74a92a33244a971ad02faf9d540e",
+        "scope": "Windows source-built runtimes only; applies after Android GPU preflight",
+        "sha256": "35c97cf9cedfbe07b985d693a131ef2e14aa2600f15f047589b08862d9397cca",
+        "source": "c/engine.cc"
+      },
+      {
+        "id": "xnnpack-pf32-sme2",
+        "path": "native/bridge/xnnpack_pf32_sme2.patch",
+        "postimageSha256Lf": "0eff752814ec351176c48461832907ab8841c81d06c330483dae1cf45d233a9c",
+        "preimageSha256Lf": "77f6499beb82d69ca19dd9ca31a7c591b07c78863c158701b1125dcee0bb843d",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "0b317707e8033d6ab1320816b8088b7d7b182b91f4c1183dff4b2c88a480378b",
+        "source": "XNNPACK@08cc38b61f7589f84e91c6e343e0f130ae3279ca/src/configs/gemm-config.c"
+      },
+      {
+        "id": "xnnpack-pf32-sme2",
+        "path": "native/bridge/xnnpack_pf32_sme2.patch",
+        "postimageSha256Lf": "5d9972ed94ad8382fa184ffd66709cccaf932aa2a20b91b419834ca45c04f7b8",
+        "preimageSha256Lf": "777115eb004977880b26ec4313d94a09f73157cbc44f3196585a1497411cbcc7",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "0b317707e8033d6ab1320816b8088b7d7b182b91f4c1183dff4b2c88a480378b",
+        "source": "XNNPACK@08cc38b61f7589f84e91c6e343e0f130ae3279ca/src/pf32-gemm/pf32-gemm-1x32-minmax-neonsme2.c"
+      },
+      {
+        "id": "xnnpack-pf32-sme2",
+        "path": "native/bridge/xnnpack_pf32_sme2.patch",
+        "postimageSha256Lf": "aa692a7cfbfa6c88df6185caba1938502842d92219c9fe3e728cf1a08aa95301",
+        "preimageSha256Lf": "f101b386705e62f257c8c7e613474dd811d968316e968e2ff415fefe064f3abe",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "0b317707e8033d6ab1320816b8088b7d7b182b91f4c1183dff4b2c88a480378b",
+        "source": "XNNPACK@08cc38b61f7589f84e91c6e343e0f130ae3279ca/src/pf32-gemm/pf32-gemm-32x32-minmax-neonsme2.c"
+      },
+      {
+        "id": "xnnpack-pf32-sme2",
+        "path": "native/bridge/xnnpack_pf32_sme2.patch",
+        "postimageSha256Lf": "5aa0176053653592a86ebc848261029f2494e23f9c9be25cc9923afc901345c0",
+        "preimageSha256Lf": "820b6c397d740e63efb03ab23be9a0c337b147a302dbce139ddcf55b7b8216f8",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "0b317707e8033d6ab1320816b8088b7d7b182b91f4c1183dff4b2c88a480378b",
+        "source": "XNNPACK@08cc38b61f7589f84e91c6e343e0f130ae3279ca/src/x32-pack-lh/x32-packlh-neonsme2.c"
+      },
+      {
+        "id": "xnnpack-pqs8-qc4w-sme2",
+        "path": "native/bridge/xnnpack_pqs8_qc4w_sme2.patch",
+        "postimageSha256Lf": "3bad8691babc6044975b8720fd88be0e7e420322533330f108df2901ca15110d",
+        "preimageSha256Lf": "0eff752814ec351176c48461832907ab8841c81d06c330483dae1cf45d233a9c",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "2a8e900cd16f53ce33bc05fd6746900808e4fe72130f133a613651a8863f6c8b",
+        "source": "XNNPACK@08cc38b61f7589f84e91c6e343e0f130ae3279ca/src/configs/gemm-config.c"
+      },
+      {
+        "id": "huggingface-token-bytes",
+        "path": "native/bridge/huggingface_token_bytes_v020.patch",
+        "postimageSha256Lf": "a73f1ba0602ed08e6b6c63042be557fed3a6d1815d92cf588d96a8d14cde4b6b",
+        "preimageSha256Lf": "dfce389070058c835975ca2f76d4858830156928b12131c53a5933cb522661f8",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "359e0a66e7ae1f3a0830d3c628839902d8ae71e2be6502d142dea01660f41ebd",
+        "source": "runtime/components/constrained_decoding/BUILD"
+      },
+      {
+        "id": "huggingface-token-bytes",
+        "path": "native/bridge/huggingface_token_bytes_v020.patch",
+        "postimageSha256Lf": "722aaa0e0204e74ecf56bbd9675d59be3b6537d944074236606c279421a69e2d",
+        "preimageSha256Lf": "793ec01ba12f7b0a4ae6d5ba75ab226ec064d5aaff3fdde7698115f927ca3122",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "359e0a66e7ae1f3a0830d3c628839902d8ae71e2be6502d142dea01660f41ebd",
+        "source": "runtime/components/constrained_decoding/llg_constraint_provider.cc"
+      },
+      {
+        "id": "huggingface-token-bytes",
+        "path": "native/bridge/huggingface_token_bytes_v020.patch",
+        "postimageSha256Lf": "117ab89ab377a2067b34f8ea84a9fdc2d054d0b3303a49c85f24ff3542660c01",
+        "preimageSha256Lf": "8d7f0fb096e24f468057dd4a4d276962e898693857dedb0743805be388117610",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "359e0a66e7ae1f3a0830d3c628839902d8ae71e2be6502d142dea01660f41ebd",
+        "source": "support/tokenizer/BUILD"
+      },
+      {
+        "id": "huggingface-token-bytes",
+        "path": "native/bridge/huggingface_token_bytes_v020.patch",
+        "postimageSha256Lf": "5853d97e37a62957331db217c9f5e4a2f5ef89e725f5417aac350232505edad6",
+        "preimageSha256Lf": "ec69b3dff009ede39d82c1d280d859530cc3cc598b36a9c8cc94d986adf24c20",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "359e0a66e7ae1f3a0830d3c628839902d8ae71e2be6502d142dea01660f41ebd",
+        "source": "support/tokenizer/huggingface_tokenizer.cc"
+      },
+      {
+        "id": "huggingface-token-bytes",
+        "path": "native/bridge/huggingface_token_bytes_v020.patch",
+        "postimageSha256Lf": "5623e1a7fe0e8723fca39c7902dd2b7a8b5f4f846a7e53b88b078e8c36a5d7cd",
+        "preimageSha256Lf": "b9c723c1314869d347a119378a978612f48ac6575317ca0aad41a3dabbacf74a",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "359e0a66e7ae1f3a0830d3c628839902d8ae71e2be6502d142dea01660f41ebd",
+        "source": "support/tokenizer/huggingface_tokenizer.h"
+      },
+      {
+        "id": "huggingface-token-bytes",
+        "path": "native/bridge/huggingface_token_bytes_v020.patch",
+        "postimageSha256Lf": "b0ca05aa33fc0a6d7b735806383970e2f24e52d55db6c2bb8192b7123a20ae44",
+        "preimageSha256Lf": "f80f9685c276c303bb3110203069ece92bcc61276db537baee50599eed2ad1da",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        "sha256": "359e0a66e7ae1f3a0830d3c628839902d8ae71e2be6502d142dea01660f41ebd",
+        "source": "support/tokenizer/tokenizer.h"
+      },
+      {
+        "id": "litert-xnnpack-fresh-cache",
+        "path": "native/bridge/litert_xnnpack_fresh_cache_v020.patch",
+        "postimageSha256Lf": "5521d7042b36f47539d4c49bcc893ee79d2cd3f1bd8d9c59f2eee2fda08560b6",
+        "preimageSha256Lf": "348b1b14d9223a110d0dabea3890fc20bef27fe578c65a8355e02f80a09a630f",
+        "scope": "Linux source-built runtimes with a newly created path-owned XNNPACK cache",
+        "sha256": "f1f7b855194d9299755fed334d56d2010696067abebd5bc13f5dc9d5137a434b",
+        "source": "LiteRT@bf49eb62406d15948261a840c9dcd8e4f13b478c/tflite/delegates/xnnpack/weight_cache.cc"
+      },
+      {
+        "id": "litert-xnnpack-fresh-cache",
+        "path": "native/bridge/litert_xnnpack_fresh_cache_v020.patch",
+        "postimageSha256Lf": "fa6a2da8599a020af5b3796db1b50578d95ac0c480050c5775249413e556537c",
+        "preimageSha256Lf": "01d075c069b746eba06797b77906bdb677846c5a0146590dcc22abb07c59a05e",
+        "scope": "Linux source-built runtimes with a newly created path-owned XNNPACK cache",
+        "sha256": "f1f7b855194d9299755fed334d56d2010696067abebd5bc13f5dc9d5137a434b",
+        "source": "LiteRT@bf49eb62406d15948261a840c9dcd8e4f13b478c/tflite/delegates/xnnpack/weight_cache.h"
+      },
+      {
+        "id": "litert-stage-spatial-tensors",
+        "path": "native/bridge/litert_stage_spatial_tensors_v020.patch",
+        "postimageSha256Lf": "ee5943a90770691b5e959152c02aaad642d9f6b42ddfbe08b1e3cb79bf8e614a",
+        "preimageSha256Lf": "94510294e45a568440e87366facbae6294a1087a52bbbcbab05e5f6ceec6d3dd",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts; backports google-ai-edge/LiteRT@aa9e40cd5e2d892b3a5d8579a7ec6faa696e321e",
+        "sha256": "f699b806e8c16a4fda4e147cd59fe2866e3eccc66fbb1ddf4720451aa58abd91",
+        "source": "LiteRT@bf49eb62406d15948261a840c9dcd8e4f13b478c/ml_drift_delegate/delegate/gpu_backend_vulkan.cc"
+      },
+      {
+        "id": "litert-stage-spatial-tensors",
+        "path": "native/bridge/litert_stage_spatial_tensors_v020.patch",
+        "postimageSha256Lf": "66eebf4c18828637fcbcdb360c2192a446c070e5519fd61936b782f2faa5363b",
+        "preimageSha256Lf": "5d7b59f6e1c03749333bd650911c1ffc0e911932d65b0762c87f5616574ceb0b",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts; backports google-ai-edge/LiteRT@aa9e40cd5e2d892b3a5d8579a7ec6faa696e321e",
+        "sha256": "f699b806e8c16a4fda4e147cd59fe2866e3eccc66fbb1ddf4720451aa58abd91",
+        "source": "LiteRT@bf49eb62406d15948261a840c9dcd8e4f13b478c/ml_drift_delegate/delegate/gpu_backend_vulkan.h"
+      },
+      {
+        "id": "litert-stage-spatial-tensors",
+        "path": "native/bridge/litert_stage_spatial_tensors_v020.patch",
+        "postimageSha256Lf": "1d8ab8c31766429ee5e4423a62aa60dab6b09abcfb81f7672474d22b49978dad",
+        "preimageSha256Lf": "38906e7dd17317e946eff46e8b185505bf1f463043d19b24318b30d4e4089bb5",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts; backports google-ai-edge/LiteRT@aa9e40cd5e2d892b3a5d8579a7ec6faa696e321e",
+        "sha256": "f699b806e8c16a4fda4e147cd59fe2866e3eccc66fbb1ddf4720451aa58abd91",
+        "source": "LiteRT@bf49eb62406d15948261a840c9dcd8e4f13b478c/ml_drift_delegate/delegate/gpu_backend_webgpu.cc"
+      },
+      {
+        "id": "litert-stage-spatial-tensors",
+        "path": "native/bridge/litert_stage_spatial_tensors_v020.patch",
+        "postimageSha256Lf": "9c795eedf6256288b1e7f33bff028d5af99e9958d6568dd40276d4bda46b06c3",
+        "preimageSha256Lf": "e6b0a47805e83db622ce65d6d8bb5535a03a867456e4bcb72ae16044ce23f041",
+        "scope": "source-built runtimes only; excludes official upstream prebuilts; backports google-ai-edge/LiteRT@aa9e40cd5e2d892b3a5d8579a7ec6faa696e321e",
+        "sha256": "f699b806e8c16a4fda4e147cd59fe2866e3eccc66fbb1ddf4720451aa58abd91",
+        "source": "LiteRT@bf49eb62406d15948261a840c9dcd8e4f13b478c/ml_drift_delegate/delegate/gpu_backend_webgpu.h"
+      }
+    ],
+    "tag": "v0.20.0"
+  }
+}

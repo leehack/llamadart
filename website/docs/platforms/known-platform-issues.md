@@ -86,8 +86,8 @@ feature. For which runtime supports which feature, see the
   shipped in `v0.19.1-2`; any other runtime, including `v0.18.x`, `v0.19.0`,
   `v0.19.1` and `v0.19.1-1`, is refused before any native embedding call,
   though `checkLoad`, which opens no runtime, reports it as supported. GPU
-  generation is not gated: the marker does not establish GPU support, and
-  `v0.19.0` and `v0.19.1` expose the same C API 1.0 as later runtimes.
+  generation does not use that marker. GPU support depends on the runtime,
+  device and driver.
 - Linux x64 LiteRT-LM GPU needs a hardware Vulkan driver. When every Vulkan
   device is a software rasterizer (Mesa llvmpipe/lavapipe, SwiftShader), an
   explicit GPU load throws `LlamaUnsupportedException` and a GPU hint under

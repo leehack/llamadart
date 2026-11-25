@@ -960,9 +960,7 @@ const List<String> _windowsLiteRtLibraries = [
   'dxcompiler.dll',
   'dxil.dll',
   'libGemmaModelConstraintProvider.dll',
-  'libwebgpu_dawn.dll',
   'webgpu_dawn.dll',
-  'libLiteRtWebGpuAccelerator.dll',
   'msvcp140.dll',
   'vcruntime140.dll',
   'vcruntime140_1.dll',
@@ -973,7 +971,6 @@ const List<String> _windowsLiteRtAssetNames = [
   'litert_lm_LiteRtLm',
   'litert_lm_GemmaModelConstraintProvider',
   'litert_lm_webgpu_dawn',
-  'litert_lm_LiteRtWebGpuAccelerator',
 ];
 
 Future<void> _writeBundleArchive({

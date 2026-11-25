@@ -2,6 +2,21 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.20.x` -> `0.21.0`: LiteRT-LM native runtime
+
+- The native hook and Apple companion move to LiteRT-LM `v0.20.0`.
+  Its C API 1.1.0 retains the stable status/out-parameter signatures.
+  Use a companion from the same core minor. The `0.20.x` companion targets
+  the `v0.19.1` runtime line.
+- Unset NPU handwritten-component flags follow the model bundle metadata.
+  Without an explicit setting or bundle flag they default to off, except for
+  the ring-buffer KV-cache update case. Recheck NPU placement with your bundle.
+- Benchmark `totalInitTime` now measures engine creation. Compare values
+  across versions only when their measurement scopes match.
+- Custom Web preloads that use explicit CPU inference must expose
+  `window.LiteRtLmBackendEnum = module.Backend` from the same module that
+  supplies `window.LiteRtLmEngine`. The backend IDs changed in Web 0.20.0.
+
 ## `0.20.1` -> `0.20.2`: opt-in `Qwen3WindowedAsrAdapter` and `SpeechToTextCapabilities.inputMode`
 
 `SpeechToTextModel` accepts the new opt-in `Qwen3WindowedAsrAdapter` (a `final class`

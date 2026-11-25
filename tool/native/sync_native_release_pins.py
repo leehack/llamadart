@@ -200,6 +200,7 @@ LITERT_PREBUILT_OVERRIDES = {
     "v0.19.0": LITERT_ANDROID_DAWN_OVERRIDES,
     # v0.19.1 ships the same prebuilt Dawn and accelerator payloads as v0.19.0.
     "v0.19.1": LITERT_ANDROID_DAWN_OVERRIDES,
+    "v0.20.0": LITERT_ANDROID_DAWN_OVERRIDES,
 }
 LITERT_REQUIRED_RUNTIME_PATHS = {
     "bin/android/arm64/libLiteRtLm.so",
@@ -409,9 +410,9 @@ def _litert_compatibility_version(compatibility_tag: str) -> tuple[int, ...]:
     return tuple(int(part) for part in compatibility_tag[1:].split("."))
 
 
-# Upstream versions reviewed to export C API 1.0 and link both TopK samplers
+# Upstream versions reviewed to export C API 1 and link both TopK samplers
 # from source. Add a version only after comparing its C API exports.
-LITERT_V1_COMPATIBILITY_VERSIONS = {(0, 19, 0), (0, 19, 1)}
+LITERT_V1_COMPATIBILITY_VERSIONS = {(0, 19, 0), (0, 19, 1), (0, 20, 0)}
 # v0.19 LiteRtLm embeds LiteRT, so owner releases after v0.19.1-3 drop the
 # macOS libLiteRt and WebGPU accelerator it never opens (#1911).
 LITERT_UNUSED_APPLE_COMPANION_TARGETS = ("LiteRt", "LiteRtWebGpuAccelerator")
@@ -3973,7 +3974,10 @@ def _litert_lm_runtime_inventory_is_v1(manifest: dict[str, Any]) -> bool:
         "runtime inventory upstream compatibilityTag",
     )
     version = _litert_compatibility_version(compatibility_tag)
-    if version > max(LITERT_V1_COMPATIBILITY_VERSIONS):
+    if (
+        version >= min(LITERT_V1_COMPATIBILITY_VERSIONS)
+        and version not in LITERT_V1_COMPATIBILITY_VERSIONS
+    ):
         raise ReleaseError(
             "LiteRT-LM runtime inventory has no reviewed API mapping for "
             + compatibility_tag

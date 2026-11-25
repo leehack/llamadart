@@ -33,8 +33,8 @@ export 'litert_lm_native_settlement.dart';
 part 'litert_lm_embedding_native.dart';
 part 'litert_lm_runtime_facade.dart';
 
-const _litertLmReleaseTag = 'v0.19.1-7';
-const _litertLmVersion = '0.19.1-7';
+const _litertLmReleaseTag = 'v0.20.0';
+const _litertLmVersion = '0.20.0';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';
@@ -304,7 +304,7 @@ Directory? liteRtLmFindBundleLibraryDirectoryForAbi(
 ///
 /// An incomplete explicit override throws instead of substituting another runtime.
 /// [searchRoots] is only called when the first two steps find nothing.
-/// With [cApiV1], this finds a candidate containing the common 0.19 files; the
+/// With [cApiV1], this finds a candidate containing the common C API 1 files; the
 /// selected primary must still prove an admitted C API before waiving legacy samplers.
 Directory? liteRtLmResolveRuntimeDirectoryForAbi(
   Abi abi, {
@@ -403,9 +403,7 @@ List<String> liteRtLmIosLibraryCandidates(
 }
 
 /// Required desktop runtime files. The default preserves legacy discovery;
-/// [cApiV1] describes the owner 0.19 inventory after C API admission, less
-/// the prebuilt `libLiteRt` that Linux and Windows hosts from v0.19.1-1 link
-/// in instead of loading (litert-lm-native#112).
+/// [cApiV1] describes the current pinned owner inventory.
 List<String> liteRtLmRequiredLibrariesForAbi(Abi abi, {bool cApiV1 = false}) {
   return cApiV1
       ? _liteRtLmV1RequiredLibrariesForAbi(abi)
@@ -471,13 +469,11 @@ List<String> _liteRtLmV1RequiredLibrariesForAbi(Abi abi) {
     Abi.linuxArm64 => const <String>[
       'libGemmaModelConstraintProvider.so',
       'libLiteRtLm.so',
-      'libLiteRtWebGpuAccelerator.so',
       'libwebgpu_dawn.so',
     ],
     Abi.linuxX64 => const <String>[
       'libGemmaModelConstraintProvider.so',
       'libLiteRtLm.so',
-      'libLiteRtWebGpuAccelerator.so',
       'libwebgpu_dawn.so',
     ],
     Abi.windowsX64 => const <String>[
@@ -485,8 +481,6 @@ List<String> _liteRtLmV1RequiredLibrariesForAbi(Abi abi) {
       'dxcompiler.dll',
       'dxil.dll',
       'libGemmaModelConstraintProvider.dll',
-      'libLiteRtWebGpuAccelerator.dll',
-      'libwebgpu_dawn.dll',
       'msvcp140.dll',
       'vcruntime140.dll',
       'vcruntime140_1.dll',
@@ -559,19 +553,23 @@ List<String> liteRtLmCompanionLibrariesForAbi(Abi abi, {bool cApiV1 = false}) {
   ];
 }
 
-/// The prebuilt LiteRT that Linux and Windows hosts before v0.19.1-1 import
-/// (v0.18.x, v0.19.0 and v0.19.1). Hosts from v0.19.1-1 link LiteRT in, so
-/// neither inventory requires it.
+/// Desktop libraries that older runtime directories may still need.
 List<String> liteRtLmOptionalCompanionLibrariesForAbi(Abi abi) {
   return switch (abi) {
-    Abi.linuxArm64 || Abi.linuxX64 => const <String>['libLiteRt.so'],
-    Abi.windowsX64 => const <String>['libLiteRt.dll'],
+    Abi.linuxArm64 || Abi.linuxX64 => const <String>[
+      'libLiteRt.so',
+      'libLiteRtWebGpuAccelerator.so',
+    ],
+    Abi.windowsX64 => const <String>[
+      'libLiteRt.dll',
+      'libLiteRtWebGpuAccelerator.dll',
+      'libwebgpu_dawn.dll',
+    ],
     _ => const <String>[],
   };
 }
 
-/// Companion paths the runtime opens from an explicit
-/// `LLAMADART_LITERT_LM_LIB_DIR` [directory] before its primary library:
+/// Companion paths the runtime opens from a desktop [directory] before its primary library:
 /// [liteRtLmCompanionLibrariesForAbi], then each
 /// [liteRtLmOptionalCompanionLibrariesForAbi] library the directory holds.
 ///
@@ -2094,6 +2092,7 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
       description: 'LiteRT-LM library',
     );
     final inventory = _discoveryInventory;
+    final legacyCompanionPaths = <String>[];
     if (_allowV1Inventory && inventory != null) {
       // Only the selected image's version probe can waive legacy sampler files.
       final v1 = readLiteRtLmCApiVersion(liteRtLm.library) != null;
@@ -2106,31 +2105,34 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
           .toList();
       if (missing.isNotEmpty) {
         throw LlamaUnsupportedException(
-          'The selected LiteRT-LM ${v1 ? "C API 1.0" : "legacy C API"} '
+          'The selected LiteRT-LM ${v1 ? "C API 1" : "legacy C API"} '
           'runtime for ${Abi.current()} is incomplete: missing '
           '${missing.join(", ")}. Install a complete matching runtime; '
           'no other runtime was substituted.',
         );
       }
       if (!v1) {
+        final openedCandidates = libraries.companions
+            .map(path.basename)
+            .toSet();
+        legacyCompanionPaths.addAll(
+          inventory.legacy
+              .where(
+                (file) =>
+                    !inventory.v1.contains(file) &&
+                    !openedCandidates.contains(path.basename(file)),
+              )
+              .map((file) => path.join(inventory.directory.path, file)),
+        );
         companionLibraries.addAll(
-          liteRtLmOpenCompanionLibraries(
-            inventory.legacy
-                .where((file) => !inventory.v1.contains(file))
-                .map((file) => path.join(inventory.directory.path, file)),
-          ),
+          liteRtLmOpenCompanionLibraries(legacyCompanionPaths),
         );
       }
     }
     _liteRtLmLibraryPath = liteRtLm.path;
     _liteRtLmCompanionLibraryPaths = [
       ...libraries.companions,
-      if (_allowV1Inventory &&
-          inventory != null &&
-          !liteRtLm.library.providesSymbol('litert_lm_get_api_version'))
-        ...inventory.legacy
-            .where((file) => !inventory.v1.contains(file))
-            .map((file) => path.join(inventory.directory.path, file)),
+      ...legacyCompanionPaths,
     ];
     _companionLibraries = companionLibraries;
     return _discoveredLibrary = liteRtLm;
@@ -2533,10 +2535,11 @@ class _LegacyLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   }
 
   List<String> _companionLibrariesForAbi(Abi abi, Directory dir) {
-    return liteRtLmCompanionLibrariesForAbi(
+    return liteRtLmExplicitDirectoryCompanionPathsForAbi(
       abi,
+      dir,
       cApiV1: _allowV1Inventory,
-    ).map((library) => '${dir.path}/$library').toList(growable: false);
+    );
   }
 
   List<String> _llamadartPackageRootsFromNearestPackageConfigs(

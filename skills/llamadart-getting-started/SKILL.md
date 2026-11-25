@@ -24,12 +24,13 @@ interface does not establish backend/model support; read `await engine.capabilit
 
 ## Guidelines
 
-- Use the pinned native LiteRT-LM v0.19.1-7 runtime. Direct calls, service
+- Use the pinned native LiteRT-LM v0.20.0 runtime. Direct calls, service
   probes and speech share ABI-aware discovery. Public selection admits legacy
-  runtimes and C API 1.0.x and 1.1.x; unknown/future versions are refused before engine
-  calls. The pin is published native v0.19.1-7 (owner `930a3e29`, upstream
-  `7a03724c`). The selected loader requires macOS 14+ even for legacy
-  libraries and custom paths. Web uses `@litert-lm/core@0.20.0`.
+  runtimes and C API 1.0.x and 1.1.x. Unknown versions are refused before engine
+  calls. The pin is published native v0.20.0
+  (owner `d73bca7c` / upstream `95df4c2a`) and reports C API 1.1.0. The selected
+  loader requires macOS 14+ even for legacy libraries and custom paths. Web uses
+  `@litert-lm/core@0.20.0`.
 
 - For a model-free macOS/Linux/Windows setup snapshot, use
   `dart run llamadart:doctor [--json]` or

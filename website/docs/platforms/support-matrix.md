@@ -271,7 +271,7 @@ across both automatic-selection lifetimes.
 | Runtime | Pinned release |
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v1.0.0-4` |
-| LiteRT-LM native | `leehack/litert-lm-native@v0.19.1-7` |
+| LiteRT-LM native | `leehack/litert-lm-native@v0.20.0` |
 | stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.4.0-1`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
@@ -283,17 +283,16 @@ SD `v0.3.0-6` passed four full-VAE load/dispose cycles and eight decodes per dev
 
 The native-assets hook currently pins `llamadart-native` tag
 `v1.0.0-4` and
-`litert-lm-native` release `v0.19.1-7` (`lib/src/hook/native_release_pins.dart`).
+`litert-lm-native` tag `v0.20.0` (`lib/src/hook/native_release_pins.dart`).
 The Windows llama.cpp bundles select the newest Visual C++ runtime per
 architecture. The published Apple llama.cpp companions `0.20.0` and `0.20.1`
 remain compatible with an upgrade warning and use their own native builds.
 
 The direct native client, service probes and speech worker share ABI-aware
 discovery. Public selection admits legacy runtimes and C API 1.0.x and 1.1.x; unknown
-or future versions are refused before engine calls. The pinned runtime is
-published native
-[v0.19.1-7](https://github.com/leehack/litert-lm-native/releases/tag/v0.19.1-7)
-(owner `930a3e29`, upstream `7a03724c`). The selected loader requires macOS 14+
+or future versions are refused before engine calls. The pin is published native
+v0.20.0 (owner `d73bca7c` / upstream `95df4c2a`) and reports C API 1.1.0.
+The selected loader requires macOS 14+
 before loading any core or companion library, including legacy libraries and
 custom paths. The Web default is `@litert-lm/core@0.20.0`. Backend IDs
 are read from the loaded module so apps can also preload 0.19.0.
