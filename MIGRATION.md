@@ -2,12 +2,16 @@
 
 This document covers the major breaking upgrade paths.
 
-## `0.20.x` -> `0.21.0`: LiteRT-LM native runtime
+## `0.20.x` -> `0.21.0`: Apple companions and LiteRT-LM
 
+- Upgrade core and all installed Apple SwiftPM companions together. The
+  `0.21.x` companions require `llamadart: '>=0.21.0 <0.22.0'`.
 - The native hook and Apple companion move to LiteRT-LM `v0.20.0`.
-  Its C API 1.1.0 retains the stable status/out-parameter signatures.
-  Use a companion from the same core minor. The `0.20.x` companion targets
-  the `v0.19.1` runtime line.
+  Its C API 1.1.0 retains the stable status/out-parameter signatures. The
+  published `0.20.x` LiteRT-LM companion targets the `v0.19.1` runtime line.
+- On native LiteRT-LM, unsupported text LoRA in `ModelParams.loras` raises
+  `LlamaUnsupportedException` during model load. Use a compatible llama.cpp
+  model and adapter for text LoRA.
 - Unset NPU handwritten-component flags follow the model bundle metadata.
   Without an explicit setting or bundle flag they default to off, except for
   the ring-buffer KV-cache update case. Recheck NPU placement with your bundle.
