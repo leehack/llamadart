@@ -159,6 +159,7 @@ const String webBridgeManifestSha256 =
     String version = '0.20.3',
     String? through,
     String? from,
+    String? baseRef,
     bool write = false,
     String? curated,
     String? verify,
@@ -171,6 +172,7 @@ const String webBridgeManifestSha256 =
     from ?? this.from,
     '--through',
     through ?? head,
+    if (baseRef != null) ...['--base-ref', baseRef],
     if (write) '--write',
     if (curated != null) ...['--curated', curated],
     if (verify != null) ...['--verify-input', verify],
@@ -187,6 +189,18 @@ const String webBridgeManifestSha256 =
 }
 
 _Repo _repo() => _Repo.clone(_repoDirectory(), _seedRepo);
+
+_Repo _minorRepo() {
+  final repo = _repo();
+  const history = '## 0.21.0\n\n- Minor release.\n\n$_oldRelease';
+  repo.pr(2, 'N/A: Minor release.', {
+    'pubspec.yaml': 'name: llamadart\nversion: 0.21.0\n',
+    _root: '$_rootIntro$history',
+    _docs: '$_docsIntro$history',
+  });
+  repo.git(['tag', 'v0.21.0']);
+  return repo;
+}
 
 Directory _repoDirectory() {
   final dir = Directory.systemTemp.createTempSync('clpre-changelog-git-');
@@ -558,20 +572,30 @@ void main() {
     });
   });
 
-  for (final (wide, skipped, badInverse, failure, ambiguous) in [
-    (false, 0, false, null, false),
-    (false, 0, false, null, true),
-    (true, 0, false, 'prove one main commit', false),
-    (false, 3, false, 'prove one main commit', false),
-    (true, 3, false, 'prove one main commit', false),
-    (false, 0, true, 'exactly invert', false),
-    (false, 0, false, 'read failed', false),
-    (false, 0, false, 'missing final PR', false),
+  for (final (wide, skipped, badInverse, failure, ambiguous, baseRef) in [
+    (false, 0, false, null, false, 'main'),
+    (false, 0, false, null, false, 'release/0.20.x'),
+    (
+      false,
+      0,
+      false,
+      'does not identify the same-repository release/0.20.x prep',
+      false,
+      'release/0.20.x',
+    ),
+    (false, 0, false, null, true, 'main'),
+    (true, 0, false, 'prove one main commit', false, 'main'),
+    (false, 3, false, 'prove one main commit', false, 'main'),
+    (true, 3, false, 'prove one main commit', false, 'main'),
+    (false, 0, true, 'exactly invert', false, 'main'),
+    (false, 0, false, 'read failed', false, 'main'),
+    (false, 0, false, 'missing final PR', false, 'main'),
   ]) {
     test(
-      'collector recovery wide=$wide priorRows=$skipped inverse=${!badInverse} result=$failure ambiguous=$ambiguous',
+      'collector recovery wide=$wide priorRows=$skipped inverse=${!badInverse} result=$failure ambiguous=$ambiguous base=$baseRef',
       () async {
         final repo = _repo();
+        if (baseRef != 'main') repo.git(['switch', '-c', baseRef]);
         final original = repo.head;
         for (var index = 0; index < skipped - 1; index++) {
           repo.pr(30 + index, '- Keep main row $index.', {
@@ -610,48 +634,59 @@ void main() {
               '{"version":"0.20.3","prep":"$prep","before":"$restored","pr":42}\n',
           if (badInverse) 'extra-change': 'unexpected',
         });
-        Future<String> collect(String body, {required bool write}) =>
-            runPrChangelogCollector(
-              repo.args(write: write),
-              directory: repo.dir,
-              lookup: (endpoint, {required paginate}) async {
-                if (endpoint == 'repos/leehack/llamadart/pulls/42') {
-                  return {
-                    'number': 42,
-                    'merged': true,
-                    'merge_commit_sha': prep,
-                    'base': {
-                      'ref': 'main',
-                      'sha': original,
-                      'repo': {'full_name': 'leehack/llamadart'},
-                    },
-                    'head': {
-                      'ref': 'release/prep-0.20.3',
-                      'repo': {'full_name': 'leehack/llamadart'},
-                    },
-                    'body': body,
-                  };
-                }
-                if (endpoint.startsWith('repos/leehack/llamadart/activity?')) {
-                  if (failure == 'read failed') {
-                    throw const FormatException('GitHub read failed.');
-                  }
-                  expect(paginate, isTrue);
-                  return [
-                    [
-                      {
-                        'id': 50596625102,
-                        'ref': 'refs/heads/main',
-                        'activity_type': 'pr_merge',
-                        'before': skipped == 0 ? before : original,
-                        'after': prep,
-                      },
-                    ],
-                  ];
-                }
-                fail('Unexpected lookup: $endpoint');
-              },
-            );
+        Future<String> collect(
+          String body, {
+          required bool write,
+        }) => runPrChangelogCollector(
+          repo.args(write: write, baseRef: baseRef == 'main' ? null : baseRef),
+          directory: repo.dir,
+          lookup: (endpoint, {required paginate}) async {
+            if (endpoint == 'repos/leehack/llamadart/pulls/42') {
+              return {
+                'number': 42,
+                'merged': true,
+                'merge_commit_sha': prep,
+                'base': {
+                  'ref': failure?.startsWith('does not identify') == true
+                      ? 'main'
+                      : baseRef,
+                  'sha': original,
+                  'repo': {'full_name': 'leehack/llamadart'},
+                },
+                'head': {
+                  'ref': 'release/prep-0.20.3',
+                  'repo': {'full_name': 'leehack/llamadart'},
+                },
+                'body': body,
+              };
+            }
+            if (endpoint.startsWith('repos/leehack/llamadart/activity?')) {
+              if (failure == 'read failed') {
+                throw const FormatException('GitHub read failed.');
+              }
+              final encodedRef = Uri.encodeQueryComponent(
+                'refs/heads/$baseRef',
+              );
+              expect(
+                endpoint,
+                'repos/leehack/llamadart/activity?ref=$encodedRef&activity_type=pr_merge&per_page=100',
+              );
+              expect(paginate, isTrue);
+              return [
+                [
+                  {
+                    'id': 50596625102,
+                    'ref': 'refs/heads/$baseRef',
+                    'activity_type': 'pr_merge',
+                    'before': skipped == 0 ? before : original,
+                    'after': prep,
+                  },
+                ],
+              ];
+            }
+            fail('Unexpected lookup: $endpoint');
+          },
+        );
         final work = collect(
           '## Changelog\n- Never substitute this mutable text.',
           write: true,
@@ -688,6 +723,181 @@ void main() {
         }
       },
     );
+  }
+
+  for (final (label, tagVersion, fork, subject, path, accepted) in [
+    (
+      'off-chain patch cut',
+      '0.21.1',
+      'v0.21.0',
+      '0.21.1',
+      'website/versioned_docs/version-0.21.1/guide.md',
+      true,
+    ),
+    ('wrong fork', '0.21.1', 'main', '0.21.1', 'website/versions.json', false),
+    (
+      'wrong fork before the minor',
+      '0.21.1',
+      'before-minor',
+      '0.21.1',
+      'website/versions.json',
+      false,
+    ),
+    (
+      'off-chain minor tag',
+      '0.22.0',
+      'v0.21.0',
+      '0.22.0',
+      'website/versions.json',
+      false,
+    ),
+    (
+      'unknown tag',
+      '0.21.1',
+      'v0.21.0',
+      '0.21.2',
+      'website/versions.json',
+      false,
+    ),
+    ('unexpected path', '0.21.1', 'v0.21.0', '0.21.1', 'tool/edit.dart', false),
+    (
+      'non-docs commit',
+      '0.21.1',
+      'v0.21.0',
+      null,
+      'website/versions.json',
+      false,
+    ),
+  ]) {
+    test('generated docs on main: $label', () async {
+      final repo = _minorRepo();
+      repo.git(['tag', 'before-minor', repo.activation]);
+      repo.pr(3, '- Main change.');
+      repo.git(['switch', '-c', 'release/0.21.x', fork]);
+      repo.pr(4, '- Squash backport.');
+      repo.pr(5, 'N/A: Patch prep.', {
+        'pubspec.yaml': 'name: llamadart\nversion: $tagVersion\n',
+      });
+      repo.git(['tag', '-a', 'v$tagVersion', '-m', 'Annotated release']);
+      repo.git(['switch', 'main']);
+      final cut = repo.commit(
+        subject == null ? 'Direct push' : 'docs: cut version $subject',
+        {
+          path: 'changed\n',
+          if (accepted)
+            'website/versioned_sidebars/version-0.21.1-sidebars.json': '{}\n',
+          if (accepted) 'website/versions.json': '[]\n',
+        },
+      );
+
+      final collection = _collect(
+        repo,
+        repo.args(version: '0.22.0', from: 'v0.21.0'),
+      );
+      if (accepted) {
+        final output = await collection;
+        expect(
+          output,
+          contains(
+            jsonEncode({
+              'sha': cut,
+              'pr': null,
+              'source': 'git',
+              'disposition': 'generated-docs',
+            }),
+          ),
+        );
+        expect(output, contains('- Main change.'));
+        expect(output, isNot(contains('Squash backport.')));
+      } else {
+        await expectLater(
+          collection,
+          throwsA(
+            _formatError(
+              'WARNING $cut: missing final PR number in commit subject.',
+            ),
+          ),
+        );
+      }
+    });
+  }
+
+  test(
+    'collects a squash backport offline with an unchanged receipt',
+    () async {
+      final repo = _minorRepo();
+      final fix = repo.pr(3, '- Patch note.', {'fix.txt': 'fixed\n'});
+      repo.git(['switch', '-c', 'release/0.21.x', 'v0.21.0']);
+      repo.git(['cherry-pick', '--no-commit', fix]);
+      final backport = repo.commit(
+        'Backport a fix (#4)\n\n'
+        'Backport of https://github.com/leehack/llamadart/pull/3\n'
+        '(cherry picked from commit $fix)\n\n'
+        '## Changelog\n- Patch note.',
+      );
+      final output = await _collect(
+        repo,
+        repo.args(
+          version: '0.21.1',
+          from: 'v0.21.0',
+          baseRef: 'release/0.21.x',
+          through: 'release/0.21.x',
+        ),
+      );
+      expect(_ledgerRow(output, 4)['sha'], backport);
+      expect(output, contains('- Patch note.'));
+      expect(
+        output,
+        await _collect(repo, repo.args(version: '0.21.1', from: 'v0.21.0')),
+      );
+    },
+  );
+
+  for (final (associationBase, detailBase, failure) in [
+    ('release/0.21.x', 'release/0.21.x', null),
+    (
+      'main',
+      'release/0.21.x',
+      'no matching merged release/0.21.x PR association',
+    ),
+    (
+      'release/0.21.x',
+      'main',
+      'PR detail conflicts with the commit association',
+    ),
+  ]) {
+    test('patch collector fallback: $associationBase / $detailBase', () async {
+      final repo = _minorRepo();
+      repo.git(['switch', '-c', 'release/0.21.x', 'v0.21.0']);
+      final commit = repo.commit('Backport a fix (#4)');
+      final result = _collect(
+        repo,
+        repo.args(
+          version: '0.21.1',
+          from: 'v0.21.0',
+          baseRef: 'release/0.21.x',
+        ),
+        {
+          'commits/$commit/pulls': [
+            [_pull(4, commit, branch: associationBase)],
+          ],
+          'pulls/4': _pull(
+            4,
+            commit,
+            branch: detailBase,
+            body: '## Changelog\n- Patch note.',
+          ),
+        },
+      );
+      if (failure == null) {
+        expect(
+          (await result),
+          contains('"pr":4,"source":"api","disposition":"included"'),
+        );
+      } else {
+        await expectLater(result, throwsA(_formatError(failure)));
+      }
+    });
   }
 
   test('pins the committed changelog cutover tag and first parent', () {
