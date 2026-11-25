@@ -133,14 +133,59 @@ const String linuxVmRun =
     r'${{ steps.shard.outputs.files }}';
 
 void main() {
-  test('CI uses the updated payload when a release-prep label is added', () {
-    final pullRequest = readWorkflow('ci')['on']['pull_request'] as Map;
-    expect(pullRequest['branches'], ['main']);
-    expect(
-      pullRequest['types'],
-      unorderedEquals(['opened', 'synchronize', 'reopened', 'labeled']),
-    );
-  });
+  test(
+    'CI validates main and patch branches and keeps the release-prep label event',
+    () {
+      const branches = ['main', 'release/[0-9]+.[0-9]+.x'];
+      final trigger = readWorkflow('ci')['on'] as Map;
+      expect(trigger['push']['branches'], branches);
+      expect(trigger['pull_request']['branches'], branches);
+      expect(
+        trigger['pull_request']['types'],
+        unorderedEquals(['opened', 'synchronize', 'reopened', 'labeled']),
+      );
+      final jobs = readWorkflow('ci')['jobs'] as Map;
+      const main = "github.ref == 'refs/heads/main'";
+      final artifact = (jobs['web-chat-contract']['steps'] as List)
+          .cast<Map>()
+          .singleWhere((step) => step['id'] == 'production-artifact');
+      expect(jobs['deploy-chat-app']['if'], contains(main));
+      expect(artifact['if'], contains(main));
+    },
+  );
+
+  for (final workflow in [
+    'native_release_digests',
+    'litert_lm_smoke',
+    'validation_bundles',
+  ]) {
+    test('$workflow adds patch branches only to PR checks', () {
+      final trigger = readWorkflow(workflow)['on'] as Map;
+      expect(trigger['pull_request']['branches'], [
+        'main',
+        'release/[0-9]+.[0-9]+.x',
+      ]);
+      expect(trigger['push']['branches'], ['main']);
+    });
+  }
+
+  for (final workflow in [
+    'chat_app_hf_pr_preview',
+    'chat_app_hf_pr_preview_sweep',
+    'chat_app_hf_static_deploy',
+    'laya_tetris_hf_static_deploy',
+    'docs_pages',
+    'release_genkit_on_prep_merge',
+    'publish_genkit_pubdev',
+  ]) {
+    test('$workflow excludes the patch-branch pattern', () {
+      final trigger = readWorkflow(workflow)['on'] as Map;
+      for (final event in trigger.values.whereType<Map>()) {
+        final branches = (event['branches'] as List?) ?? [];
+        expect(branches, everyElement(isNot(startsWith('release/'))));
+      }
+    });
+  }
 
   test('CI artifact actions use full SHAs with version comments', () {
     final source = File('.github/workflows/ci.yml').readAsStringSync();

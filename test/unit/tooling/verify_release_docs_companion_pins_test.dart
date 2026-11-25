@@ -59,7 +59,7 @@ List<String> _releaseWorkflowContractProblems(String workflow) {
   final problems = <String>[];
   final strictGate = RegExp(
     r'^ +bash tool/release/verify_release_candidate\.sh '
-    r'"\$through" "\$release_sha" "\$landed_body"$',
+    r'"\$through" "\$release_sha" "\$landed_body" "\$BASE_REF"$',
     multiLine: true,
   );
   final gateMatches = strictGate.allMatches(workflow).toList();
@@ -180,7 +180,7 @@ void main() {
       '.github/workflows/release_on_prep_merge.yml',
     ).readAsStringSync();
     const strictCommand =
-        r'bash tool/release/verify_release_candidate.sh "$through" "$release_sha" "$landed_body"';
+        r'bash tool/release/verify_release_candidate.sh "$through" "$release_sha" "$landed_body" "$BASE_REF"';
     const publishStep = '- name: Publish core tag and companion packages';
 
     expect(
