@@ -1,3 +1,4 @@
+import 'package:pub_semver/pub_semver.dart';
 import 'package:yaml/yaml.dart';
 
 import 'check_released_changelog_sections.dart';
@@ -55,28 +56,25 @@ String? validateReleaseMetadata(Map<String, ReadinessFilePair> files) {
           'modes: ${entry.key}.';
     }
   }
-  final pubspec = files['pubspec.yaml']!;
-  final oldVersion = _packageVersion(pubspec.base.contents);
-  final newVersion = _packageVersion(pubspec.head.contents);
-  if (oldVersion == null || newVersion == null) {
-    return 'Core pubspec must contain one canonical stable version scalar.';
+  final core = releasePubspecVersionChange(files['pubspec.yaml']!, 'llamadart');
+  if (core == null) {
+    return 'Only the next core patch version scalar may change in pubspec; '
+        'dependencies, SDK, hooks, overrides and other bytes must stay identical.';
   }
+  final oldVersion = core.previous;
+  final newVersion = core.next;
   final oldParts = oldVersion.split('.').map(int.parse).toList();
   final newParts = newVersion.split('.').map(int.parse).toList();
   if (oldParts[0] != newParts[0] ||
       oldParts[1] != newParts[1] ||
-      oldParts[2] + 1 != newParts[2] ||
-      pubspec.base.contents.replaceFirst(
-            'version: $oldVersion\n',
-            'version: $newVersion\n',
-          ) !=
-          pubspec.head.contents) {
-    return 'Only the next core patch version scalar may change in pubspec; '
-        'dependencies, SDK, hooks, overrides and other bytes must stay identical.';
+      oldParts[2] + 1 != newParts[2]) {
+    return 'Only the next core patch version scalar may change in pubspec.';
   }
 
   for (final entry in releaseMetadataLocks.entries) {
-    if (!_validLock(files[entry.key]!, oldVersion, newVersion, entry.value)) {
+    if (!matchesReleaseLockVersions(files[entry.key]!, {
+      'llamadart': (version: core, relativePath: entry.value),
+    })) {
       return 'Generated consumer lock ${entry.key} may change only the matching '
           'local llamadart version; package inventory, paths, hashes and SDK '
           'must stay identical.';
@@ -140,67 +138,148 @@ String? validateReleaseMetadata(Map<String, ReadinessFilePair> files) {
   return null;
 }
 
-String? _packageVersion(String source) {
+typedef ReleaseVersionChange = ({String previous, String next});
+typedef LockedReleaseVersion = ({
+  ReleaseVersionChange version,
+  String relativePath,
+});
+
+const _stableVersion =
+    r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)';
+final _coreRange = RegExp('^>=($_stableVersion) <($_stableVersion)\$');
+
+/// Checks a version bump and, for a companion, an optional core floor raise.
+ReleaseVersionChange? releasePubspecVersionChange(
+  ReadinessFilePair pair,
+  String package, {
+  Version? companionCore,
+}) {
+  final before = _readReleasePubspec(pair.base.contents, package);
+  final after = _readReleasePubspec(pair.head.contents, package);
+  if (before == null || after == null || before.version == after.version) {
+    return null;
+  }
+  final bumped = pair.base.contents.replaceFirst(
+    RegExp('^version: ${RegExp.escape(before.version)}\$', multiLine: true),
+    'version: ${after.version}',
+  );
+  if (bumped != pair.head.contents &&
+      (companionCore == null ||
+          _raiseCompanionFloor(
+                bumped,
+                before.core,
+                after.core,
+                companionCore,
+              ) !=
+              pair.head.contents)) {
+    return null;
+  }
+  return (previous: before.version, next: after.version);
+}
+
+({String version, String? core})? _readReleasePubspec(
+  String source,
+  String package,
+) {
   try {
     final parsed = loadYaml(source);
     final matches = RegExp(
-      r'^version: (0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$',
+      '^version: $_stableVersion\$',
       multiLine: true,
     ).allMatches(source).toList();
     if (parsed is! YamlMap ||
-        parsed['name'] != 'llamadart' ||
+        parsed['name'] != package ||
         matches.length != 1) {
       return null;
     }
     final version = matches.single.group(0)!.substring('version: '.length);
-    return parsed['version'] == version ? version : null;
+    if (parsed['version'] != version) return null;
+    final dependencies = parsed['dependencies'];
+    final core = dependencies is YamlMap ? dependencies['llamadart'] : null;
+    return (version: version, core: core is String ? core : null);
   } on YamlException {
     return null;
   }
 }
 
-bool _validLock(
-  ReadinessFilePair pair,
-  String oldVersion,
-  String newVersion,
-  String expectedPath,
+String? _raiseCompanionFloor(
+  String bumped,
+  String? before,
+  String? after,
+  Version core,
 ) {
+  final oldRange = _coreRange.firstMatch(before ?? '');
+  final newRange = _coreRange.firstMatch(after ?? '');
+  if (oldRange == null || newRange == null) return null;
+  final previousFloor = Version.parse(oldRange[1]!);
+  final nextFloor = Version.parse(newRange[1]!);
+  final upper = Version(core.major, core.minor + 1, 0).toString();
+  if (oldRange[2] != upper ||
+      newRange[2] != upper ||
+      previousFloor.major != core.major ||
+      previousFloor.minor != core.minor ||
+      nextFloor <= previousFloor ||
+      nextFloor > core) {
+    return null;
+  }
+
+  final oldLine = RegExp(
+    "^  llamadart: '${RegExp.escape(before!)}'\$",
+    multiLine: true,
+  );
+  if (oldLine.allMatches(bumped).length != 1) return null;
+  return bumped.replaceFirst(oldLine, "  llamadart: '$after'");
+}
+
+/// Checks that only the listed checkout-local package versions changed.
+bool matchesReleaseLockVersions(
+  ReadinessFilePair pair,
+  Map<String, LockedReleaseVersion> changes,
+) {
+  if (changes.isEmpty) return false;
+  final Object? parsed;
   try {
-    for (final source in [pair.base.contents, pair.head.contents]) {
-      final parsed = loadYaml(source);
-      if (parsed is! YamlMap) return false;
-      final packages = parsed['packages'];
-      if (packages is! YamlMap) return false;
-      final core = packages['llamadart'];
-      if (core is! YamlMap || core['source'] != 'path') return false;
-      final description = core['description'];
-      if (description is! YamlMap ||
-          description['path'] != expectedPath ||
-          description['relative'] != true) {
-        return false;
-      }
-    }
-    final block = RegExp(
-      r'^  llamadart:\n(?:    [^\n]*\n|      [^\n]*\n)*',
-      multiLine: true,
-    ).allMatches(pair.base.contents).toList();
-    if (block.length != 1) return false;
-    final oldLine = '    version: "$oldVersion"\n';
-    final oldBlock = block.single.group(0)!;
-    if (oldLine.allMatches(oldBlock).length != 1) return false;
-    final newBlock = oldBlock.replaceFirst(
-      oldLine,
-      '    version: "$newVersion"\n',
-    );
-    return pair.base.contents.replaceRange(
-          block.single.start,
-          block.single.end,
-          newBlock,
-        ) ==
-        pair.head.contents;
+    parsed = loadYaml(pair.base.contents);
   } on YamlException {
     return false;
   }
+  if (parsed is! YamlMap || parsed['packages'] is! YamlMap) return false;
+  final packages = parsed['packages'] as YamlMap;
+  var expected = pair.base.contents;
+  for (final entry in changes.entries) {
+    final package = packages[entry.key];
+    final version = entry.value.version;
+    if (package is! YamlMap ||
+        package['source'] != 'path' ||
+        package['version'] != version.previous) {
+      return false;
+    }
+    final description = package['description'];
+    if (description is! YamlMap ||
+        description['path'] != entry.value.relativePath ||
+        description['relative'] != true) {
+      return false;
+    }
+    final block = RegExp(
+      '^  ${RegExp.escape(entry.key)}:\n'
+      r'(?:    [^\n]*\n|      [^\n]*\n)*',
+      multiLine: true,
+    ).allMatches(expected).toList();
+    final oldLine = RegExp(
+      '^    version: "${RegExp.escape(version.previous)}"\$',
+      multiLine: true,
+    );
+    if (block.length != 1 || oldLine.allMatches(block.single[0]!).length != 1) {
+      return false;
+    }
+    final match = block.single;
+    expected = expected.replaceRange(
+      match.start,
+      match.end,
+      match[0]!.replaceFirst(oldLine, '    version: "${version.next}"'),
+    );
+  }
+  return expected == pair.head.contents;
 }
 
 String? _activeFragments(String source) {
