@@ -1,6 +1,7 @@
 """Behavioral trigger and aggregate tests. Run without Dart or third-party deps."""
 from hashlib import sha256
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('select_jobs', ROOT / 'tool/ci/select_jobs.py')
@@ -72,7 +74,8 @@ def root_flutter_versions(workflow_name, workflow):
         header = re.fullmatch(r'  ([\w-]+):[ \t]*(?:#.*)?', line)
         if header:
             job = header[1]
-        if workflow_name == 'ci.yml' and job in ('studio', 'studio-macos'):
+        if ((workflow_name == 'ci.yml' and job in ('studio', 'studio-macos'))
+                or (workflow_name == 'main_macos.yml' and job == 'studio-macos')):
             continue
         if workflow_name == 'publish_companion_pubdev.yml':
             if line.startswith('      - '):
@@ -729,6 +732,8 @@ class SelectionTest(unittest.TestCase):
 """
         root_inputs = [(9, '3.47.1'), (11, '3.47.0'), (13, '3.47.1')]
         self.assertEqual(list(root_flutter_versions('ci.yml', workflow)), root_inputs)
+        self.assertEqual(list(root_flutter_versions('main_macos.yml', workflow)),
+                         [(5, '3.50.0'), *root_inputs])
         self.assertEqual(list(root_flutter_versions('other.yaml', workflow)),
                          [(5, '3.50.0'), *root_inputs, (17, '3.50.0')])
 
@@ -1257,6 +1262,169 @@ class AggregateTest(unittest.TestCase):
         self.assertEqual(ci.aggregate(plan, needs), [])
         needs['new-unaccounted-job'] = {'result': 'success'}
         self.assertTrue(ci.aggregate(plan, needs))
+
+
+class MainMacosLaneTest(unittest.TestCase):
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.root = Path(scratch.name)
+        previous = Path.cwd()
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, previous)
+        self.git('init', '-q', '-b', 'main')
+        self.git('config', 'user.email', 'test@example.invalid')
+        self.git('config', 'user.name', 'CI test')
+        self.base = self.commit('baseline')
+
+    def git(self, *args):
+        return subprocess.check_output(['git', *args], text=True).strip()
+
+    def commit(self, name):
+        self.git('add', '.')
+        self.git('commit', '-qm', name, '--allow-empty')
+        return self.git('rev-parse', 'HEAD')
+
+    def write(self, path):
+        file = self.root / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(path)
+
+    def select(self, *, macos=False, ref='refs/heads/main', event='push',
+               base=None, runs=(), api_error=None):
+        argv = ['select_jobs.py', 'select'] + (['--main-macos'] if macos else [])
+        head = self.git('rev-parse', 'HEAD')
+        payload = self.root / 'event.json'
+        payload.write_text(json.dumps({'before': base or self.base, 'after': head}))
+        output = self.root / 'github-output'
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        env = {
+            'GITHUB_EVENT_NAME': event, 'GITHUB_EVENT_PATH': str(payload),
+            'GITHUB_SHA': head, 'GITHUB_REF': ref, 'GITHUB_OUTPUT': str(output),
+            'GITHUB_REPOSITORY': 'leehack/llamadart', 'GITHUB_RUN_ID': '100',
+        }
+        with (patch.dict(os.environ, env), patch.object(sys, 'argv', argv),
+              patch.object(sys, 'stdout', stdout), patch.object(sys, 'stderr', stderr),
+              patch('urllib.request.urlopen', side_effect=api_error,
+                    return_value=io.StringIO(json.dumps({'workflow_runs': list(runs)}))) as api):
+            self.assertEqual(ci.main(), 0, stderr.getvalue())
+        if macos:
+            api.assert_called_once_with(
+                'https://api.github.com/repos/leehack/llamadart/actions/workflows/main_macos.yml/runs'
+                '?branch=main&status=success&per_page=2',
+                timeout=10,
+            )
+        else:
+            api.assert_not_called()
+        return json.loads(stdout.getvalue())
+
+    def run_at(self, sha, **overrides):
+        return {'id': 99, 'head_branch': 'main', 'head_sha': sha,
+                'status': 'completed', 'conclusion': 'success', **overrides}
+
+    def test_main_push_keeps_non_mac_checks_and_aggregates_expect_no_mac(self):
+        self.write('hook/build.dart')
+        self.commit('runtime input')
+        self.write('README.md')
+        self.commit('older runtime selection belongs in the Mac lane')
+        main = self.select()
+        release = self.select(ref='refs/heads/release/0.21.x')
+        self.assertEqual(main['test-other-os-matrix'], list(ci.WINDOWS_SHARDS))
+        self.assertEqual(main['desktops'], ['ubuntu-24.04', 'windows-2022'])
+        self.assertEqual(main['apps'], list(ci.APPS))
+        self.assertTrue(main['coverage'])
+        self.assertTrue(main['jobs']['web-chat-contract'])
+        self.assertTrue(main['jobs']['studio'])
+        self.assertFalse(ci.companion_job_selected(main))
+        self.assertFalse(main['studio-macos'])
+        self.assertTrue(release['macos-native'])
+        self.assertIn('macos-15', release['desktops'])
+        self.assertTrue(ci.companion_job_selected(release))
+        for bundle in (False, True):
+            expected = ci.expected_jobs(main, bundle=bundle)
+            needs = {job: {'result': 'success' if selected else 'skipped'}
+                     for job, selected in expected.items()}
+            needs['changes'] = {'result': 'success'}
+            self.assertEqual(ci.aggregate(main, needs, bundle=bundle), [])
+            if not bundle:
+                self.assertFalse(expected['companion-packages'])
+                self.assertFalse(expected['studio-macos'])
+
+    def test_cumulative_macos_selection_replays_both_pushes_through_a_merge(self):
+        path = 'packages/llamadart_studio/lib/transient.dart'
+        self.git('checkout', '-qb', 'studio-change')
+        self.write(path)
+        self.commit('add Studio input on topic')
+        self.git('checkout', '-q', 'main')
+        self.git('merge', '-q', '--no-ff', 'studio-change')
+        first_push = self.git('rev-parse', 'HEAD')
+        self.git('rm', path)
+        self.write('README.md')
+        second_push = self.commit('remove Studio input and change docs')
+        runs = [self.run_at(self.base)]
+        plan = self.select(macos=True, base=first_push, runs=runs)
+        self.assertEqual(ci.event_paths('push', {'before': self.base, 'after': second_push}),
+                         ['README.md'])
+        self.assertTrue(plan['studio-macos'])
+        self.assertEqual(plan['desktops'], [])
+        self.assertFalse(any(plan['jobs'].values()))
+        for event in ('schedule', 'workflow_dispatch'):
+            self.assertTrue(self.select(macos=True, event=event, runs=runs)['studio-macos'])
+
+    def test_cumulative_macos_fallback_for_missing_or_unusable_success(self):
+        self.git('checkout', '-qb', 'side')
+        self.write('README.md')
+        side = self.commit('merge parent outside main history')
+        self.git('checkout', '-q', 'main')
+        self.git('merge', '-q', '--no-ff', 'side')
+        cases = (
+            ([], None),
+            ([], OSError('network unavailable')),
+            ([self.run_at(self.base, head_branch='side')], None),
+            ([self.run_at(self.base, conclusion='cancelled')], None),
+            ([self.run_at(self.base, id=100)], None),
+            ([self.run_at('not a SHA')], None),
+            ([self.run_at('1' * 40)], None),
+            ([self.run_at(side)], None),
+        )
+        for runs, api_error in cases:
+            with self.subTest(runs=runs, api_error=api_error):
+                plan = self.select(macos=True, runs=runs, api_error=api_error)
+                self.assertEqual(plan['test-other-os-matrix'], list(ci.MACOS_SHARDS))
+                self.assertEqual(plan['desktops'], ['macos-15'])
+                self.assertTrue(plan['studio-macos'])
+                self.assertTrue(plan['apple-cache'])
+                self.assertTrue(plan['macos-validation-memory'])
+                self.assertEqual(len(plan['companions']), len(ci.COMPANIONS))
+                self.assertEqual(plan['apps'], [])
+                self.assertFalse(plan['coverage'])
+
+    def test_successful_same_head_needs_no_repeat_macos_jobs(self):
+        previous = self.run_at(self.base)
+        current = self.run_at(self.base, id=100)
+        plan = self.select(macos=True, runs=[current, previous])
+        self.assertFalse(plan['studio-macos'])
+        self.assertFalse(ci.companion_job_selected(plan))
+        self.assertEqual(plan['test-other-os-matrix'], [])
+        self.assertEqual(plan['desktops'], [])
+
+    def test_main_macos_aggregate_rejects_missing_cancelled_or_skipped_job(self):
+        plan = self.select(macos=True)
+        jobs = ('changes', 'test-other-os', 'companion-packages', 'studio-macos', 'desktop')
+        needs = {name: {'result': 'success'} for name in jobs}
+        self.assertEqual(ci.aggregate(plan, needs, main_macos=True), [])
+        with self.assertRaises(ValueError):
+            ci.aggregate(ci.select([]), needs, main_macos=True)
+        for job in jobs:
+            for result in (None, 'cancelled', 'skipped', 'failure'):
+                with self.subTest(job=job, result=result):
+                    bad = dict(needs)
+                    if result is None:
+                        del bad[job]
+                    else:
+                        bad[job] = {'result': result}
+                    self.assertTrue(ci.aggregate(plan, bad, main_macos=True))
 
 
 class MacosPathGatingTest(unittest.TestCase):

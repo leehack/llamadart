@@ -1652,6 +1652,157 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     },
   );
 
+  test('main macOS evaluates every push and requires every selected job', () {
+    final workflow = readWorkflow('main_macos');
+    expect(workflow['on'], {
+      'push': {
+        'branches': ['main'],
+      },
+      'workflow_dispatch': null,
+      'schedule': [
+        {'cron': '17 */2 * * *'},
+      ],
+    });
+    expect(workflow['permissions'], {'contents': 'read'});
+    expect(workflow['concurrency'], isNull);
+    final jobs = workflow['jobs'] as Map;
+    expect(jobs.keys.toSet(), {
+      'changes',
+      'studio-macos',
+      'companion-packages',
+      'test-other-os',
+      'desktop',
+      'result',
+    });
+    final changes = jobs['changes'] as Map;
+    expect(changes['if'], "github.ref == 'refs/heads/main'");
+    const outputs = [
+      'plan',
+      'companions',
+      'companion-job',
+      'studio-macos',
+      'macos-validation-memory',
+      'apple-cache',
+      'test-other-os',
+      'test-other-os-matrix',
+      'desktops',
+      'desktops-enabled',
+    ];
+    expect(changes['outputs'], {
+      for (final output in outputs)
+        output: '\${{ steps.select.outputs.$output }}',
+    });
+    final selector = changes['steps'] as List;
+    expect(selector.first['with'], {
+      'fetch-depth': 0,
+      'persist-credentials': false,
+    });
+    expect(
+      selector.last['run'],
+      'python3 tool/ci/select_jobs.py select --main-macos',
+    );
+    final result = jobs['result'] as Map;
+    expect(result['if'], r'${{ always() }}');
+    expect(
+      (result['needs'] as List).toSet(),
+      jobs.keys.toSet().difference({'result'}),
+    );
+    final resultSteps = result['steps'] as List;
+    expect(resultSteps.first, {
+      'name': 'Require the main branch',
+      'run': r'test "$GITHUB_REF" = refs/heads/main',
+    });
+    expect(resultSteps.last, {
+      'name': 'Verify every selected macOS job succeeded',
+      'env': {
+        'PLAN': r'${{ needs.changes.outputs.plan }}',
+        'NEEDS': r'${{ toJSON(needs) }}',
+      },
+      'run': 'python3 tool/ci/select_jobs.py aggregate --main-macos',
+    });
+    final core = readWorkflow('ci')['jobs'] as Map;
+    final bundles = readWorkflow('validation_bundles')['jobs'] as Map;
+    for (final name in [
+      'studio-macos',
+      'companion-packages',
+      'test-other-os',
+      'desktop',
+    ]) {
+      final original = name == 'desktop'
+          ? bundles[name] as Map
+          : core[name] as Map;
+      final job = jobs[name] as Map;
+      expect(job['needs'], 'changes');
+      expect(job['if'], original['if']);
+      expect(job['timeout-minutes'], original['timeout-minutes']);
+      expect(job['runs-on'], original['runs-on']);
+      expect(job['strategy'], original['strategy']);
+      expect(job['name'], startsWith('Main macOS '));
+      final originalSteps = [
+        for (final step in original['steps'] as List)
+          if (!(step['if']?.toString().contains("runner.os == 'Windows'") ??
+                  false) &&
+              !(step['if']?.toString().contains(
+                    "matrix.lane == 'windows-runtime'",
+                  ) ??
+                  false))
+            Map<String, dynamic>.from(step as Map),
+      ];
+      originalSteps.first['with'] = {'persist-credentials': false};
+      if (name == 'desktop') {
+        final build = originalSteps.singleWhere(
+          (step) => '${step['run']}'.startsWith(
+            'dart run tool/testing/validation.dart build',
+          ),
+        );
+        build['run'] = (build['run'] as String).replaceFirst(
+          r"${{ inputs.profile || 'tiny-gguf-cpu' }}",
+          'tiny-gguf-cpu',
+        );
+      }
+      expect(job['steps'], originalSteps, reason: name);
+    }
+    expect(jobs['studio-macos']['runs-on'], 'macos-15');
+    expect(jobs['companion-packages']['runs-on'], 'macos-latest');
+  });
+
+  test(
+    'main push fallback routes macOS checks away from ordinary CI',
+    () async {
+      final scratch = Directory.systemTemp.createTempSync('main-ci-selection-');
+      addTearDown(() => scratch.deleteSync(recursive: true));
+      final event = File('${scratch.path}/event.json')..writeAsStringSync('{}');
+      final output = File('${scratch.path}/github-output');
+      final selected = await Process.run(
+        Platform.isWindows ? 'python' : 'python3',
+        ['tool/ci/select_jobs.py', 'select'],
+        environment: {
+          'GITHUB_EVENT_NAME': 'push',
+          'GITHUB_REF': 'refs/heads/main',
+          'GITHUB_EVENT_PATH': event.path,
+          'GITHUB_OUTPUT': output.path,
+        },
+      );
+      expect(selected.exitCode, 0, reason: '${selected.stderr}');
+      final plan = jsonDecode(selected.stdout as String) as Map;
+      expect(plan['desktops'], ['ubuntu-24.04', 'windows-2022']);
+      expect((plan['test-other-os-matrix'] as List).map((row) => row['lane']), [
+        'windows-tooling',
+        'windows-runtime',
+      ]);
+      expect(
+        output.readAsLinesSync(),
+        containsAll([
+          'studio-macos=false',
+          'companion-job=false',
+          'apple-cache=false',
+          'macos-validation-memory=false',
+          'web-chat-contract=true',
+        ]),
+      );
+    },
+  );
+
   test('Linux VM tests have published companion tags and require them', () {
     final steps = readWorkflow('ci')['jobs']['test-linux-vm']['steps'] as List;
     final checkout = steps.singleWhere(

@@ -2,7 +2,8 @@
 
 `tool/ci/select_jobs.py` selects the core CI jobs and portable bundle targets
 from a complete Git diff. Both workflows still report a final status for every
-PR. A path filter must not prevent a required workflow from reporting.
+PR. A path filter must not prevent a required workflow from reporting. Pushes
+to `main` route macOS checks to [Main macOS CI](#main-macos-ci).
 
 ## Selection boundary
 
@@ -295,6 +296,32 @@ outside its tests and other platforms' folders, and the Apple companions'
 `lib/` and `pubspec.yaml`. Their Dart code still compiles in the PR's Linux
 desktop and Web builds. A deferred target is unselected, so `Validation bundle
 result` expects it skipped. A break in a deferred build first shows on `main`.
+
+## Main macOS CI
+
+Every `main` push event evaluates macOS work in `main_macos.yml`. The lane
+uses the last successful run of that workflow on `main` as its baseline and
+checks the commit that triggered the new run. It unions the changed paths
+from each first-parent commit in between, including both sides of renames
+and paths restored by later pushes. If Git history or the public Actions
+run list cannot establish a usable baseline, the lane selects all macOS
+checks. A failed or cancelled run cannot become the baseline.
+
+The lane runs the selected native shards, Studio lifecycle and accessibility
+tests on `macos-15`, Companion Packages on `macos-latest` (including the Apple
+cache and process memory checks), and the portable desktop bundle on
+`macos-15`. `Main macOS result` checks all selected jobs. Push runs are
+retained independently. Two pushes can select overlapping work when
+the first is still running.
+
+The two-hour schedule is a best-effort backstop. GitHub can delay or drop a
+scheduled run. Dispatch the workflow on `main` to recover after missed events,
+including pushes that GitHub does not turn into workflow runs.
+
+The ordinary `main` push workflows use their own push diff for the remaining
+jobs. Chat deployment waits for the core non-macOS result and its Web Chat
+artifact. PRs, ordinary manual runs, and release-branch pushes still use
+their existing macOS selection and check names.
 
 ## Host OS lanes
 
