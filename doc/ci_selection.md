@@ -257,11 +257,11 @@ across the owner's repositories, and each keeps its own selection on its step:
 selected `companions`, `macos-validation-memory`, and `apple-cache`), then runs
 only the selected steps (`companions` packages, `Test validation process
 memory` via `macos-validation-memory`, and the Apple companion cache-transition
-setup/test via `apple-cache`), each even if an earlier one failed. On Windows
-the process memory test runs in `windows-runtime` shard 1 when
-`windows-native` is true, and otherwise in a `Validation harness` matrix leg (`validation_harness_oses` checks
-`windows-native`, not `test-other-os`), so a validation-only or Mac-only change
-keeps Windows memory coverage without extra native shards. The Genkit job runs
+setup/test via `apple-cache`), each even if an earlier one failed. When the
+validation harness is selected, the Windows process memory test runs in
+`windows-runtime` shard 1 if `windows-native` is true. Otherwise, it runs in the
+standalone `Validation harness (model-free, windows-latest)` job via
+`validation-harness-windows`. The Genkit job runs
 Dart 3.12.0 lower bounds on a fresh tree before it sets up Flutter, so
 `FLUTTER_ROOT` and Flutter's Dart cannot affect them.
 
