@@ -1346,14 +1346,24 @@ the full-gate median targets and integration policy remain separate.
 suite times in `tool/ci/test_shard_weights.json`. macOS and Windows run only
 the host tests (`doc/ci_selection.md`, "Host OS lanes"); `dart
 tool/ci/test_shards.dart hosts <file>` shows where a test runs and why.
-Rebalance a lane from one full CI run's timing artifacts; take `linux-vm`
-from a pull request run, which runs without coverage like the PRs it
-balances:
+Rebalance a lane from complete timing artifacts for every shard of that lane.
+For `linux-vm`, use a pull request run so the timings exclude coverage.
+For multiple comparable runs, pass all their reports together so each suite
+uses its mean time. Windows tooling and runtime share a weight source, so
+include both sets of reports even when changing only the runtime shard count:
 
 ```bash
 gh run download <run-id> -p 'test-timing-macos-*' -D /tmp/timing
 dart tool/ci/test_shards.dart weights macos /tmp/timing/*/test_timing.json
+gh run download <run-id> -p 'test-timing-windows-*' -D /tmp/windows-timing
+dart tool/ci/test_shards.dart weights windows /tmp/windows-timing/*/test_timing.json
 ```
+
+A full CI plan uses two macOS native shards, one Windows tooling shard and
+one Windows runtime shard. When qualifying a host shard-count reduction,
+measure job duration after runner assignment. Both macOS shards must finish
+within 10 minutes, and each host shard may take up to two minutes longer than
+the longest Linux VM shard.
 
 ## LiteRT-LM Web text history
 

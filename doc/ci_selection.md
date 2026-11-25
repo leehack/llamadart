@@ -180,7 +180,7 @@ merge. Enabling them is an owner action on repository settings and is not part
 of this change.
 
 Root tests run as file shards: Linux VM (3), Chrome (3), macOS `Test Native`
-(3) and Windows `Test Native` (1 `windows-tooling`, 2 `windows-runtime`).
+(2) and Windows `Test Native` (1 `windows-tooling`, 1 `windows-runtime`).
 `Test Native` (`test-other-os`) builds its `matrix.include` from separate
 `macos-native` and `windows-native` decisions (`test-other-os-matrix`), so a
 PR can run Windows-only or Mac-only shards instead of always allocating both.
@@ -226,8 +226,9 @@ deploy, and the job adds an error annotation and a step summary naming the
 commit. Run the `coverage-lib` matrix row locally before merging a change that
 may lower coverage. The aggregate requires the shards (`SHARD_JOBS` in the
 selector) whenever root Linux tests are selected, and the coverage job only
-when coverage is also selected. A job's aggregate result is `failure` if any of its
-shards fails. Shard by whole files: most of the Chrome lane is dart2js compiling
+when coverage is also selected. The selector validates the complete host
+matrix, and the aggregate rejects any selected matrix result other than
+`success`. Shard by whole files: most of the Chrome lane is dart2js compiling
 each suite, and on the VM each suite's load and coverage collection would
 repeat under `dart test --total-shards`.
 
@@ -241,19 +242,21 @@ checks as two matrix legs.
 Checks share a job to stay under GitHub Free's limit of 5 concurrent macOS jobs
 across the owner's repositories, and each keeps its own selection on its step:
 `Companion Packages (macOS)` runs when `companion-job` is true (the OR of
-selected `companions`, `macos-validation-memory`, and `apple-cache`), then runs
-only the selected steps (`companions` packages, `Test validation process
-memory` via `macos-validation-memory`, and the Apple companion cache-transition
-setup/test via `apple-cache`), each even if an earlier one failed. On Windows
-the process memory test runs in `Test Native` when `windows-native` is true, and
-otherwise in a `Validation harness` matrix leg (`validation_harness_oses` checks
+selected `companions`, `macos-validation-memory`, `apple-cache`, and
+`studio-macos`). The job runs only the selected checks, even if an earlier
+check failed. It installs the root Flutter SDK for companion packages,
+validation process memory, and the Apple cache check. When Studio is selected,
+the job uses `macos-15` and switches to Studio's SDK after those checks.
+Other selections use `macos-latest`. On Windows the process memory test
+runs in `windows-runtime` shard 1 when `windows-native` is true, and otherwise
+in a `Validation harness` matrix leg (`validation_harness_oses` checks
 `windows-native`, not `test-other-os`), so a validation-only or Mac-only change
 keeps Windows memory coverage without extra native shards. The Genkit job runs
 Dart 3.12.0 lower bounds on a fresh tree before it sets up Flutter, so
 `FLUTTER_ROOT` and Flutter's Dart cannot affect them.
 
 `Studio packages` checks both checkout-only Studio packages together on Ubuntu.
-Both Studio CI jobs read `packages/llamadart_studio/.flutter-version` and pass
+Both Studio CI paths read `packages/llamadart_studio/.flutter-version` and pass
 its Flutter version (3.50.0, with Dart 3.14.0) directly to the setup action.
 Studio changes select this lane without root runtime tests or portable bundles;
 shared runtime and companion changes also select it because Studio consumes them.
@@ -261,11 +264,12 @@ Studio Web files also select the shared version and bridge-pin checks.
 Root formatting uses `python3 tool/ci/check_format.py` to skip only these two
 Studio packages, whose Dart language version requires their independent SDK;
 all other package and example directories remain in the root formatter.
-The lane runs model-free VM tests with isolated temporary directories. A paired
-macOS lane (`studio-macos`) runs the native lifecycle and accessibility
-regressions against the SPM Flutter framework when `studio-macos` is true (all
-non-packaging Studio inputs, companions, root fixtures/helpers, and shared/full
-changes; exempting `packages/llamadart_studio/{web,windows,linux}/`).
+The Ubuntu job runs model-free VM tests with isolated temporary directories.
+The companion job runs the native lifecycle and accessibility regressions
+against the SPM Flutter framework when `studio-macos` is true. This covers
+non-packaging Studio inputs, companions, root fixtures and helpers, and
+shared or full-selection changes. Studio's `web/`, `windows/`, and `linux/`
+packaging paths alone omit the macOS checks.
 
 `Example Package Tests` runs the model-free tests (`--exclude-tags
 local-only`) of every example package except the chat app, which Web Chat

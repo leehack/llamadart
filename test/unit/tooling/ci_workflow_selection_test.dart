@@ -752,14 +752,21 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
   });
 
   test('Studio macOS runs each native lifecycle and semantics regression', () {
-    final job = readWorkflow('ci')['jobs']['studio-macos'] as Map;
-    expect(job['runs-on'], 'macos-15');
-    expect(job['if'], "needs.changes.outputs.studio-macos == 'true'");
+    final job = readWorkflow('ci')['jobs']['companion-packages'] as Map;
+    expect(
+      job['runs-on'],
+      r"${{ needs.changes.outputs.studio-macos == 'true' && 'macos-15' || 'macos-latest' }}",
+    );
     final steps = job['steps'] as List;
     final native =
         steps.singleWhere((step) => '${step['run']}'.contains('flutter test'))
             as Map;
+    expect(
+      native['if'],
+      r"${{ !cancelled() && needs.changes.outputs.studio-macos == 'true' && steps.studio-flutter.outcome == 'success' }}",
+    );
     expect(native['working-directory'], 'packages/llamadart_studio');
+    expect(native.containsKey('continue-on-error'), isFalse);
     for (final regression in [
       'macos_app_delegate_test.dart',
       'macos_static_semantics_test.dart',
@@ -802,7 +809,6 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
       expect(jobs.keys.toSet(), {
         ...planned,
         ...shards.keys,
-        'studio-macos',
         'changes',
         'test-linux-web',
         'deploy-chat-app',
@@ -817,7 +823,6 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
       expect((aggregate['needs'] as List).toSet(), {
         ...planned,
         ...shards.keys,
-        'studio-macos',
         'changes',
       });
       final steps = aggregate['steps'] as List;
@@ -1014,7 +1019,6 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
   test('one macOS job runs each selected companion and hosted check', () async {
     final jobs = readWorkflow('ci')['jobs'] as Map<String, dynamic>;
     final job = jobs['companion-packages'] as Map;
-    expect(job['runs-on'], 'macos-latest');
     expect(job['if'], "needs.changes.outputs.companion-job == 'true'");
     expect(job.containsKey('strategy'), isFalse);
     expect(
@@ -1366,26 +1370,18 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
       (s) => s['name'] == 'Test validation process memory',
     );
     expect(memory['run'], 'dart test test/process_memory_test.dart');
-    const memorySelected =
-        "\${{ !cancelled() && matrix.lane == 'windows-runtime' && matrix.shard == 2 && needs.changes.outputs.validation-harness == 'true' }}";
     expect(
       jobs['test-other-os']['strategy']['matrix']['include'],
       r'${{ fromJSON(needs.changes.outputs.test-other-os-matrix) }}',
     );
     final full = await selected(['lib/llamadart.dart']);
-    final legs = (full['test-other-os-matrix'] as List).cast<Map>();
-    expect(
-      legs.where(
-        (leg) => leg['lane'] == 'windows-runtime' && leg['shard'] == 2,
-      ),
-      hasLength(1),
-    );
-    expect(
-      legs.singleWhere(
-        (leg) => leg['lane'] == 'windows-runtime' && leg['shard'] == 2,
-      )['os'],
-      'windows-latest',
-    );
+    final runtime = (full['test-other-os-matrix'] as List)
+        .cast<Map>()
+        .singleWhere((leg) => leg['lane'] == 'windows-runtime');
+    expect(runtime['os'], 'windows-latest');
+    final memorySelected =
+        "\${{ !cancelled() && matrix.lane == 'windows-runtime' && "
+        "matrix.shard == ${runtime['shard']} && needs.changes.outputs.validation-harness == 'true' }}";
     expect(memory['if'], memorySelected);
     // PowerShell keeps only the last command's exit code, so this is a step.
     final install = native[native.indexOf(memory) - 1];
@@ -2229,6 +2225,33 @@ runs:
         jobs()['test-other-os']['name'],
         r'Test Native (${{ matrix.lane }}, ${{ matrix.shard }}/${{ matrix.shards }})',
       );
+    });
+
+    test('reduced host matrix keeps every host suite exactly once', () {
+      final all = lanes();
+      final files = rootTestFiles();
+      final weights = readWeights();
+      for (final (lane, count) in [
+        ('macos', 2),
+        ('windows-tooling', 1),
+        ('windows-runtime', 1),
+      ]) {
+        expect(all[lane]!.legs, [
+          for (var shard = 1; shard <= count; shard++) (shard, count),
+        ], reason: lane);
+        final hostFiles = laneFiles(lane, files);
+        final shards = partitionTests(
+          hostFiles,
+          weights[testShardLanes[lane]]!,
+          count,
+        );
+        expect(shards, everyElement(isNotEmpty), reason: lane);
+        expect(
+          shards.expand((shard) => shard),
+          unorderedEquals(hostFiles),
+          reason: lane,
+        );
+      }
     });
 
     test('the selector enumerates every root test file', () {

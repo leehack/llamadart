@@ -30,14 +30,12 @@ CORE_JOBS = (
 # merges their coverage, which runs after merge (push and manual runs).
 SHARD_JOBS = {'test-linux-vm': 'test-linux-coverage'}
 MACOS_SHARDS = (
-    {'os': 'macos-latest', 'lane': 'macos', 'shard': 1, 'shards': 3},
-    {'os': 'macos-latest', 'lane': 'macos', 'shard': 2, 'shards': 3},
-    {'os': 'macos-latest', 'lane': 'macos', 'shard': 3, 'shards': 3},
+    {'os': 'macos-latest', 'lane': 'macos', 'shard': 1, 'shards': 2},
+    {'os': 'macos-latest', 'lane': 'macos', 'shard': 2, 'shards': 2},
 )
 WINDOWS_SHARDS = (
     {'os': 'windows-latest', 'lane': 'windows-tooling', 'shard': 1, 'shards': 1},
-    {'os': 'windows-latest', 'lane': 'windows-runtime', 'shard': 1, 'shards': 2},
-    {'os': 'windows-latest', 'lane': 'windows-runtime', 'shard': 2, 'shards': 2},
+    {'os': 'windows-latest', 'lane': 'windows-runtime', 'shard': 1, 'shards': 1},
 )
 DESKTOPS = ('ubuntu-24.04', 'windows-2022', 'macos-15')
 APPS = ('android', 'web', 'ios-inputs')
@@ -456,13 +454,12 @@ def expected_jobs(plan, bundle=False):
         **{job: plan['jobs'][fed] for job, fed in SHARD_JOBS.items()},
         'test-linux-coverage': plan['jobs']['test-linux-coverage'] and plan['coverage'],
         'companion-packages': companion_job_selected(plan),
-        'studio-macos': plan['studio-macos'],
     }
 
 
 def companion_job_selected(plan):
     return (bool(plan['companions']) or plan['macos-validation-memory']
-            or plan['apple-cache'])
+            or plan['apple-cache'] or plan['studio-macos'])
 
 
 def validation_harness_oses(plan):
