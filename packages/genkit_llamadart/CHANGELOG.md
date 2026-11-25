@@ -1,3 +1,8 @@
+## 3.12.0 - 2026-11-25
+
+- Require llamadart `^0.21.0` and add the `ignoreEos` option for native llama.cpp text generation.
+- Update the DartPad playground to LiteRT-LM Web 0.20.0.
+
 ## 3.11.0 - 2026-11-24
 
 - Add multi-turn chat, generation settings, live stats, prompt presets, and GGUF and LiteRT-LM model pickers to the DartPad playground. Use the automatic single-thread GGUF bridge default and bound local GGUF history to the 2,048-token context.
