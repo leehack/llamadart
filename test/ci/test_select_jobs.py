@@ -239,7 +239,7 @@ class SelectionTest(unittest.TestCase):
                     if name.decode() != Path(reader).name
                 )
         references.sort()
-        self.assertEqual(sha256('\n'.join(references).encode()).hexdigest(), '27fbe3653ae79bdc03690a5cf028e8464ee7322098943ed8eeac47ba716e3af8',
+        self.assertEqual(sha256('\n'.join(references).encode()).hexdigest(), '12dc520ceceea2fd07bf6cbecf5c25ec30b57d198c9714b6f928ad7850bfac55',
                          'Trace new readers before updating the pin:\n' + '\n'.join(references))
 
     def test_tool_rules_union_with_each_other_and_existing_lanes(self):
