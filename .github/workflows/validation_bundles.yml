@@ -1,7 +1,7 @@
 name: Validation bundles
 
-# PRs build macOS desktop and Android only when they change those targets'
-# own build inputs (POST_MERGE_TARGETS in tool/ci/select_jobs.py); every push
+# PRs build Windows and macOS desktops and Android only when they change those
+# targets' build inputs (POST_MERGE_TARGETS in tool/ci/select_jobs.py). Every push
 # to main builds all targets its change selects.
 on:
   push:

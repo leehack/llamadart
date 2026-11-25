@@ -45,8 +45,10 @@ APPS = ('android', 'web', 'ios-inputs')
 _BUNDLE_WORKFLOW = ('.github/workflows/validation_bundles.yml', 'tool/ci/select_jobs.py')
 _NATIVE_BUILD_INPUTS = ('hook/', 'lib/src/hook/', 'pubspec.yaml', 'pubspec.lock',
                         'tool/testing/validation/', 'tool/testing/validation.dart')
+_DESKTOP_BUILD_INPUTS = _BUNDLE_WORKFLOW + _NATIVE_BUILD_INPUTS + ('.flutter-version',)
 POST_MERGE_TARGETS = {
-    'macos-15': _BUNDLE_WORKFLOW + _NATIVE_BUILD_INPUTS + ('.flutter-version',),
+    'windows-2022': _DESKTOP_BUILD_INPUTS,
+    'macos-15': _DESKTOP_BUILD_INPUTS,
     'android': _BUNDLE_WORKFLOW + _NATIVE_BUILD_INPUTS + tuple(
         'packages/' + name + '/' + part for name in COMPANIONS
         for part in ('lib/', 'pubspec.yaml')),

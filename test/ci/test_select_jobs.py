@@ -307,7 +307,7 @@ class SelectionTest(unittest.TestCase):
 
     def test_root_gitignore_keeps_full_validation_bundle_admission(self):
         for pull_request, desktops, apps in (
-            (True, ['ubuntu-24.04', 'windows-2022'], ['web', 'ios-inputs']),
+            (True, ['ubuntu-24.04'], ['web', 'ios-inputs']),
             (False, ['ubuntu-24.04', 'windows-2022', 'macos-15'],
              ['android', 'web', 'ios-inputs']),
         ):
@@ -941,9 +941,10 @@ class SelectionTest(unittest.TestCase):
             for job in ('test-linux-coverage', 'test-web', 'test-other-os'):
                 self.assertTrue(plan['jobs'][job])
 
-    def test_pull_requests_build_macos_desktop_and_android_for_their_inputs_only(self):
+    def test_pull_requests_build_deferred_targets_for_their_inputs_only(self):
         for paths in (['lib/llamadart.dart'], ['lib/src/core/engine.dart', 'README.md'],
                       ['.github/workflows/ci.yml'], ['new/unknown.file'],
+                      ['lib/src/backends/webgpu/webgpu_backend.dart'],
                       ['skills/llamadart-web/SKILL.md'], ['MIGRATION.md'],
                       ['tool/testing/test_matrix.dart'],
                       ['example/basic_app/lib/main.dart'], ['example/chat_app/web/config'],
@@ -952,10 +953,12 @@ class SelectionTest(unittest.TestCase):
                 after_merge = ci.select(paths)
                 plan = ci.select(paths, pull_request=True)
                 self.assertNotIn('macos-15', plan['desktops'])
+                self.assertNotIn('windows-2022', plan['desktops'])
                 self.assertNotIn('android', plan['apps'])
                 self.assertEqual(plan['jobs'], after_merge['jobs'])
                 self.assertEqual(
-                    [d for d in after_merge['desktops'] if d != 'macos-15'], plan['desktops'])
+                    [d for d in after_merge['desktops'] if d not in ('macos-15', 'windows-2022')],
+                    plan['desktops'])
                 self.assertEqual(
                     [a for a in after_merge['apps'] if a != 'android'], plan['apps'])
         for path in ('hook/build.dart', 'lib/src/hook/native_release_pins.dart', 'pubspec.yaml',
@@ -965,11 +968,13 @@ class SelectionTest(unittest.TestCase):
             with self.subTest(path=path):
                 plan = ci.select([path], pull_request=True)
                 self.assertIn('macos-15', plan['desktops'])
+                self.assertIn('windows-2022', plan['desktops'])
                 self.assertIn('android', plan['apps'])
         for path in ('.flutter-version',):
             with self.subTest(path=path):
                 plan = ci.select([path], pull_request=True)
                 self.assertIn('macos-15', plan['desktops'])
+                self.assertIn('windows-2022', plan['desktops'])
                 self.assertNotIn('android', plan['apps'])
         for path in ('example/chat_app/android/app/build.gradle', 'example/chat_app/lib/main.dart',
                      'example/chat_app/pubspec.yaml',
@@ -977,6 +982,7 @@ class SelectionTest(unittest.TestCase):
             with self.subTest(path=path):
                 plan = ci.select([path], pull_request=True)
                 self.assertNotIn('macos-15', plan['desktops'])
+                self.assertNotIn('windows-2022', plan['desktops'])
                 self.assertIn('android', plan['apps'])
         # An unknown or unreadable inventory stays full.
         self.assertEqual(ci.select([], pull_request=True)['desktops'], list(ci.DESKTOPS))
