@@ -149,6 +149,16 @@ Future<String> runPrChangelogCollector(
       lookup ?? recoveryGithubGet,
     );
     final entries = await collector.collect();
+    final patches = readPublishedPatchSections(
+      git.directory,
+      version: options.version,
+      previousVersion: options.from.substring(1),
+      through: through,
+    );
+    final patchRows = [
+      for (final patch in patches)
+        {'sha': patch.sha, 'source': 'patch-tag', 'tag': 'v${patch.version}'},
+    ];
     final seedRows = [
       for (final text in legacy)
         {
@@ -164,6 +174,7 @@ Future<String> runPrChangelogCollector(
       'Through: $through',
       ...seedRows.map(jsonEncode),
       ...entryRows.map(jsonEncode),
+      ...patchRows.map(jsonEncode),
       for (final diagnostic in collector.diagnostics) diagnostic.toString(),
     ].join('\n');
     if (entries.any((entry) => entry.disposition == 'unresolved')) {
@@ -182,6 +193,7 @@ Future<String> runPrChangelogCollector(
       rows: [
         ...seedRows,
         ...entryRows,
+        ...patchRows,
         for (final diagnostic in collector.diagnostics)
           if (diagnostic.reviewCode != null) diagnostic.toJson(),
       ],
@@ -209,6 +221,7 @@ Future<String> runPrChangelogCollector(
       root,
       docs,
       archive,
+      patches,
       canonical,
       pins,
       oldBridge,
@@ -269,6 +282,7 @@ Future<String> runPrChangelogCollector(
         root,
         docs,
         archive,
+        patches,
         reviewed.bullets.map((bullet) => bullet.text).toList(),
         pins,
         oldBridge,
@@ -1463,20 +1477,29 @@ _Rendered _render(
   ChangelogHistory root,
   ChangelogHistory docs,
   ChangelogHistory archive,
+  List<PublishedPatch> patches,
   List<String> notes,
   _Pins pins,
   String oldBridge,
 ) {
   final version = options.version;
   final series = coreReleaseVersion.firstMatch(version)!;
-  final history = {...root.sections, ...archive.sections};
-  if (history.containsKey(version) || docs.sections.containsKey(version)) {
+  final rootImports = {
+    for (final patch in patches) patch.version: patch.sections[_root]!,
+  };
+  final docsImports = {
+    for (final patch in patches) patch.version: patch.sections[_docs]!,
+  };
+  final docsHistory = {...docsImports, ...docs.sections};
+  final history = {...rootImports, ...root.sections, ...archive.sections};
+  if (history.containsKey(version) || docsHistory.containsKey(version)) {
     throw const FormatException(
       'The requested version is already in the pinned history.',
     );
   }
-  if (history.length != root.sections.length + archive.sections.length ||
-      docs.sections.keys.any((version) => !history.containsKey(version))) {
+  if (history.length !=
+          rootImports.length + root.sections.length + archive.sections.length ||
+      docsHistory.keys.any((version) => !history.containsKey(version))) {
     throw const FormatException(
       'Root, archive and docs release headings disagree.',
     );
@@ -1526,7 +1549,7 @@ _Rendered _render(
     major: int.parse(series[1]!),
     minor: int.parse(series[2]!),
   ).skip(1).map((heading) => heading.substring(3)).toList();
-  if (retained.any((version) => !docs.sections.containsKey(version))) {
+  if (retained.any((version) => !docsHistory.containsKey(version))) {
     throw const FormatException(
       'Docs changelog is missing retained release history.',
     );
@@ -1538,7 +1561,7 @@ _Rendered _render(
     },
     {
       version: _sectionBody(docsDraft),
-      for (final key in retained) key: _sectionBody(docs.sections[key]!),
+      for (final key in retained) key: _sectionBody(docsHistory[key]!),
     },
   );
   if (drift.isNotEmpty) {
@@ -1551,11 +1574,12 @@ _Rendered _render(
   final archived = <String>[];
   final oldBoundary = root.sections.keys.last;
   String boundary() => rootSections.isEmpty
-      ? version
+      ? rootImports.keys.lastOrNull ?? version
       : root.sections.keys.elementAt(rootSections.length - 1);
   String rootPreamble() =>
       archiveBoundary(root.preamble, oldBoundary, boundary());
-  final draftSize = utf8.encode(draft).length;
+  final rootFront = draft + rootImports.values.join();
+  final draftSize = utf8.encode(rootFront).length;
   var historySize = utf8.encode(rootSections.join()).length;
   int size() => utf8.encode(rootPreamble()).length + draftSize + historySize;
   while (size() > _sizeLimit && rootSections.isNotEmpty) {
@@ -1570,7 +1594,7 @@ _Rendered _render(
   }
   if (size() > _sizeLimit) {
     throw const FormatException(
-      'The new root changelog section exceeds the pub.dev size limit.',
+      'The new root changelog and any imported sections exceed the pub.dev size limit.',
     );
   }
   final archivePreamble = archiveBoundary(
@@ -1581,11 +1605,11 @@ _Rendered _render(
   final keep = retained.toSet();
   return _Rendered(
     {
-      _root: rootPreamble() + draft + rootSections.join(),
+      _root: rootPreamble() + rootFront + rootSections.join(),
       _docs:
           docs.preamble +
           docsDraft +
-          docs.sections.entries
+          docsHistory.entries
               .where((entry) => keep.contains(entry.key))
               .map((entry) => entry.value)
               .join(),
