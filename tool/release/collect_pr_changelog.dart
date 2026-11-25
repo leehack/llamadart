@@ -145,6 +145,7 @@ Future<String> runPrChangelogCollector(
       activation,
       through,
       options.version,
+      options.baseRef,
       lookup ?? recoveryGithubGet,
     );
     final entries = await collector.collect();
@@ -322,6 +323,7 @@ class _Options {
     this.version,
     this.from,
     this.through,
+    this.baseRef,
     this.write,
     this.curated,
     this.verify,
@@ -332,6 +334,7 @@ class _Options {
   final String version;
   final String from;
   final String through;
+  final String baseRef;
   final bool write;
   final String? curated;
   final String? verify;
@@ -341,9 +344,10 @@ class _Options {
   static _Options parse(List<String> args) {
     const usage =
         'Usage: collect_pr_changelog.dart --version V --from vPREVIOUS '
-        '--through BASE [--curated FILE] [--write [--review FILE]]\n'
+        '--through BASE [--base-ref REF] [--curated FILE] '
+        '[--write [--review FILE]]\n'
         '   or: collect_pr_changelog.dart --version V --from vPREVIOUS '
-        '--through BASE --verify-input FILE [--candidate SHA]\n'
+        '--through BASE [--base-ref REF] --verify-input FILE [--candidate SHA]\n'
         '   or: collect_pr_changelog.dart --section-sha256 FILE';
     final values = <String, String>{};
     var write = false;
@@ -355,6 +359,7 @@ class _Options {
             '--version',
             '--from',
             '--through',
+            '--base-ref',
             '--curated',
             '--verify-input',
             '--candidate',
@@ -368,6 +373,7 @@ class _Options {
         throw const FormatException(usage);
       }
     }
+    final baseRef = values['--base-ref'] ?? 'main';
     final curated = values['--curated'];
     final verify = values['--verify-input'];
     final candidate = values['--candidate'];
@@ -379,6 +385,7 @@ class _Options {
           '--through': final String through,
         }
         when coreReleaseVersion.hasMatch(version) &&
+            baseRef.isNotEmpty &&
             (verify == null || (!write && curated == null)) &&
             (candidate == null ||
                 (verify != null && _sha.hasMatch(candidate))) &&
@@ -387,6 +394,7 @@ class _Options {
         version,
         from,
         through,
+        baseRef,
         write,
         curated,
         verify,
@@ -816,17 +824,21 @@ class _Diagnostic {
 typedef _Pull = ({int number, String mergeSha});
 typedef _PrResolution = ({String path, int pr, String sectionSha256});
 
-_Pull? _mergedMainPull(Object? data) {
+_Pull? _mergedBasePull(Object? data, String baseRef) {
   if (data
       case {
         'number': final int number,
         'merge_commit_sha': final String sha,
         'merged_at': final String mergedAt,
-        'base': {'ref': 'main', 'repo': {'full_name': final String repository}},
+        'base': {
+          'ref': final String ref,
+          'repo': {'full_name': final String repository},
+        },
       }
       when number > 0 &&
           _sha.hasMatch(sha) &&
           mergedAt.isNotEmpty &&
+          ref == baseRef &&
           repository.toLowerCase() == _repository) {
     return (number: number, mergeSha: sha);
   }
@@ -841,6 +853,7 @@ class _Collector {
     this.activation,
     this.through,
     this.version,
+    this.baseRef,
     this.lookup,
   ) : positions = Map.fromEntries(
         chain.indexed.map((entry) => MapEntry(entry.$2, entry.$1)),
@@ -852,6 +865,7 @@ class _Collector {
   final String activation;
   final String through;
   final String version;
+  final String baseRef;
   final GithubLookup lookup;
   final Map<String, int> positions;
   final diagnostics = <_Diagnostic>[];
@@ -866,6 +880,7 @@ class _Collector {
           git.directory,
           window,
           lookup,
+          baseRef: baseRef,
         ))
           row.prep: row,
       };
@@ -913,7 +928,7 @@ class _Collector {
       }
       if (commit.parents != 1) {
         rows.add(
-          _unresolved(sha, number, 'git', 'unsupported main commit shape.'),
+          _unresolved(sha, number, 'git', 'unsupported $baseRef commit shape.'),
         );
         continue;
       }
@@ -1119,7 +1134,8 @@ class _Collector {
     } on FormatException {
       return false;
     }
-    final tagIndex = positions[tagCommit];
+    final tagIndex =
+        positions[tagCommit] ?? _patchForkIndex(version, tagCommit);
     if (tagIndex == null || tagIndex >= positions[sha]!) return false;
     final paths = git
         .text([
@@ -1142,6 +1158,26 @@ class _Collector {
               path.startsWith('website/versioned_docs/') ||
               path.startsWith('website/versioned_sidebars/'),
         );
+  }
+
+  int? _patchForkIndex(String version, String tagCommit) {
+    final match = coreReleaseVersion.firstMatch(version)!;
+    final line = '${match[1]}.${match[2]}';
+    final patch = match[3];
+    if (patch == '0' || version != '$line.$patch') return null;
+    final String minorCommit;
+    try {
+      minorCommit = _releaseTag(git, 'v$line.0');
+    } on FormatException {
+      return null;
+    }
+    final minorIndex = positions[minorCommit];
+    if (minorIndex == null) return null;
+    final fork = git
+        .text(['rev-list', '--first-parent', tagCommit])
+        .split('\n')
+        .firstWhere(positions.containsKey, orElse: () => '');
+    return fork == minorCommit ? minorIndex : null;
   }
 
   _PrResolution? _readPrResolution(String sha) {
@@ -1205,7 +1241,7 @@ class _Collector {
     }
     final exact = candidates.where((pull) => pull.mergeSha == sha).toList();
     final pull = exact.where((pull) => pull.number == number).firstOrNull;
-    const unmatched = 'no matching merged main PR association.';
+    final unmatched = 'no matching merged $baseRef PR association.';
     if (pull == null) {
       if (numbered.isNotEmpty &&
           !await _sharedAssociation(sha, numbered.single)) {
@@ -1226,7 +1262,7 @@ class _Collector {
     if (matches.length > 1) {
       final numbers = matches.map((pull) => pull.number).toList()..sort();
       throw FormatException(
-        '${_location(sha, number)}: ambiguous merged main PR associations '
+        '${_location(sha, number)}: ambiguous merged $baseRef PR associations '
         '(${numbers.map((number) => '#$number').join(', ')}).',
       );
     }
@@ -1241,7 +1277,7 @@ class _Collector {
       pull.number,
       () => _get('pulls/${pull.number}', sha, pull.number),
     );
-    if (_mergedMainPull(detail) != pull) {
+    if (_mergedBasePull(detail, baseRef) != pull) {
       throw FormatException(
         '${_location(sha, pull.number)}: PR detail conflicts with the commit association.',
       );
@@ -1294,7 +1330,7 @@ class _Collector {
     }
     return {
       for (final page in pages.cast<List>())
-        for (final item in page) ?_mergedMainPull(item),
+        for (final item in page) ?_mergedBasePull(item, baseRef),
     };
   });
 

@@ -18,7 +18,6 @@ const changelogCutover = 'tool/release/changelog_pr_cutover.json';
 const changelogSizeLimit = 256 * 1024;
 const _recoveryDirectory = 'tool/release/recoveries';
 const _ownerRepository = 'leehack/llamadart';
-const _mainRef = 'refs/heads/main';
 
 final _unreleasedHeading = RegExp(
   r'^ {0,3}##[ \t]+Unreleased(?:[ \t]+#+)?[ \t]*$',
@@ -226,7 +225,9 @@ Future<List<String>> checkReleasedChangelogSections(
   if (request is! Map) {
     throw StateError('The event has no pull request base SHA.');
   }
-  final base = (request['base'] as Map?)?['sha'];
+  final baseInfo = request['base'] as Map?;
+  final base = baseInfo?['sha'];
+  final baseRef = baseInfo?['ref'];
   final headInfo = request['head'] as Map?;
   final head = headInfo?['sha'];
   final ref = headInfo?['ref'];
@@ -257,13 +258,13 @@ Future<List<String>> checkReleasedChangelogSections(
   if (records.isNotEmpty) {
     if (repository != _ownerRepository ||
         headRepository != repository ||
-        (request['base'] as Map)['ref'] != 'main' ||
+        baseRef is! String ||
         fork != base ||
         routedPrep ||
         ref.startsWith('release/genkit_llamadart-') ||
         labels.contains('release-prep:genkit_llamadart')) {
       return [
-        'Recovery requires an up-to-date ordinary same-repository PR onto main.',
+        'Recovery requires an up-to-date ordinary same-repository PR onto the prep base.',
       ];
     }
     if (proposedMerge == null ||
@@ -274,7 +275,13 @@ Future<List<String>> checkReleasedChangelogSections(
       ];
     }
     try {
-      final recovery = await _proveRecovery(git, base, proposedMerge, lookup);
+      final recovery = await _proveRecovery(
+        git,
+        base,
+        proposedMerge,
+        lookup,
+        baseRef,
+      );
       if (recovery == null ||
           git.run(['rev-parse', '$proposedMerge^{tree}']).trim() !=
               git.run(['rev-parse', '$head^{tree}']).trim()) {
@@ -323,8 +330,9 @@ typedef RecoveredPrep = ({String prep, int pr, String recovery});
 Future<List<RecoveredPrep>> verifyPrepRecoveryIntroductions(
   Directory root,
   List<String> window,
-  GithubLookup lookup,
-) async {
+  GithubLookup lookup, {
+  String baseRef = 'main',
+}) async {
   if (window.isEmpty) return [];
   final git = _Git(root);
   final recovered = <RecoveredPrep>[];
@@ -350,8 +358,8 @@ Future<List<RecoveredPrep>> verifyPrepRecoveryIntroductions(
     );
     if (changes.isEmpty) continue;
     if (parents.length != 1) {
-      throw const FormatException(
-        'A recovery must be introduced by a single-parent main commit.',
+      throw FormatException(
+        'A recovery must be introduced by a single-parent $baseRef commit.',
       );
     }
     final recovery = (await _proveRecovery(
@@ -359,6 +367,7 @@ Future<List<RecoveredPrep>> verifyPrepRecoveryIntroductions(
       parents.single,
       commit,
       lookup,
+      baseRef,
     ))!;
     if (!window.contains(recovery.prep)) {
       throw const FormatException(
@@ -375,6 +384,7 @@ Future<_Recovery?> _proveRecovery(
   String base,
   String result,
   GithubLookup lookup,
+  String baseRef,
 ) async {
   final changes = git.changes(base, result);
   final records = _recoveryChanges(changes);
@@ -388,6 +398,18 @@ Future<_Recovery?> _proveRecovery(
   }
   final path = records.keys.single;
   final (version, prep, before, pr) = _readRecoveryRecord(git, result, path);
+  if (baseRef != 'main') {
+    final match = coreReleaseVersion.firstMatch(version)!;
+    final line = '${match[1]}.${match[2]}';
+    final patch = match[3];
+    if (baseRef != 'release/$line.x' ||
+        patch == '0' ||
+        version != '$line.$patch') {
+      throw FormatException(
+        'Recovery version $version does not match the patch base $baseRef.',
+      );
+    }
+  }
   for (final oldPath
       in git
           .run([
@@ -407,7 +429,7 @@ Future<_Recovery?> _proveRecovery(
       );
     }
   }
-  await _proveRecoveryLanding(git, base, before, prep, pr, lookup);
+  await _proveRecoveryLanding(git, base, before, prep, pr, lookup, baseRef);
   final footprint = git.changes(prep, before);
   if (git.entry(before, changelogCutover)?.mode != '100644' ||
       footprint.containsKey(changelogCutover) ||
@@ -508,6 +530,7 @@ Future<void> _proveRecoveryLanding(
   String prep,
   int pr,
   GithubLookup lookup,
+  String baseRef,
 ) async {
   final detail = await lookup(
     'repos/$_ownerRepository/pulls/$pr',
@@ -518,7 +541,10 @@ Future<void> _proveRecoveryLanding(
         'number': int number,
         'merged': true,
         'merge_commit_sha': String merged,
-        'base': {'ref': 'main', 'repo': {'full_name': _ownerRepository}},
+        'base': {
+          'ref': final String pullBase,
+          'repo': {'full_name': _ownerRepository},
+        },
         'head': {
           'ref': final String ref,
           'repo': {'full_name': _ownerRepository},
@@ -526,6 +552,7 @@ Future<void> _proveRecoveryLanding(
       }
       when number == pr &&
           merged == prep &&
+          pullBase == baseRef &&
           !ref.startsWith('release/genkit_llamadart-')) {
     final byBranch = isCoreReleasePrep(
       labels: const [],
@@ -538,29 +565,36 @@ Future<void> _proveRecoveryLanding(
     }
   } else {
     throw FormatException(
-      'PR #$pr does not identify the same-repository main prep at $prep.',
+      'PR #$pr does not identify the same-repository $baseRef prep at $prep.',
     );
   }
+  final branchRef = 'refs/heads/$baseRef';
   final pages = await _recoveryPages(
     lookup,
-    'activity?ref=refs%2Fheads%2Fmain&activity_type=pr_merge&per_page=100',
+    'activity?ref=${Uri.encodeQueryComponent(branchRef)}'
+    '&activity_type=pr_merge&per_page=100',
   );
   final matches = <int, String>{};
   for (final row in pages) {
-    if (row case {
-      'id': final int id,
-      'ref': _mainRef,
-      'activity_type': 'pr_merge',
-      'after': final String after,
-      'before': final String previous,
-    } when id > 0 && _sha.hasMatch(previous) && _sha.hasMatch(after)) {
+    if (row
+        case {
+          'id': final int id,
+          'ref': final String ref,
+          'activity_type': 'pr_merge',
+          'after': final String after,
+          'before': final String previous,
+        }
+        when id > 0 &&
+            ref == branchRef &&
+            _sha.hasMatch(previous) &&
+            _sha.hasMatch(after)) {
       if (after != prep) continue;
       if (matches.containsKey(id) && matches[id] != previous) {
         throw FormatException('Conflicting GitHub activity for prep $prep.');
       }
       matches[id] = previous;
     } else {
-      throw const FormatException('Malformed GitHub main merge activity.');
+      throw FormatException('Malformed GitHub $baseRef merge activity.');
     }
   }
   if (matches.length != 1 ||
@@ -568,7 +602,7 @@ Future<void> _proveRecoveryLanding(
       git.parents(prep).join(' ') != before ||
       !git.firstParents(base).contains(prep)) {
     throw FormatException(
-      'GitHub activity must prove one main commit from $before to $prep.',
+      'GitHub activity must prove one $baseRef commit from $before to $prep.',
     );
   }
 }
