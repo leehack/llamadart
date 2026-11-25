@@ -29,6 +29,12 @@ CORE_JOBS = (
 # selected: the Linux VM test shards. The planned test-linux-coverage job only
 # merges their coverage, which runs after merge (push and manual runs).
 SHARD_JOBS = {'test-linux-vm': 'test-linux-coverage'}
+LINUX_PACKAGE_STEPS = {
+    'model-store': ('model-store-vm', 'model-store-chrome', 'model-store-diagnostics',
+                    'model-store-clean-tree', 'model-store-publish'),
+    'native-prompt-reuse-parity': ('parity-pub-get', 'parity-model', 'parity-test'),
+    'validation-harness': ('validation-pub-get', 'validation-analyze', 'validation-test'),
+}
 MACOS_SHARDS = (
     {'os': 'macos-latest', 'lane': 'macos', 'shard': 1, 'shards': 2},
     {'os': 'macos-latest', 'lane': 'macos', 'shard': 2, 'shards': 2},
@@ -450,11 +456,14 @@ def expected_jobs(plan, bundle=False):
     if bundle:
         return {'desktop': bool(plan['desktops']), 'app': bool(plan['apps'])}
     return {
-        **plan['jobs'],
+        **{job: selected for job, selected in plan['jobs'].items()
+           if job not in LINUX_PACKAGE_STEPS},
         **{job: plan['jobs'][fed] for job, fed in SHARD_JOBS.items()},
         'test-linux-coverage': plan['jobs']['test-linux-coverage'] and plan['coverage'],
         'companion-packages': companion_job_selected(plan),
         'studio-macos': plan['studio-macos'],
+        'linux-package-checks': linux_package_checks_selected(plan),
+        'validation-harness': validation_harness_windows_selected(plan),
     }
 
 
@@ -463,9 +472,13 @@ def companion_job_selected(plan):
             or plan['apple-cache'])
 
 
-def validation_harness_oses(plan):
+def linux_package_checks_selected(plan):
+    return any(plan['jobs'][job] for job in LINUX_PACKAGE_STEPS)
+
+
+def validation_harness_windows_selected(plan):
     """Windows runs the harness test in Test Native whenever that job is selected."""
-    return ['ubuntu-latest'] + ([] if plan['windows-native'] else ['windows-latest'])
+    return plan['jobs']['validation-harness'] and not plan['windows-native']
 
 
 def aggregate(plan, needs, bundle=False):
@@ -481,6 +494,18 @@ def aggregate(plan, needs, bundle=False):
         result = needs.get(job, {}).get('result')
         if result != ('success' if selected else 'skipped'):
             errors.append(f'{job}: selected={selected}, result={result}')
+    folded = needs.get('linux-package-checks', {})
+    if not bundle and folded.get('result') == 'success':
+        outcomes = folded.get('outputs', {})
+        if not isinstance(outcomes, dict):
+            errors.append('linux-package-checks: missing step outcomes')
+        else:
+            for job, steps in LINUX_PACKAGE_STEPS.items():
+                if plan['jobs'][job]:
+                    for step in steps:
+                        outcome = outcomes.get(step)
+                        if outcome != 'success':
+                            errors.append(f'linux-package-checks: {step} outcome={outcome}')
     return errors
 
 
@@ -591,7 +616,8 @@ def main():
         out.write(f'macos-validation-memory={str(plan["macos-validation-memory"]).lower()}\n')
         out.write(f'apple-cache={str(plan["apple-cache"]).lower()}\n')
         out.write('test-other-os-matrix=' + json.dumps(plan['test-other-os-matrix'], separators=(',', ':')) + '\n')
-        out.write('validation-harness-os=' + json.dumps(validation_harness_oses(plan), separators=(',', ':')) + '\n')
+        out.write(f'linux-package-checks={str(linux_package_checks_selected(plan)).lower()}\n')
+        out.write(f'validation-harness-windows={str(validation_harness_windows_selected(plan)).lower()}\n')
         for name in ('companions', 'desktops', 'apps'):
             out.write(name + '=' + json.dumps(plan[name], separators=(',', ':')) + '\n')
             out.write(name + '-enabled=' + str(bool(plan[name])).lower() + '\n')

@@ -31,6 +31,18 @@ def tracked_paths(*roots):
     ).decode().rstrip('\0').split('\0')
 
 
+def successful_needs(plan, bundle=False):
+    needs = {'changes': {'result': 'success'}}
+    needs.update({job: {'result': 'success' if selected else 'skipped'}
+                  for job, selected in ci.expected_jobs(plan, bundle).items()})
+    if not bundle and needs['linux-package-checks']['result'] == 'success':
+        needs['linux-package-checks']['outputs'] = {
+            step: 'success' for lane, steps in ci.LINUX_PACKAGE_STEPS.items()
+            if plan['jobs'][lane] for step in steps
+        }
+    return needs
+
+
 def example_file_references():
     # Match tracked file names, including those with spaces, within literal paths.
     files = '|'.join(re.escape(path) for path in tracked_paths(*WAVE4_EXAMPLE_ROOTS))
@@ -675,9 +687,7 @@ class SelectionTest(unittest.TestCase):
             ('windows-latest', 'windows-tooling', 1, 1),
             ('windows-latest', 'windows-runtime', 1, 1),
         ])
-        needs = {'changes': {'result': 'success'}}
-        needs.update({job: {'result': 'success' if selected else 'skipped'}
-                      for job, selected in ci.expected_jobs(plan).items()})
+        needs = successful_needs(plan)
         self.assertEqual(ci.aggregate(plan, needs), [])
         for row in host_rows:
             with self.subTest(row=row), self.assertRaisesRegex(ValueError, 'Other-OS matrix'):
@@ -1131,9 +1141,11 @@ class SelectionTest(unittest.TestCase):
                              ci.select([], force_full=True)['jobs'])
             written = dict(line.split('=', 1) for line in output.read_text().splitlines())
             self.assertEqual(written['web-chat-contract'], 'true')
-            for key in ('studio-macos', 'companion-job', 'macos-validation-memory', 'apple-cache'):
+            for key in ('studio-macos', 'companion-job', 'macos-validation-memory', 'apple-cache',
+                        'linux-package-checks'):
                 with self.subTest(key=key):
                     self.assertEqual(written.get(key), 'true')
+            self.assertEqual(written.get('validation-harness-windows'), 'false')
             self.assertEqual(json.loads(written['companions']),
                              ['packages/' + name for name in ci.COMPANIONS])
             self.assertEqual(json.loads(written['test-other-os-matrix']),
@@ -1171,8 +1183,7 @@ class AggregateTest(unittest.TestCase):
                           ['example/chat_app/ios/a']):
                 plan = ci.select(paths, pull_request=pull_request)
                 expected = ci.expected_jobs(plan, bundle)
-                needs = {'changes': {'result': 'success'}}
-                needs.update({j: {'result': 'success' if selected else 'skipped'} for j, selected in expected.items()})
+                needs = successful_needs(plan, bundle)
                 self.assertEqual(ci.aggregate(plan, needs, bundle), [])
                 for job, selected in expected.items():
                     correct = needs[job]['result']
@@ -1190,9 +1201,7 @@ class AggregateTest(unittest.TestCase):
             self.assertEqual(plan['jobs']['test-linux-coverage'], selected)
             self.assertEqual(ci.expected_jobs(plan)['test-linux-vm'], selected)
             self.assertNotIn('test-linux-vm', ci.expected_jobs(plan, bundle=True))
-            needs = {'changes': {'result': 'success'}}
-            needs.update({j: {'result': 'success' if s else 'skipped'}
-                          for j, s in ci.expected_jobs(plan).items()})
+            needs = successful_needs(plan)
             del needs['test-linux-vm']
             self.assertTrue(ci.aggregate(plan, needs), paths)
 
@@ -1211,29 +1220,36 @@ class AggregateTest(unittest.TestCase):
             with self.subTest(paths=paths):
                 plan = ci.select(paths)
                 self.assertEqual(ci.expected_jobs(plan)['companion-packages'], selected)
-                needs = {'changes': {'result': 'success'}}
-                needs.update({j: {'result': 'success' if s else 'skipped'}
-                              for j, s in ci.expected_jobs(plan).items()})
+                needs = successful_needs(plan)
                 self.assertEqual(ci.aggregate(plan, needs), [])
                 needs['companion-packages']['result'] = 'failure' if selected else 'success'
                 self.assertTrue(ci.aggregate(plan, needs))
 
     def test_windows_harness_leg_stands_alone_only_without_test_native(self):
         cases = (
-            (['packages/llamadart_validation/test/process_memory_test.dart'],
-             ['ubuntu-latest', 'windows-latest']),
-            (['example/chat_app/lib/main.dart'], ['ubuntu-latest', 'windows-latest']),
-            (['packages/llamadart_validation/lib/src/runner.dart'],
-             ['ubuntu-latest', 'windows-latest']),
-            (['lib/llamadart.dart'], ['ubuntu-latest']),
-            (['packages/llamadart_validation/test/a.dart', 'test/unit/core/a_test.dart'],
-             ['ubuntu-latest']),
+            (['packages/llamadart_validation/test/process_memory_test.dart'], True),
+            (['example/chat_app/lib/main.dart'], True),
+            (['packages/llamadart_validation/lib/src/runner.dart'], True),
+            (['lib/llamadart.dart'], False),
+            (['packages/llamadart_validation/test/a.dart', 'test/unit/core/a_test.dart'], False),
         )
-        for paths, oses in cases:
+        for paths, standalone in cases:
             with self.subTest(paths=paths):
                 plan = ci.select(paths)
                 self.assertTrue(plan['jobs']['validation-harness'])
-                self.assertEqual(ci.validation_harness_oses(plan), oses)
+                self.assertIs(ci.expected_jobs(plan)['validation-harness'], standalone)
+                self.assertTrue(ci.expected_jobs(plan)['linux-package-checks'])
+
+    def test_each_linux_package_lane_on_its_own_requires_only_its_steps(self):
+        for lane, steps in ci.LINUX_PACKAGE_STEPS.items():
+            with self.subTest(lane=lane):
+                plan = ci.select(['README.md'])
+                plan['jobs'][lane] = True
+                needs = successful_needs(plan)
+                self.assertEqual(needs['linux-package-checks']['result'], 'success')
+                self.assertEqual(needs['linux-package-checks']['outputs'],
+                                 dict.fromkeys(steps, 'success'))
+                self.assertEqual(ci.aggregate(plan, needs), [])
 
     def test_malformed_selection_cannot_turn_missing_work_into_success(self):
         for field, value in [('jobs', {}), ('desktops', ['unknown']), ('apps', ['web', 'web']),
@@ -1308,7 +1324,7 @@ class MacosPathGatingTest(unittest.TestCase):
         profile = ci.select(['packages/llamadart_validation/assets/profiles/chat-gguf-cpu.json'],
                             pull_request=True)
         self._assert_zero_macos(profile)
-        self.assertEqual(ci.validation_harness_oses(profile), ['ubuntu-latest', 'windows-latest'])
+        self.assertTrue(ci.expected_jobs(profile)['validation-harness'])
         for path in ('packages/llamadart_validation/test/process_memory_test.dart',
                      'packages/llamadart_validation/test/fixtures/process_memory_probe.dart',
                      'packages/llamadart_validation/lib/src/speech_runner.dart',

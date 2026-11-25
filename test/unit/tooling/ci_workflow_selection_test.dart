@@ -752,7 +752,7 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
       unorderedEquals(['model-store', 'test-linux-coverage']),
     );
 
-    final job = readWorkflow('ci')['jobs']['model-store'] as Map;
+    final job = readWorkflow('ci')['jobs']['linux-package-checks'] as Map;
     final steps = (job['steps'] as List).cast<Map>();
     Map step(String name) => steps.singleWhere((s) => s['name'] == name);
     final checks = step('Analyze and test on VM');
@@ -780,11 +780,13 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
       ),
     );
     final diagnostics = step('Upload Chrome process and phase diagnostics');
-    expect(diagnostics['if'], 'always()');
+    expect(
+      diagnostics['if'],
+      "\${{ always() && needs.changes.outputs.model-store == 'true' }}",
+    );
     expect(diagnostics['uses'], startsWith('actions/upload-artifact@'));
     expect(steps.indexOf(diagnostics), steps.indexOf(chrome) + 1);
     final unchanged = step('Check the lane leaves the package unchanged');
-    expect(unchanged.containsKey('if'), isFalse);
     expect(unchanged['working-directory'], 'packages/llamadart_model_store');
     expect(
       unchanged['run'],
@@ -793,7 +795,115 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
         contains('exit 1'),
       ),
     );
-    expect(steps.where((s) => s.containsKey('if')), [diagnostics]);
+  });
+
+  test('Linux package checks require each selected step to succeed', () async {
+    final jobs = readWorkflow('ci')['jobs'] as Map;
+    final aggregate = jobs['test-linux-web'] as Map;
+    final folded = jobs['linux-package-checks'];
+    expect(folded, isA<Map>(), reason: 'The aggregate needs the shared job.');
+    final stepGroups = {
+      'model-store': [
+        'model-store-vm',
+        'model-store-chrome',
+        'model-store-diagnostics',
+        'model-store-clean-tree',
+        'model-store-publish',
+      ],
+      'native-prompt-reuse-parity': [
+        'parity-pub-get',
+        'parity-model',
+        'parity-test',
+      ],
+      'validation-harness': [
+        'validation-pub-get',
+        'validation-analyze',
+        'validation-test',
+      ],
+    };
+    final steps = (folded['steps'] as List).cast<Map>();
+    expect(folded['runs-on'], 'ubuntu-latest');
+    expect(folded['needs'], 'changes');
+    expect(
+      folded['if'],
+      "needs.changes.outputs.linux-package-checks == 'true'",
+    );
+    expect(
+      steps.where((step) => '${step['uses']}'.contains('checkout@')),
+      hasLength(1),
+    );
+    expect(
+      steps.where((step) => '${step['uses']}'.contains('flutter-action@')),
+      hasLength(1),
+    );
+    final previous = {
+      'model-store-vm': 'setup-flutter',
+      'model-store-chrome': 'model-store-vm',
+      'model-store-clean-tree': 'model-store-chrome',
+      'model-store-publish': 'model-store-clean-tree',
+      'parity-pub-get': 'setup-flutter',
+      'parity-model': 'parity-pub-get',
+      'parity-test': 'parity-model',
+      'validation-pub-get': 'setup-flutter',
+      'validation-analyze': 'validation-pub-get',
+      'validation-test': 'validation-analyze',
+    };
+    for (final group in stepGroups.entries) {
+      for (final id in group.value) {
+        final step = steps.singleWhere((step) => step['id'] == id);
+        final guard = id == 'model-store-diagnostics'
+            ? 'always()'
+            : '!cancelled()';
+        final prerequisite = previous[id];
+        final priorSuccess = prerequisite == null
+            ? ''
+            : " && steps.$prerequisite.outcome == 'success'";
+        expect(
+          step['if'],
+          "\${{ $guard && needs.changes.outputs.${group.key} == 'true'$priorSuccess }}",
+        );
+        expect(folded['outputs'][id], '\${{ steps.$id.outcome }}');
+        expect(step.containsKey('continue-on-error'), isFalse);
+      }
+    }
+    final plan = await selected(['lib/llamadart.dart']);
+    final outcomes = <String, Object?>{
+      for (final id in stepGroups.values.expand((ids) => ids)) id: 'success',
+    };
+    final selectedJobs = plan['jobs'] as Map;
+    final needs = <String, Map<String, Object?>>{
+      for (final id in aggregate['needs'] as List)
+        id as String: {
+          'result': switch (id) {
+            'changes' || 'linux-package-checks' || 'studio-macos' => 'success',
+            'validation-harness' => 'skipped',
+            'test-linux-vm' => 'success',
+            _ => selectedJobs[id] == true ? 'success' : 'skipped',
+          },
+        },
+    };
+    needs['linux-package-checks']!['outputs'] = outcomes;
+    Future<ProcessResult> verify() => Process.run(
+      Platform.isWindows ? 'python' : 'python3',
+      ['tool/ci/select_jobs.py', 'aggregate'],
+      environment: {'PLAN': jsonEncode(plan), 'NEEDS': jsonEncode(needs)},
+    );
+
+    final allPassed = await verify();
+    expect(allPassed.exitCode, 0, reason: '${allPassed.stderr}');
+    for (final id in outcomes.keys.toList()) {
+      for (final bad in [null, 'skipped', 'cancelled', 'failure']) {
+        if (bad == null) {
+          outcomes.remove(id);
+        } else {
+          outcomes[id] = bad;
+        }
+        final result = await verify();
+        expect(result.exitCode, 1, reason: '$id with outcome $bad');
+        expect(result.stderr, contains(id), reason: '$id with outcome $bad');
+      }
+      outcomes[id] = 'success';
+    }
   });
 
   test('Studio macOS runs each native lifecycle and semantics regression', () {
@@ -842,10 +952,14 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
       final jobs = workflow['jobs'] as Map<String, dynamic>;
       final plan = await selected(['lib/llamadart.dart']);
       final planned = (plan['jobs'] as Map).keys.toSet();
+      final jobIds = planned.difference({
+        'model-store',
+        'native-prompt-reuse-parity',
+      })..add('linux-package-checks');
       final shards = await shardJobs();
       expect(shards, {'test-linux-vm': 'test-linux-coverage'});
       expect(jobs.keys.toSet(), {
-        ...planned,
+        ...jobIds,
         ...shards.keys,
         'studio-macos',
         'changes',
@@ -860,7 +974,7 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
         r'${{ always() && inputs.native_default_qualification != true }}',
       );
       expect((aggregate['needs'] as List).toSet(), {
-        ...planned,
+        ...jobIds,
         ...shards.keys,
         'studio-macos',
         'changes',
@@ -875,6 +989,16 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
       final consumers = {for (final e in shards.entries) e.value: e.key};
       // The companion job hosts other macOS steps; see the test of its wiring.
       for (final name in planned.difference({'companion-packages'})) {
+        expect(
+          jobs['changes']['outputs'][name],
+          '\${{ steps.select.outputs.$name }}',
+        );
+      }
+      for (final name in jobIds.difference({
+        'companion-packages',
+        'linux-package-checks',
+        'validation-harness',
+      })) {
         final shard = consumers[name];
         // A consumer waits for its shards, so it is skipped when one fails.
         expect(
@@ -890,10 +1014,6 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
               : "needs.changes.outputs.$name == 'true' && "
                     "needs.changes.outputs.coverage == 'true'",
           reason: '$name',
-        );
-        expect(
-          jobs['changes']['outputs'][name],
-          '\${{ steps.select.outputs.$name }}',
         );
       }
       for (final MapEntry(key: shard, value: consumer) in shards.entries) {
@@ -1242,7 +1362,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
           (step) => '${step['run']}'.contains('dart pub publish --dry-run'),
         ),
         stepsOf(
-          'model-store',
+          'linux-package-checks',
         ).singleWhere((step) => step['name'] == 'Publish dry-run'),
       ];
       expect(checked.length, greaterThanOrEqualTo(4));
@@ -1355,12 +1475,13 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     expect(resolve['run'], contains('llamadart@0.21.0'));
   });
 
-  test('selector exposes the companion job and validation harness OS', () {
+  test('selector exposes companion and consolidated Linux job outputs', () {
     final changes = readWorkflow('ci')['jobs']['changes'] as Map;
     final outputs = changes['outputs'] as Map;
     for (final key in [
       'companion-job',
-      'validation-harness-os',
+      'linux-package-checks',
+      'validation-harness-windows',
       'studio-macos',
       'macos-validation-memory',
       'apple-cache',
@@ -1395,16 +1516,16 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
   test('Windows runs the validation process memory test in exactly one job', () async {
     final jobs = readWorkflow('ci')['jobs'] as Map<String, dynamic>;
     final harness = jobs['validation-harness'] as Map;
+    expect(harness['needs'], 'changes');
+    expect(harness['runs-on'], 'windows-latest');
+    expect(harness['name'], 'Validation harness (model-free, windows-latest)');
     expect(
-      harness['strategy']['matrix']['os'],
-      r'${{ fromJSON(needs.changes.outputs.validation-harness-os) }}',
+      harness['if'],
+      "needs.changes.outputs.validation-harness-windows == 'true'",
     );
-    expect(harness['strategy']['fail-fast'], isFalse);
     expect(
       (harness['steps'] as List).map((s) => '${s['run']}'),
-      contains(
-        "dart test \${{ matrix.os == 'windows-latest' && 'test/process_memory_test.dart' || '' }}",
-      ),
+      contains('dart test test/process_memory_test.dart'),
     );
     final native = (jobs['test-other-os']['steps'] as List).cast<Map>();
     final memory = native.singleWhere(
@@ -1441,7 +1562,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
           'import json,runpy,sys; m=runpy.run_path("tool/ci/select_jobs.py"); '
               'p=m["select"](json.loads(sys.argv[1]), pull_request=True, '
               'host_suites=json.loads(sys.argv[2])); '
-              'print(json.dumps({"plan":p,"harness":m["validation_harness_oses"](p)}))',
+              'print(json.dumps({"plan":p,"harness":m["validation_harness_windows_selected"](p)}))',
           jsonEncode(paths),
           jsonEncode(hostSuites),
         ],
@@ -1472,7 +1593,12 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
           .toSet(),
       {'macos-latest'},
     );
-    expect(macOnly['harness'], contains('windows-latest'));
+    expect(macOnly['harness'], isFalse);
+    final standalone = await probePlan([
+      'packages/llamadart_validation/test/process_memory_test.dart',
+    ]);
+    expect(standalone['harness'], isTrue);
+    expect(winOnly['harness'], isFalse);
 
     final neither = await probePlan(['README.md']);
     expect(neither['plan']['test-other-os-matrix'], isEmpty);

@@ -100,7 +100,7 @@ void main() {
       final expected = {
         'linux-x64-ci-runtime': [
           jobs['test-linux-web']['name'],
-          jobs['native-prompt-reuse-parity']['name'],
+          jobs['linux-package-checks']['name'],
           smokeName('ubuntu-latest'),
         ],
         'windows-x64-ci-runtime': [
@@ -715,7 +715,10 @@ void main() {
     );
     final workflow = File('.github/workflows/ci.yml').readAsStringSync();
     expect(row.tier, 'targeted');
-    expect(row.command, contains('CI job model-store'));
+    expect(
+      row.command,
+      contains('Model Store steps in CI job Linux Package and Runtime Checks'),
+    );
     for (final command in [
       'flutter test',
       'dart test -p chrome test/model_store_web_test.dart',

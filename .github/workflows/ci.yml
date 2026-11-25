@@ -48,7 +48,8 @@ jobs:
       docs-check: ${{ steps.select.outputs.docs-check }}
       docs-versions: ${{ steps.select.outputs.docs-versions }}
       validation-harness: ${{ steps.select.outputs.validation-harness }}
-      validation-harness-os: ${{ steps.select.outputs.validation-harness-os }}
+      validation-harness-windows: ${{ steps.select.outputs.validation-harness-windows }}
+      linux-package-checks: ${{ steps.select.outputs.linux-package-checks }}
       validation-integration: ${{ steps.select.outputs.validation-integration }}
       companion-job: ${{ steps.select.outputs.companion-job }}
       test-linux-coverage: ${{ steps.select.outputs.test-linux-coverage }}
@@ -310,22 +311,39 @@ jobs:
         working-directory: packages/genkit_llamadart
         run: rm -f pubspec_overrides.yaml example/dartpad/pubspec_overrides.yaml
 
-  model-store:
+  linux-package-checks:
     needs: changes
-    if: needs.changes.outputs.model-store == 'true'
-    name: Model Store (checkout core)
+    if: needs.changes.outputs.linux-package-checks == 'true'
+    name: Linux Package and Runtime Checks
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 70
+    outputs:
+      model-store-vm: ${{ steps.model-store-vm.outcome }}
+      model-store-chrome: ${{ steps.model-store-chrome.outcome }}
+      model-store-diagnostics: ${{ steps.model-store-diagnostics.outcome }}
+      model-store-clean-tree: ${{ steps.model-store-clean-tree.outcome }}
+      model-store-publish: ${{ steps.model-store-publish.outcome }}
+      parity-pub-get: ${{ steps.parity-pub-get.outcome }}
+      parity-model: ${{ steps.parity-model.outcome }}
+      parity-test: ${{ steps.parity-test.outcome }}
+      validation-pub-get: ${{ steps.validation-pub-get.outcome }}
+      validation-analyze: ${{ steps.validation-analyze.outcome }}
+      validation-test: ${{ steps.validation-test.outcome }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: subosito/flutter-action@v2
+      - name: Setup Flutter
+        id: setup-flutter
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.47.1
           channel: stable
           cache: true
+
       - name: Analyze and test on VM
+        id: model-store-vm
+        if: ${{ !cancelled() && needs.changes.outputs.model-store == 'true' && steps.setup-flutter.outcome == 'success' }}
         working-directory: packages/llamadart_model_store
         run: |
           flutter pub get
@@ -333,6 +351,8 @@ jobs:
           flutter analyze --fatal-infos
           TMPDIR="$(mktemp -d)" flutter test
       - name: Test on Chrome with bounded shutdown diagnostics
+        id: model-store-chrome
+        if: ${{ !cancelled() && needs.changes.outputs.model-store == 'true' && steps.model-store-vm.outcome == 'success' }}
         working-directory: packages/llamadart_model_store
         run: >-
           python3 ../../tool/ci/supervise_chrome_test.py
@@ -340,7 +360,8 @@ jobs:
           --timeout-seconds 180 --
           dart test -p chrome test/model_store_web_test.dart
       - name: Upload Chrome process and phase diagnostics
-        if: always()
+        id: model-store-diagnostics
+        if: ${{ always() && needs.changes.outputs.model-store == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: model-store-chrome-diagnostics
@@ -348,6 +369,8 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - name: Check the lane leaves the package unchanged
+        id: model-store-clean-tree
+        if: ${{ !cancelled() && needs.changes.outputs.model-store == 'true' && steps.model-store-chrome.outcome == 'success' }}
         working-directory: packages/llamadart_model_store
         run: |
           changes="$(git status --porcelain --untracked-files=all -- .)"
@@ -359,6 +382,8 @@ jobs:
       # Resolve llamadart from this checkout so the dry-run validates the package
       # against the unreleased core.
       - name: Publish dry-run
+        id: model-store-publish
+        if: ${{ !cancelled() && needs.changes.outputs.model-store == 'true' && steps.model-store-clean-tree.outcome == 'success' }}
         working-directory: packages/llamadart_model_store
         run: |
           staged="$RUNNER_TEMP/llamadart_model_store-publish"
@@ -373,6 +398,65 @@ jobs:
           printf 'dependency_overrides:\n  llamadart:\n    path: %s\n' \
             "$GITHUB_WORKSPACE" > "$staged/pubspec_overrides.yaml"
           (cd "$staged" && flutter pub publish --dry-run)
+
+      - name: Install dependencies
+        id: parity-pub-get
+        if: ${{ !cancelled() && needs.changes.outputs.native-prompt-reuse-parity == 'true' && steps.setup-flutter.outcome == 'success' }}
+        run: flutter pub get
+
+      - name: Download parity model
+        id: parity-model
+        if: ${{ !cancelled() && needs.changes.outputs.native-prompt-reuse-parity == 'true' && steps.parity-pub-get.outcome == 'success' }}
+        shell: bash
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/models"
+          curl_args=(--fail --location --retry 8 --retry-all-errors --retry-delay 10)
+          if [[ -n "${HF_TOKEN:-}" ]]; then
+            curl_args+=(--header "Authorization: Bearer $HF_TOKEN")
+          fi
+          curl "${curl_args[@]}" \
+            "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf?download=true" \
+            --output "$RUNNER_TEMP/models/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+
+      - name: Run native prompt reuse parity
+        id: parity-test
+        if: ${{ !cancelled() && needs.changes.outputs.native-prompt-reuse-parity == 'true' && steps.parity-model.outcome == 'success' }}
+        run: |
+          dart run tool/testing/native_prompt_reuse_parity.dart \
+            --model "$RUNNER_TEMP/models/qwen2.5-0.5b-instruct-q4_k_m.gguf" \
+            --prompt-file "tool/testing/prompts/native_prompt_reuse_ci_prompts.txt" \
+            --max-prompts 4 \
+            --runs 1 \
+            --max-tokens 64 \
+            --gpu-layers 0 \
+            --threads 1 \
+            --threads-batch 1 \
+            --temp 0 \
+            --top-k 1 \
+            --top-p 1.0 \
+            --min-p 0.0 \
+            --repeat-penalty 1.0 \
+            --fail-on-mismatch
+
+      - name: Install validation harness dependencies
+        id: validation-pub-get
+        if: ${{ !cancelled() && needs.changes.outputs.validation-harness == 'true' && steps.setup-flutter.outcome == 'success' }}
+        working-directory: packages/llamadart_validation
+        run: dart pub get
+
+      - name: Analyze validation harness
+        id: validation-analyze
+        if: ${{ !cancelled() && needs.changes.outputs.validation-harness == 'true' && steps.validation-pub-get.outcome == 'success' }}
+        working-directory: packages/llamadart_validation
+        run: dart analyze --fatal-infos
+
+      - name: Run validation harness tests
+        id: validation-test
+        if: ${{ !cancelled() && needs.changes.outputs.validation-harness == 'true' && steps.validation-analyze.outcome == 'success' }}
+        working-directory: packages/llamadart_validation
+        run: dart test
 
   analyze:
     needs: changes
@@ -464,14 +548,10 @@ jobs:
   # Test Native when that job is selected, and in this matrix otherwise.
   validation-harness:
     needs: changes
-    if: needs.changes.outputs.validation-harness == 'true'
-    name: Validation harness (model-free, ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    if: needs.changes.outputs.validation-harness-windows == 'true'
+    name: Validation harness (model-free, windows-latest)
+    runs-on: windows-latest
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ${{ fromJSON(needs.changes.outputs.validation-harness-os) }}
     steps:
       - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
@@ -481,10 +561,7 @@ jobs:
           cache: true
       - run: dart pub get
         working-directory: packages/llamadart_validation
-      - if: matrix.os == 'ubuntu-latest'
-        run: dart analyze --fatal-infos
-        working-directory: packages/llamadart_validation
-      - run: dart test ${{ matrix.os == 'windows-latest' && 'test/process_memory_test.dart' || '' }}
+      - run: dart test test/process_memory_test.dart
         working-directory: packages/llamadart_validation
 
   # One macOS job holds every macOS check that does not need Test Native:
@@ -1178,11 +1255,10 @@ jobs:
       - test-web
       - web-chat-contract
       - test-other-os
-      - native-prompt-reuse-parity
       - artifact-contract
       - genkit
       - example-packages
-      - model-store
+      - linux-package-checks
       - studio
       - studio-macos
       - markdown-tests
@@ -1296,57 +1372,6 @@ jobs:
           path: .dart_tool/test_timing.json
           if-no-files-found: error
           retention-days: 14
-
-  native-prompt-reuse-parity:
-    needs: changes
-    if: needs.changes.outputs.native-prompt-reuse-parity == 'true'
-    name: Native Prompt Reuse Parity
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: 3.47.1
-          channel: 'stable'
-          cache: true
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Download parity model
-        shell: bash
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/models"
-          curl_args=(--fail --location --retry 8 --retry-all-errors --retry-delay 10)
-          if [[ -n "${HF_TOKEN:-}" ]]; then
-            curl_args+=(--header "Authorization: Bearer $HF_TOKEN")
-          fi
-          curl "${curl_args[@]}" \
-            "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf?download=true" \
-            --output "$RUNNER_TEMP/models/qwen2.5-0.5b-instruct-q4_k_m.gguf"
-
-      - name: Run native prompt reuse parity
-        run: |
-          dart run tool/testing/native_prompt_reuse_parity.dart \
-            --model "$RUNNER_TEMP/models/qwen2.5-0.5b-instruct-q4_k_m.gguf" \
-            --prompt-file "tool/testing/prompts/native_prompt_reuse_ci_prompts.txt" \
-            --max-prompts 4 \
-            --runs 1 \
-            --max-tokens 64 \
-            --gpu-layers 0 \
-            --threads 1 \
-            --threads-batch 1 \
-            --temp 0 \
-            --top-k 1 \
-            --top-p 1.0 \
-            --min-p 0.0 \
-            --repeat-penalty 1.0 \
-            --fail-on-mismatch
 
   docs-versions:
     name: Documentation version and pin checks

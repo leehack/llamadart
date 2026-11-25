@@ -74,7 +74,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     covers:
         'shared model store references, deletes, prune, metadata redaction, cross-process store lock and the browser refusal against checkout core',
     command:
-        'CI job model-store in .github/workflows/ci.yml; from packages/llamadart_model_store: TMPDIR="\$(mktemp -d)" flutter test, then dart test -p chrome test/model_store_web_test.dart',
+        'Model Store steps in CI job Linux Package and Runtime Checks; from packages/llamadart_model_store: TMPDIR="\$(mktemp -d)" flutter test, then dart test -p chrome test/model_store_web_test.dart',
     useWhen:
         'llamadart_model_store, its guide, or core download manager changes. Foreground only: no device backgrounding or sleep evidence.',
   ),
@@ -397,7 +397,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'CI + local',
     covers: 'real GGUF native prompt reuse parity with deterministic prompts',
     command:
-        'CI job "Native Prompt Reuse Parity", or dart run '
+        'Run native prompt reuse parity in CI job Linux Package and Runtime Checks, or dart run '
         'tool/testing/native_prompt_reuse_parity.dart --model <model.gguf> '
         '--prompt-file tool/testing/prompts/native_prompt_reuse_ci_prompts.txt '
         '--max-prompts 4 --runs 1 --max-tokens 64 --gpu-layers 0 '
@@ -1904,7 +1904,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'library smoke, and opportunistic LiteRT-LM CPU engine smoke',
     command:
         'CI jobs "Test Linux & Web (with Coverage)", '
-        '"Native Prompt Reuse Parity", and '
+        '"Linux Package and Runtime Checks" (prompt reuse parity), and '
         '"LiteRT-LM Smoke / Native smoke (ubuntu-latest)".',
     useWhen: 'Any native runtime or release change affecting Linux x64.',
   ),
