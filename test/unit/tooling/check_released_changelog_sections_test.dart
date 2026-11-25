@@ -142,11 +142,13 @@ class _RecoveryFixture {
   _RecoveryFixture(
     this.repo, {
     this.version = '1.2.4',
+    this.baseRef = 'main',
     Map<String, String> prepEdits = const {},
     Map<String, String> beforeEdits = const {},
     Map<String, String> publishedEdits = const {},
     bool twoParents = false,
   }) {
+    if (baseRef != 'main') repo.git(['switch', '-c', baseRef]);
     if (publishedEdits.isNotEmpty) repo.base = repo.commit(publishedEdits);
     repo.git(['tag', 'v1.2.3']);
     remote = Directory.systemTemp.createTempSync('w2117-remote-');
@@ -177,6 +179,7 @@ class _RecoveryFixture {
 
   final _Repo repo;
   final String version;
+  final String baseRef;
   late final Directory remote;
   late final String original;
   late final String before;
@@ -199,7 +202,7 @@ class _RecoveryFixture {
     ]);
   }
 
-  Map<String, Object> pullDetail({String? headRef}) => {
+  Map<String, Object> pullDetail({String? headRef, String? pullBase}) => {
     'number': 42,
     'merged': true,
     'merge_commit_sha': prep,
@@ -208,7 +211,7 @@ class _RecoveryFixture {
       'repo': {'full_name': _repoName},
     },
     'base': {
-      'ref': 'main',
+      'ref': pullBase ?? baseRef,
       'sha': original,
       'repo': {'full_name': _repoName},
     },
@@ -216,7 +219,7 @@ class _RecoveryFixture {
 
   Map<String, Object> activity(String tip, {int id = 10}) => {
     'id': id,
-    'ref': 'refs/heads/main',
+    'ref': 'refs/heads/$baseRef',
     'activity_type': 'pr_merge',
     'before': tip,
     'after': prep,
@@ -267,6 +270,7 @@ class _RecoveryFixture {
     repo: repository,
     prep: routed,
     eventBase: eventBase,
+    baseRef: baseRef,
     proposedMerge:
         proposedMerge ??
         repo.git([
@@ -291,6 +295,11 @@ class _RecoveryFixture {
       }
       if (endpoint.startsWith('repos/$_repoName/activity?')) {
         expect(paginate, isTrue);
+        final encodedRef = Uri.encodeQueryComponent('refs/heads/$baseRef');
+        expect(
+          endpoint,
+          'repos/$_repoName/activity?ref=$encodedRef&activity_type=pr_merge&per_page=100',
+        );
         if (failActivity) throw const FormatException('GitHub read failed.');
         return pages ??
             [
@@ -337,6 +346,46 @@ void main() {
       ]);
     },
   );
+
+  test('proves unpublished recovery on the matching patch base', () async {
+    final fixture = _RecoveryFixture(repo, baseRef: 'release/1.2.x');
+    final head = fixture.recovery();
+    expect(await fixture.check(head), isEmpty);
+    expect(
+      await fixture.check(head, pull: fixture.pullDetail(pullBase: 'main')),
+      [contains('same-repository release/1.2.x prep')],
+    );
+    final wrongActivity = fixture.activity(fixture.before)
+      ..['ref'] = 'refs/heads/main';
+    expect(
+      await fixture.check(
+        head,
+        pages: [
+          [wrongActivity],
+        ],
+      ),
+      [contains('Malformed GitHub release/1.2.x merge activity')],
+    );
+  });
+
+  for (final (baseRef, version) in [
+    ('release/1.3.x', '1.2.4'),
+    ('release/1.2.x', '1.2.0'),
+    ('release/1.2-prep', '1.2.4'),
+  ]) {
+    test('recovery rejects $version on $baseRef', () async {
+      final fixture = _RecoveryFixture(
+        repo,
+        baseRef: baseRef,
+        version: version,
+      );
+      expect(await fixture.check(fixture.recovery()), [
+        contains(
+          'Recovery version $version does not match the patch base $baseRef',
+        ),
+      ]);
+    });
+  }
 
   test(
     'recovery marker version must match the attempted core version',

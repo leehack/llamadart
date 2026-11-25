@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -8,8 +9,9 @@ import 'package:yaml/yaml.dart';
 
 const _script = 'tool/release/reopen_unreleased_changelog.dart';
 const _workflow = '.github/workflows/docs_version_cut.yml';
-const _commitStep = 'Commit versioned docs';
 const _docsChangelog = 'website/docs/changelog/recent-releases.md';
+const _versionedDocs = 'website/versioned_docs';
+const _versions = 'website/versions.json';
 const _posixOnly = 'runs the workflow step under a POSIX Bash runtime';
 
 const _released = '## 1.0.0\n\n- Shipped.\n\n## 0.9.0\n\n- Older.\n';
@@ -33,7 +35,7 @@ void main() {
       expect(source, isNot(contains('git add CHANGELOG.md')));
     });
 
-    group('commit step', () {
+    group('snapshot steps', () {
       late Directory root;
       late _Origin origin;
       setUp(() {
@@ -44,7 +46,7 @@ void main() {
 
       test('cuts only versioned docs in one commit', () {
         final before = origin.mainSha();
-        final result = origin.runStep(cutDocs: true);
+        final result = origin.runSteps();
         expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
 
         expect(origin.git(['rev-parse', 'main~1']), before);
@@ -55,24 +57,35 @@ void main() {
         expect(
           origin.git(['show', '--name-only', '--format=', 'main']).split('\n'),
           unorderedEquals([
-            'website/versioned_docs/version-1.0.0/index.md',
-            'website/versions.json',
+            '$_versionedDocs/version-1.0.0/index.md',
+            '$_versionedDocs/version-1.0.0/changelog/recent-releases.md',
+            'website/versioned_sidebars/version-1.0.0-sidebars.json',
+            _versions,
           ]),
+        );
+        expect(
+          origin.mainFile('$_versionedDocs/version-1.0.0/index.md'),
+          '# 1.0.0\n',
+        );
+        expect(origin.mainFile(_versions), '[\n  "1.0.0",\n  "0.9.0"\n]\n');
+        expect(
+          origin.mainFile(
+            'website/versioned_sidebars/version-1.0.0-sidebars.json',
+          ),
+          '{\n  "docsSidebar": [\n    "index"\n  ]\n}\n',
         );
         expect(origin.mainFile('CHANGELOG.md'), _released);
         expect(origin.mainFile(_docsChangelog), '$_docsIntro$_released');
       });
 
       test('a rerun after the cut pushes nothing', () {
-        expect(origin.runStep(cutDocs: true).exitCode, 0);
+        expect(origin.runSteps().exitCode, 0);
         final cut = origin.mainSha();
 
-        for (final cutDocs in [true, false]) {
-          final rerun = origin.runStep(cutDocs: cutDocs);
-          expect(rerun.exitCode, 0, reason: '${rerun.stdout}${rerun.stderr}');
-          expect(rerun.stdout, contains('Nothing to push.'));
-          expect(origin.mainSha(), cut);
-        }
+        final rerun = origin.runSteps();
+        expect(rerun.exitCode, 0, reason: '${rerun.stdout}${rerun.stderr}');
+        expect(rerun.stdout, contains('Nothing to push.'));
+        expect(origin.mainSha(), cut);
       });
 
       test(
@@ -101,7 +114,7 @@ void main() {
         });
         final before = origin.mainSha();
 
-        final result = origin.runStep(cutDocs: true);
+        final result = origin.runSteps();
         expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
 
         expect(origin.git(['rev-parse', 'main~1']), before);
@@ -111,6 +124,80 @@ void main() {
         );
         expect(origin.mainFile('CHANGELOG.md'), pending);
         expect(origin.mainFile(_docsChangelog), '$_docsIntro$pending');
+      });
+
+      test('cuts a diverged patch into current main from the tag bytes', () {
+        const patch = '## 0.9.1\n\n- Patched.\n';
+        origin.tagPatch('v0.9.1', {
+          'CHANGELOG.md': patch,
+          'pubspec.yaml': 'version: 0.9.1\n',
+          _docsChangelog: '$_docsIntro$patch',
+          'website/docs/index.md': '# Patch tag\n',
+          'website/sidebars.json': '{"docsSidebar":["patch"]}\n',
+        });
+        origin.commitToMain({_versions: '["1.0.0", "0.9.0"]\n'});
+        final before = origin.mainSha();
+
+        final result = origin.runSteps(tag: 'v0.9.1');
+        expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+        expect(origin.git(['rev-parse', 'main~1']), before);
+        expect(
+          origin.git(['log', '-1', '--format=%s', 'main']),
+          'docs: cut version 0.9.1',
+        );
+        expect(
+          origin.git(['show', '--name-only', '--format=', 'main']).split('\n'),
+          unorderedEquals([
+            '$_versionedDocs/version-0.9.1/index.md',
+            '$_versionedDocs/version-0.9.1/changelog/recent-releases.md',
+            'website/versioned_sidebars/version-0.9.1-sidebars.json',
+            _versions,
+          ]),
+        );
+        expect(origin.mainFile('pubspec.yaml'), 'version: 1.0.0\n');
+        expect(origin.mainFile('CHANGELOG.md'), _released);
+        expect(origin.mainFile(_docsChangelog), '$_docsIntro$_released');
+        expect(origin.mainFile('website/docs/index.md'), '# 1.0.0\n');
+        expect(
+          origin.mainFile('$_versionedDocs/version-0.9.1/index.md'),
+          '# Patch tag\n',
+        );
+        expect(
+          origin.mainFile(
+            '$_versionedDocs/version-0.9.1/changelog/recent-releases.md',
+          ),
+          '$_docsIntro$patch',
+        );
+        expect(
+          jsonDecode(
+            origin.mainFile(
+              'website/versioned_sidebars/version-0.9.1-sidebars.json',
+            ),
+          ),
+          {
+            'docsSidebar': ['patch'],
+          },
+        );
+        expect(jsonDecode(origin.mainFile(_versions)), [
+          '1.0.0',
+          '0.9.1',
+          '0.9.0',
+        ]);
+        final cut = origin.mainSha();
+        final rerun = origin.runSteps(tag: 'v0.9.1');
+        expect(rerun.exitCode, 0, reason: '${rerun.stdout}${rerun.stderr}');
+        expect(origin.mainSha(), cut);
+      });
+
+      test('refuses a half-written snapshot on main', () {
+        origin.commitToMain({
+          '$_versionedDocs/version-1.0.0/index.md': '# Incomplete\n',
+        });
+        final before = origin.mainSha();
+        final result = origin.runSteps();
+        expect(result.exitCode, isNonZero);
+        expect(result.stderr, contains('Snapshot files for 1.0.0 exist'));
+        expect(origin.mainSha(), before);
       });
     }, skip: Platform.isWindows ? _posixOnly : false);
   });
@@ -192,12 +279,27 @@ class _Origin {
       '${root.path}/origin.git',
     ], environment: _gitEnvironment(root));
     final seed = _Repo.init(root, {
-      'CHANGELOG.md': _released,
-      _docsChangelog: '$_docsIntro$_released',
-      'website/versions.json': '[]\n',
-      'website/versioned_docs/version-0.9.0/index.md': '# 0.9.0\n',
+      'CHANGELOG.md': '## 0.9.0\n\n- Older.\n',
+      'pubspec.yaml': 'version: 0.9.0\n',
+      'website/docs/index.md': '# 0.9.0\n',
+      _docsChangelog: '$_docsIntro## 0.9.0\n\n- Older.\n',
+      _versions: '["0.9.0"]\n',
+      'website/sidebars.json': '{"docsSidebar":["index"]}\n',
+      '$_versionedDocs/version-0.9.0/index.md': '# 0.9.0\n',
       'website/versioned_sidebars/version-0.9.0.json': '{}\n',
       _script: File(_script).readAsStringSync(),
+      for (final path in [
+        'website/tool/cut_version.dart',
+        'website/lib/src/tooling/version_cut.dart',
+      ])
+        path: _read(path),
+    });
+    seed.git(['tag', 'v0.9.0']);
+    seed.commit({
+      'CHANGELOG.md': _released,
+      'pubspec.yaml': 'version: 1.0.0\n',
+      'website/docs/index.md': '# 1.0.0\n',
+      _docsChangelog: '$_docsIntro$_released',
     });
     seed.git(['tag', 'v1.0.0']);
     seed.git(['remote', 'add', 'origin', '${root.path}/origin.git']);
@@ -221,9 +323,15 @@ class _Origin {
     seed.git(['push', '-q', 'origin', 'main']);
   }
 
-  /// Runs the workflow's commit step in a fresh checkout of the tag, after
-  /// optionally simulating `cut_version.dart`.
-  ProcessResult runStep({required bool cutDocs}) {
+  void tagPatch(String tag, Map<String, String> files) {
+    seed.git(['checkout', '-q', '-b', 'release/0.9.x', 'v0.9.0']);
+    seed.commit(files);
+    seed.git(['tag', tag]);
+    seed.git(['push', '-q', 'origin', 'release/0.9.x', tag]);
+    seed.git(['checkout', '-q', 'main']);
+  }
+
+  ProcessResult runSteps({String tag = 'v1.0.0'}) {
     final checkout = _Repo(
       Directory('${root.path}/run${_runs++}'),
       seed.environment,
@@ -234,18 +342,18 @@ class _Origin {
       '${root.path}/origin.git',
       checkout.directory.path,
     ], environment: seed.environment);
-    checkout.git(['checkout', '-q', '--detach', 'v1.0.0']);
-    if (cutDocs) {
-      File(
-        '${checkout.directory.path}/website/versions.json',
-      ).writeAsStringSync('["1.0.0"]\n');
-      File(
-          '${checkout.directory.path}/website/versioned_docs/version-1.0.0/'
-          'index.md',
-        )
-        ..parent.createSync(recursive: true)
-        ..writeAsStringSync('# 1.0.0\n');
-    }
+    checkout.git(['checkout', '-q', '--detach', tag]);
+    final config = _websitePackageConfig(checkout.directory);
+    final bin = Directory('${root.path}/bin$_runs')..createSync();
+    final dart = File('${bin.path}/dart')
+      ..writeAsStringSync(r'''#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == run ]]
+shift
+exec "$REAL_DART" --packages="$PACKAGE_CONFIG" "$@"
+''');
+    final chmod = Process.runSync('chmod', ['+x', dart.path]);
+    expect(chmod.exitCode, 0, reason: '${chmod.stderr}');
 
     final steps =
         (((loadYaml(_read(_workflow)) as YamlMap)['jobs'] as YamlMap)
@@ -253,19 +361,49 @@ class _Origin {
                     .single
                 as YamlMap)['steps']
             as YamlList;
-    final step = steps.cast<YamlMap>().singleWhere(
-      (step) => step['name'] == _commitStep,
+    final scripts = steps.cast<YamlMap>().where(
+      (step) =>
+          step['name'] != 'Install website dependencies' && step['run'] != null,
     );
-    final dartBin = File(Platform.resolvedExecutable).parent.path;
     return Process.runSync(
       'bash',
-      ['-e', '-c', step['run'] as String],
+      [
+        '-e',
+        '-o',
+        'pipefail',
+        '-c',
+        scripts.map((step) => '(\n${step['run']}\n)').join('\n'),
+      ],
       workingDirectory: checkout.directory.path,
       environment: {
         ...seed.environment,
-        'GITHUB_REF_NAME': 'v1.0.0',
-        'PATH': '$dartBin:${Platform.environment['PATH']}',
+        'GITHUB_REF_NAME': tag,
+        'PATH': '${bin.path}:${Platform.environment['PATH']}',
+        'REAL_DART': Platform.resolvedExecutable,
+        'PACKAGE_CONFIG': config.path,
+        'TMPDIR': root.path,
       },
     );
   }
+}
+
+// Resolve the real website cutter in the scratch tag without a network fetch.
+File _websitePackageConfig(Directory checkout) {
+  final existing = File('.dart_tool/package_config.json').absolute;
+  final config =
+      jsonDecode(existing.readAsStringSync()) as Map<String, dynamic>;
+  final packages = (config['packages'] as List).cast<Map<String, dynamic>>();
+  for (final package in packages) {
+    package['rootUri'] = existing.uri
+        .resolve(package['rootUri'] as String)
+        .toString();
+  }
+  packages.add({
+    'name': 'llamadart_website',
+    'rootUri': Uri.directory('${checkout.path}/website').toString(),
+    'packageUri': 'lib/',
+    'languageVersion': '3.10',
+  });
+  return File('${checkout.path}/package_config.json')
+    ..writeAsStringSync(jsonEncode(config));
 }
