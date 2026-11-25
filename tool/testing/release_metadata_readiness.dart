@@ -1,3 +1,4 @@
+import 'package:pub_semver/pub_semver.dart';
 import 'package:yaml/yaml.dart';
 
 import 'check_released_changelog_sections.dart';
@@ -143,31 +144,47 @@ typedef LockedReleaseVersion = ({
   String relativePath,
 });
 
-/// Accepts a canonical top-level package version bump as the only byte change.
+const _stableVersion =
+    r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)';
+final _coreRange = RegExp('^>=($_stableVersion) <($_stableVersion)\$');
+
+/// Checks a version bump and, for a companion, an optional core floor raise.
 ReleaseVersionChange? releasePubspecVersionChange(
   ReadinessFilePair pair,
-  String package,
-) {
-  final previous = _packageVersion(pair.base.contents, package);
-  final next = _packageVersion(pair.head.contents, package);
-  if (previous == null ||
-      next == null ||
-      previous == next ||
-      pair.base.contents.replaceFirst(
-            RegExp('^version: ${RegExp.escape(previous)}\$', multiLine: true),
-            'version: $next',
-          ) !=
-          pair.head.contents) {
+  String package, {
+  Version? companionCore,
+}) {
+  final before = _readReleasePubspec(pair.base.contents, package);
+  final after = _readReleasePubspec(pair.head.contents, package);
+  if (before == null || after == null || before.version == after.version) {
     return null;
   }
-  return (previous: previous, next: next);
+  final bumped = pair.base.contents.replaceFirst(
+    RegExp('^version: ${RegExp.escape(before.version)}\$', multiLine: true),
+    'version: ${after.version}',
+  );
+  if (bumped != pair.head.contents &&
+      (companionCore == null ||
+          _raiseCompanionFloor(
+                bumped,
+                before.core,
+                after.core,
+                companionCore,
+              ) !=
+              pair.head.contents)) {
+    return null;
+  }
+  return (previous: before.version, next: after.version);
 }
 
-String? _packageVersion(String source, String package) {
+({String version, String? core})? _readReleasePubspec(
+  String source,
+  String package,
+) {
   try {
     final parsed = loadYaml(source);
     final matches = RegExp(
-      r'^version: (0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$',
+      '^version: $_stableVersion\$',
       multiLine: true,
     ).allMatches(source).toList();
     if (parsed is! YamlMap ||
@@ -176,10 +193,42 @@ String? _packageVersion(String source, String package) {
       return null;
     }
     final version = matches.single.group(0)!.substring('version: '.length);
-    return parsed['version'] == version ? version : null;
+    if (parsed['version'] != version) return null;
+    final dependencies = parsed['dependencies'];
+    final core = dependencies is YamlMap ? dependencies['llamadart'] : null;
+    return (version: version, core: core is String ? core : null);
   } on YamlException {
     return null;
   }
+}
+
+String? _raiseCompanionFloor(
+  String bumped,
+  String? before,
+  String? after,
+  Version core,
+) {
+  final oldRange = _coreRange.firstMatch(before ?? '');
+  final newRange = _coreRange.firstMatch(after ?? '');
+  if (oldRange == null || newRange == null) return null;
+  final previousFloor = Version.parse(oldRange[1]!);
+  final nextFloor = Version.parse(newRange[1]!);
+  final upper = Version(core.major, core.minor + 1, 0).toString();
+  if (oldRange[2] != upper ||
+      newRange[2] != upper ||
+      previousFloor.major != core.major ||
+      previousFloor.minor != core.minor ||
+      nextFloor <= previousFloor ||
+      nextFloor > core) {
+    return null;
+  }
+
+  final oldLine = RegExp(
+    "^  llamadart: '${RegExp.escape(before!)}'\$",
+    multiLine: true,
+  );
+  if (oldLine.allMatches(bumped).length != 1) return null;
+  return bumped.replaceFirst(oldLine, "  llamadart: '$after'");
 }
 
 /// Checks that only the listed checkout-local package versions changed.

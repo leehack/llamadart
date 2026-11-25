@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:pub_semver/pub_semver.dart';
+
 import '../testing/check_released_changelog_sections.dart';
 import '../testing/release_metadata_readiness.dart';
 import '../testing/verify_release_docs_versions.dart';
@@ -152,7 +154,7 @@ Future<String> _guard(_Git git, Object? event, GithubLookup lookup) async {
         }
         git.requireFullHistory();
         final fork = git.text(['merge-base', baseSha, headSha]).trim();
-        _requirePrepScope(git, fork, headSha);
+        _requirePrepScope(git, fork, headSha, line);
         return 'Core release prep.\n';
       }
     }
@@ -209,7 +211,13 @@ Future<String> _guard(_Git git, Object? event, GithubLookup lookup) async {
   );
 }
 
-void _requirePrepScope(_Git git, String base, String head) {
+void _requirePrepScope(
+  _Git git,
+  String base,
+  String head,
+  String line, {
+  String? tag,
+}) {
   final paths = git
       .text([
         'diff',
@@ -233,14 +241,42 @@ void _requirePrepScope(_Git git, String base, String head) {
 
   ReadinessFilePair read(String path) =>
       (base: git.releaseFile(base, path), head: git.releaseFile(head, path));
-  final versions = <String, ReleaseVersionChange>{};
+  final core = releasePubspecVersionChange(read('pubspec.yaml'), 'llamadart');
+  if (core == null) {
+    throw const FormatException(
+      'Release prep may change only the version scalar in pubspec.yaml.',
+    );
+  }
+  final previous = Version.parse(core.previous);
+  final next = Version(previous.major, previous.minor, previous.patch + 1);
+  if ('${previous.major}.${previous.minor}' != line ||
+      core.next != next.toString() ||
+      (tag != null && tag != 'v$next')) {
+    throw FormatException(
+      'Core pubspec.yaml must advance to the next patch on release/$line.x'
+      '${tag == null ? '' : ' at tag $tag'}. Found ${core.previous} -> ${core.next}.',
+    );
+  }
+
+  final versions = <String, ReleaseVersionChange>{'llamadart': core};
   for (final path in paths) {
     final package = _prepPubspecs[path];
-    if (package == null) continue;
-    final version = releasePubspecVersionChange(read(path), package);
+    if (package == 'llamadart' || releaseMetadataLocks.containsKey(path)) {
+      continue;
+    }
+    if (package == null) {
+      git.requireRegularReleaseFile(base, path, allowMissing: true);
+      git.requireRegularReleaseFile(head, path);
+      continue;
+    }
+    final version = releasePubspecVersionChange(
+      read(path),
+      package,
+      companionCore: next,
+    );
     if (version == null) {
       throw FormatException(
-        'Release prep may change only the version scalar in $path.',
+        'Release prep may change only the version and raise the core floor within the release line in $path.',
       );
     }
     versions[package] = version;
@@ -497,7 +533,11 @@ Future<String> _parity(
   final failures = <String>[];
   for (final line in tips.keys.toList()..sort()) {
     final start = main.minor(line);
-    final published = tags[line]?.values.toSet() ?? <String>{};
+    final publishedTags = <String, List<String>>{};
+    for (final tag in (tags[line] ?? const <String, String>{}).entries) {
+      (publishedTags[tag.value] ??= []).add(tag.key);
+    }
+    final published = publishedTags.keys.toSet();
     Future<Map<String, String>>? mainPatches;
     final sources = <String, String>{};
     final patchIds = <String, String?>{};
@@ -529,8 +569,13 @@ Future<String> _parity(
             );
           }
           final String kind;
-          if (published.contains(sha)) {
-            _requirePrepScope(git, '$sha^', sha);
+          if (publishedTags[sha] case final releaseTags?) {
+            if (releaseTags.length != 1) {
+              throw FormatException(
+                'Conflicting patch tags for one prep: ${releaseTags.join(', ')}.',
+              );
+            }
+            _requirePrepScope(git, '$sha^', sha, line, tag: releaseTags.single);
             kind = 'prep';
           } else if (recovered.containsKey(sha)) {
             kind = recovered[sha]!;
@@ -720,13 +765,22 @@ class _Git {
   List<String> firstParents(String tip) =>
       lines(['rev-list', '--first-parent', tip]);
 
-  ReadinessFile releaseFile(String revision, String path) {
+  void requireRegularReleaseFile(
+    String revision,
+    String path, {
+    bool allowMissing = false,
+  }) {
     final entry = text(['ls-tree', '-z', revision, '--', path]);
+    if (allowMissing && entry.isEmpty) return;
     if (!entry.startsWith('100644 blob ') || !entry.endsWith('\t$path\x00')) {
       throw FormatException(
         'Release prep requires an existing regular file: $path.',
       );
     }
+  }
+
+  ReadinessFile releaseFile(String revision, String path) {
+    requireRegularReleaseFile(revision, path);
     return (mode: '100644', contents: text(['show', '$revision:$path']));
   }
 

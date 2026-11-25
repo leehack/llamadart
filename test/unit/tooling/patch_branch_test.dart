@@ -100,6 +100,21 @@ String _lockEntry(String name, String path, String version) =>
     '    source: path\n'
     '    version: "$version"\n';
 
+void _writeCoreFloor(
+  _Repository repo,
+  String version,
+  String lower,
+  String upper, {
+  String extra = '',
+}) {
+  repo.write(
+    _companionPubspec,
+    'name: $_companion\nversion: $version\ndependencies:\n'
+    "  llamadart: '>=$lower <$upper'\n"
+    '$extra',
+  );
+}
+
 Matcher _failure(String diagnostic) => isA<FormatException>().having(
   (e) => e.message,
   'diagnostic',
@@ -389,6 +404,174 @@ void main() {
         throwsA(_failure(path)),
       );
       await expectLater(repo.parity(), throwsA(_failure(path)));
+    });
+  }
+
+  for (final (name, before, after, oldFloor, upper) in [
+    (
+      'a 0.20.1 repin can raise the companion core floor',
+      '0.20.0',
+      '0.20.1',
+      '0.20.0',
+      '0.21.0',
+    ),
+    (
+      'a 0.20.4 repin can raise the companion core floor',
+      '0.20.3',
+      '0.20.4',
+      '0.20.2',
+      '0.21.0',
+    ),
+    (
+      'a 0.20.5 repin can raise the companion core floor',
+      '0.20.4',
+      '0.20.5',
+      '0.20.4',
+      '0.21.0',
+    ),
+    (
+      'a 0.20.7 repin can raise the companion core floor',
+      '0.20.6',
+      '0.20.7',
+      '0.20.0',
+      '0.21.0',
+    ),
+    (
+      'a 0.21.1 repin can raise the companion core floor',
+      '0.21.0',
+      '0.21.1',
+      '0.21.0',
+      '0.22.0',
+    ),
+  ]) {
+    test(name, () async {
+      _writePrepFiles(repo, before, _historicalPrepDocs);
+      _writeCoreFloor(repo, before, oldFloor, upper);
+      repo.anchorPrepBase(before);
+      repo.checkoutRelease();
+      _writePrepFiles(repo, after, _historicalPrepDocs);
+      _writeCoreFloor(repo, after, after, upper);
+      final prep = repo.prep(after, pr: 52);
+      repo.git(['tag', 'v$after']);
+      expect(
+        await repo.guard(null, head: 'release/prep-$after'),
+        contains('release prep'),
+      );
+      expect(await repo.parity(), contains('$prep prep'));
+    });
+  }
+
+  for (final (name, lower, upper, extra) in [
+    ('prep rejects lowering the companion core floor', '1.0.1', '1.1.0', ''),
+    ('prep rejects changing the companion upper bound', '1.0.3', '1.2.0', ''),
+    (
+      'prep rejects raising the companion floor above the new core',
+      '1.0.4',
+      '1.1.0',
+      '',
+    ),
+    (
+      'prep rejects changing another companion dependency with the floor',
+      '1.0.3',
+      '1.1.0',
+      '  yaml: any\n',
+    ),
+    (
+      'prep rejects adding companion hooks with the floor',
+      '1.0.3',
+      '1.1.0',
+      'hooks:\n  user_defines: {}\n',
+    ),
+    (
+      'prep rejects adding companion overrides with the floor',
+      '1.0.3',
+      '1.1.0',
+      'dependency_overrides:\n  yaml: any\n',
+    ),
+  ]) {
+    test(name, () async {
+      _writePrepFiles(repo, '1.0.2', []);
+      _writeCoreFloor(repo, '1.0.2', '1.0.2', '1.1.0');
+      repo.anchorPrepBase('1.0.2');
+      repo.checkoutRelease();
+      _writePrepFiles(repo, '1.0.3', []);
+      _writeCoreFloor(repo, '1.0.3', lower, upper, extra: extra);
+      repo.prep('1.0.3', pr: 52);
+      repo.git(['tag', 'v1.0.3']);
+      await expectLater(
+        repo.guard(null, head: 'release/prep-1.0.3'),
+        throwsA(_failure(_companionPubspec)),
+      );
+      await expectLater(repo.parity(), throwsA(_failure(_companionPubspec)));
+    });
+  }
+
+  for (final (name, version) in [
+    ('prep rejects bumping to another minor', '1.7.3'),
+    ('prep rejects downgrading the core version', '0.9.0'),
+    ('prep rejects skipping a patch version', '1.0.2'),
+  ]) {
+    test(name, () async {
+      repo.checkoutRelease();
+      repo.prep(version, pr: 52);
+      repo.git(['tag', 'v1.0.1']);
+      await expectLater(
+        repo.guard(null, head: 'release/prep-1.0.1'),
+        throwsA(_failure('next patch')),
+      );
+      await expectLater(repo.parity(), throwsA(_failure('next patch')));
+    });
+  }
+
+  test(
+    'parity rejects a tag that disagrees with the next core patch',
+    () async {
+      repo.checkoutRelease();
+      repo.prep('1.0.1', pr: 52);
+      repo.git(['tag', 'v1.0.2']);
+      await expectLater(repo.parity(), throwsA(_failure('v1.0.2')));
+    },
+  );
+
+  test('parity rejects conflicting tags on the same prep', () async {
+    repo.checkoutRelease();
+    repo.prep('1.0.1', pr: 52);
+    repo.git(['tag', 'v1.0.1']);
+    repo.git(['tag', 'v1.0.2']);
+    await expectLater(
+      repo.parity(),
+      throwsA(_failure('Conflicting patch tags')),
+    );
+  });
+
+  for (final (name, path, mode) in [
+    ('prep rejects an executable pubspec', 'pubspec.yaml', '100755'),
+    ('prep rejects an executable README', 'README.md', '100755'),
+    ('prep rejects a symlink README', 'README.md', '120000'),
+    ('prep rejects a gitlink README', 'README.md', '160000'),
+    ('prep rejects a deleted README', 'README.md', ''),
+  ]) {
+    test(name, () async {
+      repo.write('README.md', 'Install the core.\n');
+      repo.anchorPrepBase('1.0.0');
+      repo.checkoutRelease();
+      repo.prep('1.0.1', pr: 52);
+      if (mode.isEmpty) {
+        repo.git(['rm', path]);
+      } else {
+        final object = mode == '160000'
+            ? repo.minor
+            : repo.git(['rev-parse', 'HEAD:$path']);
+        repo.git(['update-index', '--cacheinfo', '$mode,$object,$path']);
+      }
+      repo.git(['commit', '--amend', '--no-edit', '-q']);
+      repo.git(['tag', 'v1.0.1']);
+      final failure = allOf(_failure(path), _failure('regular file'));
+      await expectLater(
+        repo.guard(null, head: 'release/prep-1.0.1'),
+        throwsA(failure),
+      );
+      await expectLater(repo.parity(), throwsA(failure));
     });
   }
 
