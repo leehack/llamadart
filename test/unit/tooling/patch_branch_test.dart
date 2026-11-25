@@ -180,7 +180,30 @@ void main() {
     },
   );
 
+  test('rejects an already closed forward-port issue at guard time', () async {
+    repo.issue = {'number': 61, 'state': 'closed'};
+    await expectLater(
+      repo.guard(_forward),
+      throwsA(_failure('Forward-port issue #61 is closed')),
+    );
+  });
+
+  test('rejects backport metadata hidden inside the Changelog', () async {
+    final sha = repo.mainFix();
+    repo.prBody = '$_authored<!--\n-->\n';
+    final hidden = repo.prBody.replaceFirst(
+      '<!--\n',
+      '<!--\n${_metadata(sha)}\n',
+    );
+    await expectLater(
+      repo.guard(hidden),
+      throwsA(_failure('standalone body lines')),
+    );
+  });
+
   test('routed same-repository core prep is exempt', () async {
+    repo.checkoutRelease();
+    repo.prep('1.0.1', pr: 52);
     expect(
       await repo.guard(null, head: 'release/prep-1.0.1'),
       contains('release prep'),
@@ -192,6 +215,34 @@ void main() {
         headRepository: 'fork/llamadart',
       ),
       throwsA(_failure('Backport of')),
+    );
+  });
+
+  test('a routed prep PR cannot exempt unrelated paths', () async {
+    repo.checkoutRelease();
+    repo.write('lib/branch_only.dart', 'void fix() {}');
+    repo.write('.github/workflows/branch-only.yml', 'name: Extra');
+    repo.prep('1.0.1', pr: 52);
+    for (final (head, labels) in [
+      ('release/prep-1.0.1', <String>[]),
+      ('branch-only-fix', ['release-prep']),
+    ]) {
+      await expectLater(
+        repo.guard(null, head: head, labels: labels),
+        throwsA(
+          allOf(
+            _failure('lib/branch_only.dart'),
+            _failure('.github/workflows/branch-only.yml'),
+          ),
+        ),
+      );
+    }
+  });
+
+  test('a routed prep PR requires event commit identities', () async {
+    await expectLater(
+      repo.guard(null, head: 'release/prep-1.0.1', includeShas: false),
+      throwsA(_failure('full base and head SHAs')),
     );
   });
 
@@ -286,6 +337,109 @@ void main() {
       );
     },
   );
+
+  test('a tagged prep cannot exempt unrelated paths', () async {
+    repo.mainFix();
+    repo.checkoutRelease();
+    repo.write('lib/branch_only.dart', 'void fix() {}');
+    final sha = repo.prep('1.0.1', pr: 52);
+    repo.git(['tag', '-a', 'v1.0.1', '-m', 'Published']);
+    for (final all in [false, true]) {
+      await expectLater(
+        repo.parity(all: all),
+        throwsA(allOf(_failure(sha), _failure('lib/branch_only.dart'))),
+      );
+    }
+  });
+
+  test(
+    'parity requires the minor tag on the release first-parent chain',
+    () async {
+      repo.git(['checkout', '-q', '--orphan', 'other-history']);
+      repo.commit('Unrelated root', file: 'unrelated');
+      repo.git([
+        'merge',
+        '-q',
+        '--allow-unrelated-histories',
+        '--no-ff',
+        repo.minor,
+        '-m',
+        'Minor is a side parent',
+      ]);
+      await expectLater(
+        repo.parity(),
+        throwsA(
+          _failure('v1.0.0 is absent from the release first-parent chain'),
+        ),
+      );
+    },
+  );
+
+  test(
+    'parity rejects a release merge even with valid backport metadata',
+    () async {
+      final source = repo.mainFix();
+      repo.checkoutRelease();
+      repo.git(['checkout', '-qb', 'side']);
+      repo.commit('Branch-only fix', file: 'branch-only');
+      repo.git(['checkout', '-q', 'release/1.0.x']);
+      repo.git([
+        'merge',
+        '-q',
+        '--no-ff',
+        'side',
+        '-m',
+        'Backport fix (#55)\n\n${_backport(source, body: _landed)}',
+      ]);
+      final sha = repo.git(['rev-parse', 'HEAD']);
+      await expectLater(
+        repo.parity(),
+        throwsA(allOf(_failure(sha), _failure('merge commits'))),
+      );
+    },
+  );
+
+  test(
+    'parity rejects a shallow clone before examining release lines',
+    () async {
+      repo.mainFix();
+      final clone = Directory.systemTemp.createTempSync(
+        'patch-branch-shallow-',
+      );
+      addTearDown(() => clone.deleteSync(recursive: true));
+      repo.git([
+        'clone',
+        '-q',
+        '--depth',
+        '1',
+        repo.root.uri.toString(),
+        clone.path,
+      ]);
+      await expectLater(
+        runPatchBranch(['parity', '--main', 'HEAD'], directory: clone),
+        throwsA(_failure('full Git history')),
+      );
+    },
+  );
+
+  test('all-lines parity ignores patch tags on main', () async {
+    repo.mainFix();
+    repo.git(['tag', 'v1.0.1']);
+    final output = await repo.parity(all: true);
+    expect(output, contains('parity verified'));
+    expect(output, isNot(contains('v1.0.1')));
+  });
+
+  test('all-lines parity names a missing minor tag', () async {
+    repo.checkoutRelease();
+    repo.prep('1.0.1', pr: 52);
+    repo.git(['tag', 'v1.0.1']);
+    repo.git(['tag', '-d', 'v1.0.0']);
+    await expectLater(
+      repo.parity(all: true),
+      throwsA(_failure('Cannot resolve minor tag v1.0.0')),
+    );
+  });
 
   test('parity skips a tagged prep and a recovered prep pair', () async {
     repo.mainFix();
@@ -435,15 +589,19 @@ class _Repository {
     return (result.stdout as String).trim();
   }
 
+  void write(String file, String content) {
+    File('${root.path}/$file')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(content);
+  }
+
   String commit(
     String subject, {
     String body = '',
     required String file,
     String content = 'change\n',
   }) {
-    File('${root.path}/$file')
-      ..createSync(recursive: true)
-      ..writeAsStringSync(content);
+    write(file, content);
     git(['add', '-A']);
     git(['commit', '-qm', '$subject\n\n$body']);
     return git(['rev-parse', 'HEAD']);
@@ -518,6 +676,8 @@ class _Repository {
     String base = 'release/1.0.x',
     String head = 'backport/51-1.0',
     String headRepository = _repo,
+    List<String> labels = const [],
+    bool includeShas = true,
   }) => runPatchBranch(
     ['backport-guard', '--event'],
     directory: root,
@@ -525,13 +685,17 @@ class _Repository {
       'pull_request': {
         'base': {
           'ref': base,
+          if (includeShas) 'sha': minor,
           'repo': {'full_name': _repo},
         },
         'head': {
           'ref': head,
+          if (includeShas) 'sha': git(['rev-parse', 'HEAD']),
           'repo': {'full_name': headRepository},
         },
-        'labels': [],
+        'labels': [
+          for (final label in labels) {'name': label},
+        ],
         'body': body,
       },
     },

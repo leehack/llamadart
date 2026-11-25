@@ -483,10 +483,8 @@ void _verifyReview(
 }
 
 /// Reads the raw and trailer-stripped bodies of a landed commit.
-({String subject, String rawBody, String body}) readLandedReleaseCommit(
-  Directory directory,
-  String sha,
-) {
+({String subject, String rawBody, String body, int parents})
+readLandedReleaseCommit(Directory directory, String sha) {
   if (!_sha.hasMatch(sha)) {
     throw const FormatException('Expected a full Git SHA.');
   }
@@ -494,7 +492,12 @@ void _verifyReview(
   if (commit.trailerState == _TrailerState.unaligned) {
     throw FormatException('$sha: cannot separate the commit trailers.');
   }
-  return (subject: commit.subject, rawBody: commit.rawBody, body: commit.body);
+  return (
+    subject: commit.subject,
+    rawBody: commit.rawBody,
+    body: commit.body,
+    parents: commit.parents,
+  );
 }
 
 enum _TrailerState { clean, mixed, unaligned }

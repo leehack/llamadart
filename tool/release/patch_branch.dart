@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../testing/check_released_changelog_sections.dart';
+import '../testing/release_metadata_readiness.dart';
+import '../testing/verify_release_docs_versions.dart';
 import 'collect_pr_changelog.dart';
 import 'pr_changelog.dart';
 
@@ -16,6 +18,14 @@ const _usage =
 
 const _linePattern = r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)';
 final _releaseRef = RegExp(r'^release/([0-9]+\.[0-9]+)\.x$');
+final _prepPaths = {
+  ...releaseMetadataPaths,
+  changelogArchive,
+  for (final companion in companionSwiftPins) ...[
+    companion.pubspecPath,
+    companion.changelogPath,
+  ],
+};
 final _line = RegExp('^$_linePattern\$');
 final _patchTag = RegExp(r'^v(' + _linePattern + r')\.[1-9][0-9]*$');
 final _sha = RegExp(r'^[a-f0-9]{40}$');
@@ -94,7 +104,8 @@ Future<String> _guard(_Git git, Object? event, GithubLookup lookup) async {
   if (baseInfo['repo'] case {
     'full_name': final String repository,
   } when repository == _repository) {
-    if (request['head'] case {
+    final head = request['head'];
+    if (head case {
       'ref': final String ref,
       'repo': {'full_name': final String headRepository},
     }) {
@@ -109,6 +120,19 @@ Future<String> _guard(_Git git, Object? event, GithubLookup lookup) async {
         headRepository: headRepository,
         repository: repository,
       )) {
+        final baseSha = baseInfo['sha'];
+        final headSha = head['sha'];
+        if (baseSha is! String ||
+            !_sha.hasMatch(baseSha) ||
+            headSha is! String ||
+            !_sha.hasMatch(headSha)) {
+          throw const FormatException(
+            'Core release prep requires full base and head SHAs.',
+          );
+        }
+        git.requireFullHistory();
+        final fork = git.text(['merge-base', baseSha, headSha]).trim();
+        _requirePrepScope(git, fork, headSha);
         return 'Core release prep.\n';
       }
     }
@@ -121,7 +145,7 @@ Future<String> _guard(_Git git, Object? event, GithubLookup lookup) async {
   final body = request['body'];
   final metadata = _Metadata.parse(body is String ? body : '', required: true);
   if (metadata.issue case final String issue) {
-    await _verifyIssue(lookup, issue, requireClosed: false);
+    await _verifyIssue(lookup, issue, requiredState: 'open');
     return 'Linked forward-port issue #$issue verified.\n';
   }
 
@@ -163,6 +187,20 @@ Future<String> _guard(_Git git, Object? event, GithubLookup lookup) async {
   throw FormatException(
     'Copy the authored body of main PR #$number before adding the backport lines.',
   );
+}
+
+void _requirePrepScope(_Git git, String base, String head) {
+  final paths = git
+      .text(['diff', '--no-renames', '--name-only', '-z', base, head, '--'])
+      .split('\x00');
+  final extra = paths.where(
+    (path) => path.isNotEmpty && !_prepPaths.contains(path),
+  );
+  if (extra.isNotEmpty) {
+    throw FormatException(
+      'Core release prep changes unrelated files: ${extra.join(', ')}.',
+    );
+  }
 }
 
 List<String> _lines(String text) => text.replaceAll('\r\n', '\n').split('\n');
@@ -246,7 +284,7 @@ void _requirePrNumber(String subject, String number, String source) {
 Future<void> _verifyIssue(
   GithubLookup lookup,
   String issue, {
-  required bool requireClosed,
+  required String requiredState,
 }) async {
   final detail = await lookup(
     'repos/$_repository/issues/$issue',
@@ -258,8 +296,10 @@ Future<void> _verifyIssue(
       (detail['state'] != 'open' && detail['state'] != 'closed')) {
     throw FormatException('Forward-port issue #$issue could not be verified.');
   }
-  if (requireClosed && detail['state'] != 'closed') {
-    throw FormatException('Forward-port issue #$issue is open.');
+  if (detail['state'] != requiredState) {
+    throw FormatException(
+      'Forward-port issue #$issue is ${detail['state']}; expected $requiredState.',
+    );
   }
 }
 
@@ -329,7 +369,12 @@ class _MainHistory {
   final _minorTags = <String, String>{};
 
   String minor(String line) => _minorTags.putIfAbsent(line, () {
-    final sha = git.resolve('refs/tags/v$line.0');
+    final String sha;
+    try {
+      sha = git.resolve('refs/tags/v$line.0');
+    } on FormatException {
+      throw FormatException('Cannot resolve minor tag v$line.0.');
+    }
     if (!positions.containsKey(sha)) {
       throw FormatException(
         'v$line.0 is absent from the main first-parent chain.',
@@ -414,8 +459,14 @@ Future<String> _parity(
       for (final sha in window) {
         final commit = readLandedReleaseCommit(git.directory, sha);
         try {
+          if (commit.parents > 1) {
+            throw const FormatException(
+              'Patch release history cannot contain merge commits.',
+            );
+          }
           final String kind;
           if (published.contains(sha)) {
+            _requirePrepScope(git, '$sha^', sha);
             kind = 'prep';
           } else if (recovered.containsKey(sha)) {
             kind = recovered[sha]!;
@@ -436,7 +487,7 @@ Future<String> _parity(
                   : 'backport adapted';
             } else if (metadata.issue case final String issue) {
               if (options.requireClosed) {
-                await _verifyIssue(lookup, issue, requireClosed: true);
+                await _verifyIssue(lookup, issue, requiredState: 'closed');
               }
               kind = 'forward-port #$issue';
             } else {
