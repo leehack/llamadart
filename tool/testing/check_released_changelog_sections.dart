@@ -152,7 +152,12 @@ class _Git {
   final Directory root;
 
   String run(List<String> args) {
-    final result = Process.runSync('git', args, workingDirectory: root.path);
+    final result = Process.runSync(
+      'git',
+      args,
+      workingDirectory: root.path,
+      stdoutEncoding: utf8,
+    );
     if (result.exitCode != 0) throw StateError('Git ${args.first} failed.');
     return result.stdout as String;
   }
@@ -207,6 +212,73 @@ class _Git {
 
   List<String> parents(String sha) =>
       run(['show', '-s', '--format=%P', sha]).trim().split(' ');
+}
+
+typedef PublishedPatch = ({
+  String version,
+  String sha,
+  Map<String, String> sections,
+});
+
+/// Reads release sections from patch tags forked at the previous minor tag.
+List<PublishedPatch> readPublishedPatchSections(
+  Directory root, {
+  required String version,
+  required String previousVersion,
+  required String through,
+}) {
+  if (coreReleaseVersion.firstMatch(version)![3] != '0') return [];
+
+  final previous = coreReleaseVersion.firstMatch(previousVersion)!;
+  final line = '${previous[1]}.${previous[2]}';
+  final git = _Git(root);
+  final prefix = 'v$line.';
+  final minorTag = '${prefix}0';
+  final tags = git.run(['tag', '--list', '$prefix*']).trim().split('\n');
+  if (!tags.contains(minorTag)) return [];
+  final patchTags = tags.where((tag) {
+    final patch = tag.substring(prefix.length);
+    return RegExp(r'^[1-9][0-9]*$').hasMatch(patch);
+  }).toList();
+  if (patchTags.isEmpty) return [];
+
+  String commit(String tag) =>
+      git.run(['rev-parse', '--verify', 'refs/tags/$tag^{commit}']).trim();
+  final minor = commit(minorTag);
+  final chain = git.firstParents(through).toSet();
+  if (!chain.contains(minor)) return [];
+
+  // Git's version sort can be changed by local versionsort.suffix settings.
+  BigInt patchNumber(String tag) => BigInt.parse(tag.substring(prefix.length));
+  patchTags.sort((a, b) => patchNumber(b).compareTo(patchNumber(a)));
+  final patches = <PublishedPatch>[];
+  for (final tag in patchTags) {
+    final sha = commit(tag);
+    if (chain.contains(sha) ||
+        git.firstParents(sha).firstWhere(chain.contains, orElse: () => '') !=
+            minor) {
+      continue;
+    }
+    final version = tag.substring(1);
+    if (git.entry(sha, 'pubspec.yaml')?.mode != '100644' ||
+        coreVersionFromPubspec(git.blob(sha, 'pubspec.yaml')) != version) {
+      throw FormatException('Core tag $tag disagrees with its root pubspec.');
+    }
+    final sections = <String, String>{};
+    for (final path in releasedChangelogs) {
+      if (git.entry(sha, path)?.mode != '100644') {
+        throw FormatException('$tag must contain a regular $path.');
+      }
+      final history = ChangelogHistory.parse(git.blob(sha, path));
+      final section = history.sections.values.first;
+      if (!section.startsWith('## $version\n') || !section.endsWith('\n')) {
+        throw FormatException('$tag:$path must start with section $version.');
+      }
+      sections[path] = section;
+    }
+    patches.add((version: version, sha: sha, sections: sections));
+  }
+  return patches;
 }
 
 /// Determines the PR's release route and compares the real head with its merge
@@ -955,9 +1027,45 @@ List<String> _checkTrees(
   final [newRoot, newDocs, newArchive] = [
     for (final path in files) next[path]!,
   ];
+  final List<PublishedPatch> patches;
+  try {
+    patches = readPublishedPatchSections(
+      git.root,
+      version: version,
+      previousVersion: root.sections.keys.first,
+      through: base,
+    );
+  } on FormatException catch (error) {
+    return [error.message];
+  } on StateError catch (error) {
+    return [error.message.toString()];
+  }
+  final patchesByVersion = {for (final patch in patches) patch.version: patch};
+  final expectedVersions = patchesByVersion.keys.join('\n');
+  final imports = <String, List<MapEntry<String, String>>>{};
+  for (final path in releasedChangelogs) {
+    final sections = next[path]!.sections.entries
+        .skip(1)
+        .takeWhile((entry) => !old[path]!.sections.containsKey(entry.key))
+        .toList();
+    if (sections.map((entry) => entry.key).join('\n') != expectedVersions) {
+      return [
+        '$path must import exactly the published patch tags in descending order.',
+      ];
+    }
+    for (final entry in sections) {
+      if (entry.value != patchesByVersion[entry.key]?.sections[path]) {
+        return ['$path section ${entry.key} must match v${entry.key} exactly.'];
+      }
+    }
+    imports[path] = sections;
+  }
+  final [rootImports, docsImports] = [
+    for (final path in releasedChangelogs) imports[path]!,
+  ];
   final historical = [...root.sections.entries, ...archive.sections.entries];
   final candidate = [
-    ...newRoot.sections.entries.skip(1),
+    ...newRoot.sections.entries.skip(1 + rootImports.length),
     ...newArchive.sections.entries,
   ];
   final versions = historical.map((entry) => entry.key).toList();
@@ -965,11 +1073,11 @@ List<String> _checkTrees(
       versions.contains(version) ||
       !newRoot.sections.values.first.startsWith('## $version\n') ||
       !newDocs.sections.values.first.startsWith('## $version\n') ||
-      newRoot.sections.length > root.sections.length + 1 ||
+      newRoot.sections.length > root.sections.length + 1 + patches.length ||
       !_sameSections(historical, candidate) ||
       !newArchive.sections.keys.toSet().containsAll(archive.sections.keys)) {
     return [
-      'Core prep must prepend exactly one release and preserve numbered history exactly.',
+      'Core prep must prepend the new release and preserve numbered history exactly.',
     ];
   }
 
@@ -990,6 +1098,7 @@ List<String> _checkTrees(
   final hypotheticalRoot =
       root.preamble +
       newRoot.sections.values.first +
+      rootImports.map((entry) => entry.value).join() +
       root.sections.values.join();
   if (utf8.encode(newRoot.text).length > changelogSizeLimit ||
       moved && utf8.encode(hypotheticalRoot).length <= changelogSizeLimit ||
@@ -1006,7 +1115,7 @@ List<String> _checkTrees(
     major: int.parse(parts[1]!),
     minor: int.parse(parts[2]!),
   ).skip(1).map((heading) => heading.substring(3)).toList();
-  final docsKeys = newDocs.sections.keys.skip(1).toList();
+  final docsKeys = newDocs.sections.keys.skip(1 + docsImports.length).toList();
   if (docsKeys.join('\n') != retained.join('\n') ||
       docsKeys.any((v) => docs.sections[v] != newDocs.sections[v])) {
     return [
