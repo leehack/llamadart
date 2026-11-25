@@ -45,15 +45,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          highest_tag="$(git ls-remote --tags --refs --sort=-version:refname origin 'v*' | awk '
+            $2 ~ /^refs\/tags\/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/ && !found {
+              found = 1
+              sub(/^refs\/tags\//, "", $2)
+              print $2
+            }
+          ')"
+          latest_flag=--latest=false
+          if [[ "$GITHUB_REF_NAME" == "$highest_tag" ]]; then
+            latest_flag=--latest
+          fi
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release edit "$GITHUB_REF_NAME" \
               --title "$GITHUB_REF_NAME" \
               --notes-file release_notes.md \
-              --latest
+              "$latest_flag"
           else
             gh release create "$GITHUB_REF_NAME" \
               --title "$GITHUB_REF_NAME" \
               --notes-file release_notes.md \
               --verify-tag \
-              --latest
+              "$latest_flag"
           fi
