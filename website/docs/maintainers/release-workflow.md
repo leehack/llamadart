@@ -7,6 +7,55 @@ Use this checklist when releasing `llamadart`. The independently versioned
 Genkit adapter follows [its own procedure](./genkit-package); it is not an Apple
 companion and is not released by this checklist.
 
+## Patch branches
+
+**Rollout status.** Patch publication from a release branch is unavailable
+until the workflow rollout is complete. The automation and guards below are
+planned.
+
+- Squash work for the next minor into `main`. When the latest released minor
+  needs a patch, cut `release/M.m.x` from `vM.m.0`. Maintain only the latest
+  released minor. Prepare and publish `M.m.N` patches (`N >= 1`) from that
+  branch, and minor releases from `main`. Release verification will check
+  that the version matches its base branch.
+- Land each fix on `main` first. Create a backport branch from
+  `origin/release/M.m.x` and run `git cherry-pick -x <main-squash-sha>`.
+  Open one squash PR per fix against `release/M.m.x`. Copy the main PR's
+  authored description, including its changelog entry or N/A, and add these
+  lines under `## Summary` so they survive the squash:
+
+  ```text
+  Backport of https://github.com/leehack/llamadart/pull/<N>
+  (cherry picked from commit <40-hex main SHA>)
+  ```
+
+- A version-specific fix that cannot land on `main` first needs a triaged
+  forward-port issue. Add `Forward-port: <issue URL>` under `## Summary`.
+  The planned parity check will verify backport provenance and changelog
+  entries, and require forward-port issues to be closed at the next minor
+  prep. Never merge a release branch back into `main`.
+- Classify each backport diff. For a high-risk exact backport of an audited
+  main commit, run a delta audit covering patch equivalence, dependencies on
+  the release branch, and CI at the backport head. An adapted high-risk
+  backport needs a full audit.
+- Keep a minor plan for `main` and a separate
+  [patch plan](https://github.com/leehack/llamadart/blob/main/doc/patch_plan_template.md)
+  for `release/M.m.x`. Track follow-ups as individual triaged issues.
+  The next minor prep will import the published patch changelog sections
+  verbatim from their tags. Keep patch publication outside an open minor
+  prep so its notes receipt stays current.
+
+Configure the GitHub ruleset manually for `release/*.x`. Restrict deletion
+and force pushes, require squash PRs and Copilot review, and start with no
+required status checks. Allow branch creation and leave the bypass list
+empty. Use the branch preview to confirm the ruleset covers the release
+branch and excludes prep and Genkit PR branches. The rollout will add native
+release digests, LiteRT-LM smoke, and validation bundles to release-branch
+PRs. Hosted demos stay on `main`.
+
+[Genkit releases](./genkit-package) continue from `main`. Drop Genkit package
+changes from a core backport and treat the backport as adapted.
+
 ## 1. Pre-release validation
 
 ```bash
@@ -394,9 +443,10 @@ rsync -a --delete \
 - Verify pub.dev package page and API docs for the new version.
 - Verify the GitHub Release exists and is marked latest.
 - Verify docs version selector includes the new release.
-- Verify both hosted demos serve the release commit. The chat app deploys at
-  the end of the release commit's CI run, the Laya Tetris demo a few minutes
-  after the merge:
+- For releases from `main`, verify both hosted demos serve the release commit.
+  Patch-branch releases leave both demos tracking `main`. The chat app deploys
+  at the end of the release commit's CI run, and the Laya Tetris demo a few
+  minutes after the merge:
 
   ```bash
   git rev-list -n 1 v<release-version>
