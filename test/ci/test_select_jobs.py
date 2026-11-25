@@ -228,7 +228,6 @@ class SelectionTest(unittest.TestCase):
                                     'hook', 'example', 'website/lib', 'website/test'):
             if reader.endswith('.md') or reader in (
                 'test/ci/test_select_jobs.py',
-                'test/unit/tooling/support/markdown_reader_exemptions.dart',
                 'tool/ci/select_jobs.py',
             ):
                 continue
@@ -240,7 +239,7 @@ class SelectionTest(unittest.TestCase):
                     if name.decode() != Path(reader).name
                 )
         references.sort()
-        self.assertEqual(sha256('\n'.join(references).encode()).hexdigest(), '44db7c1371c54a21d4b7db8d3ae3af1a282c2a32f4ef1ccc98a398645eb17fa5',
+        self.assertEqual(sha256('\n'.join(references).encode()).hexdigest(), '27fbe3653ae79bdc03690a5cf028e8464ee7322098943ed8eeac47ba716e3af8',
                          'Trace new readers before updating the pin:\n' + '\n'.join(references))
 
     def test_tool_rules_union_with_each_other_and_existing_lanes(self):
