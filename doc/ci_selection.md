@@ -241,22 +241,20 @@ checks as two matrix legs.
 
 Checks share a job to stay under GitHub Free's limit of 5 concurrent macOS jobs
 across the owner's repositories, and each keeps its own selection on its step:
-`Companion Packages (macOS)` runs when `companion-job` is true (the OR of
-selected `companions`, `macos-validation-memory`, `apple-cache`, and
-`studio-macos`). The job runs only the selected checks, even if an earlier
-check failed. It installs the root Flutter SDK for companion packages,
-validation process memory, and the Apple cache check. When Studio is selected,
-the job uses `macos-15` and switches to Studio's SDK after those checks.
-Other selections use `macos-latest`. On Windows the process memory test
-runs in `windows-runtime` shard 1 when `windows-native` is true, and otherwise
-in a `Validation harness` matrix leg (`validation_harness_oses` checks
+`Companion Packages (macOS)` runs on `macos-latest` when `companion-job` is true (the OR of
+selected `companions`, `macos-validation-memory`, and `apple-cache`), then runs
+only the selected steps (`companions` packages, `Test validation process
+memory` via `macos-validation-memory`, and the Apple companion cache-transition
+setup/test via `apple-cache`), each even if an earlier one failed. On Windows
+the process memory test runs in `windows-runtime` shard 1 when
+`windows-native` is true, and otherwise in a `Validation harness` matrix leg (`validation_harness_oses` checks
 `windows-native`, not `test-other-os`), so a validation-only or Mac-only change
 keeps Windows memory coverage without extra native shards. The Genkit job runs
 Dart 3.12.0 lower bounds on a fresh tree before it sets up Flutter, so
 `FLUTTER_ROOT` and Flutter's Dart cannot affect them.
 
 `Studio packages` checks both checkout-only Studio packages together on Ubuntu.
-Both Studio CI paths read `packages/llamadart_studio/.flutter-version` and pass
+Both Studio CI jobs read `packages/llamadart_studio/.flutter-version` and pass
 its Flutter version (3.50.0, with Dart 3.14.0) directly to the setup action.
 Studio changes select this lane without root runtime tests or portable bundles;
 shared runtime and companion changes also select it because Studio consumes them.
@@ -264,12 +262,14 @@ Studio Web files also select the shared version and bridge-pin checks.
 Root formatting uses `python3 tool/ci/check_format.py` to skip only these two
 Studio packages, whose Dart language version requires their independent SDK;
 all other package and example directories remain in the root formatter.
-The Ubuntu job runs model-free VM tests with isolated temporary directories.
-The companion job runs the native lifecycle and accessibility regressions
-against the SPM Flutter framework when `studio-macos` is true. This covers
-non-packaging Studio inputs, companions, root fixtures and helpers, and
-shared or full-selection changes. Studio's `web/`, `windows/`, and `linux/`
-packaging paths alone omit the macOS checks.
+The lane runs model-free VM tests with isolated temporary directories. The dedicated
+`studio-macos` job runs on `macos-15` and checks native lifecycle and accessibility
+regressions against the SPM Flutter framework when `studio-macos` is true (all
+non-packaging Studio inputs, companions, root fixtures/helpers, and shared/full
+changes; exempting `packages/llamadart_studio/{web,windows,linux}/`).
+
+Full CI uses four macOS jobs: two native shards, Companion Packages, and
+the Studio macOS job. Validation bundles have their own target selection.
 
 `Example Package Tests` runs the model-free tests (`--exclude-tags
 local-only`) of every example package except the chat app, which Web Chat

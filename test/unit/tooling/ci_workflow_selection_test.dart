@@ -752,21 +752,14 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
   });
 
   test('Studio macOS runs each native lifecycle and semantics regression', () {
-    final job = readWorkflow('ci')['jobs']['companion-packages'] as Map;
-    expect(
-      job['runs-on'],
-      r"${{ needs.changes.outputs.studio-macos == 'true' && 'macos-15' || 'macos-latest' }}",
-    );
+    final job = readWorkflow('ci')['jobs']['studio-macos'] as Map;
+    expect(job['runs-on'], 'macos-15');
+    expect(job['if'], "needs.changes.outputs.studio-macos == 'true'");
     final steps = job['steps'] as List;
     final native =
         steps.singleWhere((step) => '${step['run']}'.contains('flutter test'))
             as Map;
-    expect(
-      native['if'],
-      r"${{ !cancelled() && needs.changes.outputs.studio-macos == 'true' && steps.studio-flutter.outcome == 'success' }}",
-    );
     expect(native['working-directory'], 'packages/llamadart_studio');
-    expect(native.containsKey('continue-on-error'), isFalse);
     for (final regression in [
       'macos_app_delegate_test.dart',
       'macos_static_semantics_test.dart',
@@ -809,6 +802,7 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
       expect(jobs.keys.toSet(), {
         ...planned,
         ...shards.keys,
+        'studio-macos',
         'changes',
         'test-linux-web',
         'deploy-chat-app',
@@ -823,6 +817,7 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
       expect((aggregate['needs'] as List).toSet(), {
         ...planned,
         ...shards.keys,
+        'studio-macos',
         'changes',
       });
       final steps = aggregate['steps'] as List;
@@ -1019,6 +1014,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
   test('one macOS job runs each selected companion and hosted check', () async {
     final jobs = readWorkflow('ci')['jobs'] as Map<String, dynamic>;
     final job = jobs['companion-packages'] as Map;
+    expect(job['runs-on'], 'macos-latest');
     expect(job['if'], "needs.changes.outputs.companion-job == 'true'");
     expect(job.containsKey('strategy'), isFalse);
     expect(

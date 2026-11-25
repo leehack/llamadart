@@ -454,12 +454,13 @@ def expected_jobs(plan, bundle=False):
         **{job: plan['jobs'][fed] for job, fed in SHARD_JOBS.items()},
         'test-linux-coverage': plan['jobs']['test-linux-coverage'] and plan['coverage'],
         'companion-packages': companion_job_selected(plan),
+        'studio-macos': plan['studio-macos'],
     }
 
 
 def companion_job_selected(plan):
     return (bool(plan['companions']) or plan['macos-validation-memory']
-            or plan['apple-cache'] or plan['studio-macos'])
+            or plan['apple-cache'])
 
 
 def validation_harness_oses(plan):

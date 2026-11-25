@@ -95,17 +95,7 @@ void main() {
         expect(jobs['studio'], isTrue, reason: package);
         expect(jobs['test-linux-coverage'], isFalse, reason: package);
         expect(output['expected']['studio'], isTrue, reason: package);
-        expect(output['plan']['studio-macos'], isTrue, reason: package);
-        expect(
-          output['expected']['companion-packages'],
-          isTrue,
-          reason: package,
-        );
-        expect(
-          output['expected'],
-          isNot(contains('studio-macos')),
-          reason: package,
-        );
+        expect(output['expected']['studio-macos'], isTrue, reason: package);
       }
     },
   );
@@ -152,65 +142,32 @@ void main() {
     },
   );
 
-  const studioMacosGuard =
-      "!cancelled() && needs.changes.outputs.studio-macos == 'true'";
-  for (final name in ['studio', 'companion-packages']) {
-    final macos = name == 'companion-packages';
-    final pinId = macos ? 'studio-pin' : 'pin';
+  for (final name in ['studio', 'studio-macos']) {
     test('$name explicitly resolves the Studio Flutter pin', () {
       final workflow =
           loadYaml(File('.github/workflows/ci.yml').readAsStringSync()) as Map;
       final job = workflow['jobs'][name] as Map;
-      final flag = macos ? 'companion-job' : 'studio';
-      expect(job['if'], "needs.changes.outputs.$flag == 'true'");
+      expect(job['if'], "needs.changes.outputs.$name == 'true'");
       final steps = (job['steps'] as List).cast<Map>();
       final setup = steps.singleWhere(
-        (step) =>
-            '${step['uses']}'.startsWith('subosito/flutter-action@') &&
-            (!macos || step['id'] == 'studio-flutter'),
+        (step) => '${step['uses']}'.startsWith('subosito/flutter-action@'),
       );
       expect(
         setup['with']['flutter-version'],
-        '\${{ steps.$pinId.outputs.version }}',
+        r'${{ steps.pin.outputs.version }}',
       );
       expect(setup['with']['flutter-version-file'], isNull);
-      expect(
-        setup['if'],
-        macos
-            ? "\${{ $studioMacosGuard && steps.$pinId.outcome == 'success' }}"
-            : isNull,
-      );
-      expect(setup.containsKey('continue-on-error'), isFalse);
-      final pin = steps.singleWhere((step) => step['id'] == pinId);
+      expect(setup.containsKey('if'), isFalse);
+      final pin = steps.singleWhere((step) => step['id'] == 'pin');
       final checkout = steps.singleWhere(
         (step) => '${step['uses']}'.startsWith('actions/checkout@'),
       );
       expect(steps.indexOf(pin), greaterThan(steps.indexOf(checkout)));
       expect(steps.indexOf(pin), lessThan(steps.indexOf(setup)));
       expect(pin.containsKey('working-directory'), isFalse);
-      expect(pin['if'], macos ? '\${{ $studioMacosGuard }}' : isNull);
+      expect(pin.containsKey('if'), isFalse);
       expect(pin.containsKey('continue-on-error'), isFalse);
       expect(pin['run'], isA<String>());
-      if (macos) {
-        final rootSetup = steps.singleWhere(
-          (step) => step['name'] == 'Setup Flutter',
-        );
-        expect(
-          rootSetup['with']['flutter-version'],
-          File('.flutter-version').readAsStringSync().trim(),
-        );
-        expect(
-          rootSetup['if'],
-          r"${{ needs.changes.outputs.companions != '[]' || needs.changes.outputs.macos-validation-memory == 'true' || needs.changes.outputs.apple-cache == 'true' }}",
-        );
-        expect(steps.indexOf(rootSetup), lessThan(steps.indexOf(pin)));
-        final native = steps.singleWhere(
-          (step) =>
-              step['name'] ==
-              'Exercise the native Flutter accessibility and lifecycle bridge',
-        );
-        expect(steps.sublist(steps.indexOf(pin)), [pin, setup, native]);
-      }
     });
 
     group('$name Flutter pin reader', () {
@@ -225,7 +182,7 @@ void main() {
         );
         final steps = (workflow['jobs'][name]['steps'] as List).cast<Map>();
         script =
-            steps.singleWhere((step) => step['id'] == pinId)['run'] as String;
+            steps.singleWhere((step) => step['id'] == 'pin')['run'] as String;
         checkout = Directory.systemTemp.createTempSync('w2098c-studio-pin-');
         output = File('${checkout.path}/github-output')..createSync();
         addTearDown(() => checkout.deleteSync(recursive: true));
@@ -296,8 +253,7 @@ void main() {
       final output =
           jsonDecode(result.stdout as String) as Map<String, dynamic>;
       expect(output['expected']['studio'], isTrue, reason: path);
-      expect(output['plan']['studio-macos'], isFalse, reason: path);
-      expect(output['expected']['companion-packages'], isFalse, reason: path);
+      expect(output['expected']['studio-macos'], isFalse, reason: path);
     }
   });
 

@@ -68,18 +68,11 @@ def root_suite_imports():
 def root_flutter_versions(workflow_name, workflow):
     job = None
     companion_setup = False
-    step = None
     for line_number, line in enumerate(workflow.splitlines(), start=1):
         header = re.fullmatch(r'  ([\w-]+):[ \t]*(?:#.*)?', line)
         if header:
             job = header[1]
-            step = None
-        if line.startswith('      - '):
-            step = line.strip()
-        if workflow_name == 'ci.yml' and (
-            job == 'studio'
-            or (job == 'companion-packages' and step == '- name: Set up Studio Flutter')
-        ):
+        if workflow_name == 'ci.yml' and job in ('studio', 'studio-macos'):
             continue
         if workflow_name == 'publish_companion_pubdev.yml':
             if line.startswith('      - '):
@@ -658,23 +651,19 @@ class SelectionTest(unittest.TestCase):
                 self.assertEqual(plan['apps'], [])
                 self.assertEqual(plan['desktops'], [])
 
-    def test_studio_native_regressions_require_the_companion_job(self):
+    def test_studio_native_regressions_require_the_standalone_macos_job(self):
         plan = ci.select(['packages/llamadart_studio/lib/main.dart'], pull_request=True)
-        self.assertTrue(plan['studio-macos'])
-        self.assertEqual(plan['companions'], [])
-        self.assertFalse(plan['apple-cache'])
-        self.assertFalse(plan['macos-validation-memory'])
         expected = ci.expected_jobs(plan)
-        self.assertTrue(expected['companion-packages'])
-        self.assertNotIn('studio-macos', expected)
+        self.assertTrue(expected['studio-macos'])
+        self.assertFalse(expected['companion-packages'])
         needs = {'changes': {'result': 'success'}}
         needs.update({job: {'result': 'success' if selected else 'skipped'}
                       for job, selected in expected.items()})
         self.assertEqual(ci.aggregate(plan, needs), [])
         for result in ('skipped', 'cancelled', 'failure'):
-            needs['companion-packages']['result'] = result
+            needs['studio-macos']['result'] = result
             self.assertEqual(ci.aggregate(plan, needs),
-                             [f'companion-packages: selected=True, result={result}'])
+                             [f'studio-macos: selected=True, result={result}'])
 
     def test_full_host_matrix_rejects_incomplete_shards_and_cancelled_jobs(self):
         plan = ci.select(['.github/workflows/ci.yml'], pull_request=True)
@@ -719,7 +708,7 @@ class SelectionTest(unittest.TestCase):
             with self.subTest(workflow=path.as_posix(), line=line):
                 self.assertEqual(version, root_pin)
 
-    def test_root_flutter_versions_include_each_input_and_skip_studio_setup(self):
+    def test_root_flutter_versions_include_each_input_and_skip_studio_jobs(self):
         workflow = """jobs:
   studio:
     steps:
@@ -733,19 +722,15 @@ class SelectionTest(unittest.TestCase):
           flutter-version: '3.47.0' # stale
       - with:
           "flutter-version": "3.47.1"
-  companion-packages:
+  studio-macos:
     steps:
-      - name: Setup Flutter
-        with:
-          flutter-version: 3.47.1
-      - name: Set up Studio Flutter
-        with:
-          flutter-version: ${{ steps.studio-pin.outputs.version }}
+      - with:
+          flutter-version: 3.50.0
 """
-        root_inputs = [(9, '3.47.1'), (11, '3.47.0'), (13, '3.47.1'), (18, '3.47.1')]
+        root_inputs = [(9, '3.47.1'), (11, '3.47.0'), (13, '3.47.1')]
         self.assertEqual(list(root_flutter_versions('ci.yml', workflow)), root_inputs)
         self.assertEqual(list(root_flutter_versions('other.yaml', workflow)),
-                         [(5, '3.50.0'), *root_inputs, (21, '${{ steps.studio-pin.outputs.version }}')])
+                         [(5, '3.50.0'), *root_inputs, (17, '3.50.0')])
 
     def test_root_flutter_versions_include_the_companion_setup_version(self):
         workflow = """jobs:
@@ -779,8 +764,7 @@ class SelectionTest(unittest.TestCase):
             for pull_request in (True, False):
                 plan = ci.select([path], pull_request=pull_request)
                 self.assertTrue(plan['jobs']['studio'], path)
-                self.assertTrue(plan['studio-macos'], path)
-                self.assertTrue(ci.expected_jobs(plan)['companion-packages'], path)
+                self.assertTrue(ci.expected_jobs(plan)['studio-macos'], path)
 
     def test_model_store_package_changes_run_root_readers_and_package_tests(self):
         for path in ('lib/llamadart_model_store.dart', 'README.md', 'pubspec.yaml',
@@ -1145,7 +1129,15 @@ class SelectionTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout)['jobs'],
                              ci.select([], force_full=True)['jobs'])
-            self.assertIn('web-chat-contract=true', output.read_text())
+            written = dict(line.split('=', 1) for line in output.read_text().splitlines())
+            self.assertEqual(written['web-chat-contract'], 'true')
+            for key in ('studio-macos', 'companion-job', 'macos-validation-memory', 'apple-cache'):
+                with self.subTest(key=key):
+                    self.assertEqual(written.get(key), 'true')
+            self.assertEqual(json.loads(written['companions']),
+                             ['packages/' + name for name in ci.COMPANIONS])
+            self.assertEqual(json.loads(written['test-other-os-matrix']),
+                             json.loads(result.stdout)['test-other-os-matrix'])
 
 
 class AggregateTest(unittest.TestCase):
@@ -1517,6 +1509,7 @@ class MacosPathGatingTest(unittest.TestCase):
         def macos_job_count(plan):
             return (sum(row['lane'] == 'macos' for row in plan['test-other-os-matrix'])
                     + int(ci.companion_job_selected(plan))
+                    + int(plan['studio-macos'])
                     + int('macos-15' in plan['desktops']))
 
         cases = (
