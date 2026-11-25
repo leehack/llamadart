@@ -116,11 +116,14 @@ void main() {
     );
   });
 
-  test('the workflow row attributes the macOS SDK input correctly', () {
+  test('the workflow row attributes both desktop SDK inputs', () {
     final row = File('doc/ci_selection.md').readAsLinesSync().singleWhere(
       (line) => line.startsWith('| Workflow/selector or unclassified paths |'),
     );
-    expect(row, contains('`.flutter-version` for `macos-15`'));
+    expect(
+      row,
+      contains('`.flutter-version` for `windows-2022` and `macos-15`'),
+    );
     expect(
       row,
       isNot(contains('`packages/llamadart_validation/` for `macos-15`')),
