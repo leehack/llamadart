@@ -114,11 +114,11 @@ class SelectionTest(unittest.TestCase):
         cases = (
             ('TOOLS_STATIC', 'f04534c726523fd8909566c2e8bc034b63b08cb0336b12549c0a51674ebfd990',
              static, False, False),
-            ('TOOLS_LINUX_VM', '4ad9b53eb752fd2040d3708cd61cf04368ba4cbe75ef72be333efa35bbcb66b7',
+            ('TOOLS_LINUX_VM', '45442359663f4acdbe7fc2a0675b7c2fbadba11b9fd339fc30ffa7e565177b89',
              vm, False, False),
-            ('TOOLS_MACOS_VM', 'a149081b75f50d5bd6e6c1db2de4b9a923c21f72eb01757c6ce9fa9135a47caa',
+            ('TOOLS_MACOS_VM', '942b8a5b45a3a2014eb05fed37871c7d1cd4de54651253fc3e2fc70164e3fab9',
              hosts, True, False),
-            ('TOOLS_ALL_HOST_VM', '16a1e80f72b56844b50c6509995e14ad5b15c00dc7e292727bb66678a676e33b',
+            ('TOOLS_ALL_HOST_VM', '61398b618c912f2f5466e74470fded7b000efed4cd1d3643ba3df84a5ae68da9',
              hosts, True, True),
         )
         for group, fingerprint, jobs, macos, windows in cases:
@@ -132,7 +132,10 @@ class SelectionTest(unittest.TestCase):
                 for pull_request in (True, False):
                     with self.subTest(path=path, pull_request=pull_request):
                         plan = ci.select([path], pull_request=pull_request)
-                        self.assert_narrow_plan(plan, jobs, macos=macos, windows=windows)
+                        selected_jobs = (jobs | {'genkit'}
+                                         if path == 'tool/release/stage_genkit_package.py'
+                                         else jobs)
+                        self.assert_narrow_plan(plan, selected_jobs, macos=macos, windows=windows)
                         self.assertEqual(plan['coverage'], not pull_request)
 
     def test_tool_workflow_inputs_and_unknown_paths_stay_full(self):
@@ -146,12 +149,10 @@ class SelectionTest(unittest.TestCase):
             'tool/native/sync_native_release_pins.py',
             'tool/native/fixtures/legacy_release_allowlist.json',
             'tool/native/fixtures/native_release_tag_grammar.json',
+            'tool/release/changelog_pr_cutover.json',
             'tool/release/pr_resolutions/48af8ec5bc294620bd63a1e1818f6c6593afb5d3.json',
-            'tool/release/pub_content_limits.dart',
-            'tool/release/reopen_unreleased_changelog.dart',
             'tool/git/safe_pr_head_update.dart',
             'scripts/build_chat_app_web.sh',
-            'scripts/fetch_webgpu_bridge_assets.sh',
             'tool/new_benchmark.dart',
             'tool/testing/playwright_new_smoke.py',
             'tool/native/fixtures/new_release.json',
@@ -169,6 +170,78 @@ class SelectionTest(unittest.TestCase):
                     self.assertEqual(plan['reasons'], [
                         'shared/runtime or unclassified path: ' + path,
                     ])
+
+    def test_release_tool_paths_keep_their_executed_consumers(self):
+        vm = {'analyze', 'test-linux-coverage'}
+        hosts = vm | {'test-other-os'}
+        cases = (
+            (vm, False, False, (
+                'collect_pr_changelog.dart', 'nonpublishing_auth_probe.py',
+                'patch_branch.dart', 'reopen_unreleased_changelog.dart',
+            )),
+            (hosts, True, False, (
+                'genkit_release_helpers.sh', 'verify_release_candidate.sh',
+            )),
+            (hosts, True, True, (
+                'check_core_archive.py', 'companion_package_contents.dart',
+                'companion_pub_preflight.dart', 'pr_changelog.dart',
+                'pub_content_limits.dart', 'pub_dev_api.dart',
+                'stage_companion_package.dart',
+            )),
+            (hosts | {'genkit'}, True, True, ('stage_genkit_package.py',)),
+        )
+        for jobs, macos, windows, files in cases:
+            for file in files:
+                for pull_request in (True, False):
+                    with self.subTest(file=file, pull_request=pull_request):
+                        plan = ci.select(['tool/release/' + file], pull_request=pull_request)
+                        self.assert_narrow_plan(plan, jobs, macos=macos, windows=windows)
+
+    def test_bridge_pin_inputs_keep_host_and_build_consumers(self):
+        checker = 'tool/testing/check_webgpu_bridge_tag.dart'
+        fetcher = 'scripts/fetch_webgpu_bridge_assets.sh'
+        jobs = {'analyze', 'test-linux-coverage', 'test-web', 'test-other-os'}
+        for pull_request in (True, False):
+            with self.subTest(pull_request=pull_request):
+                self.assert_narrow_plan(ci.select([checker], pull_request=pull_request),
+                                        jobs, macos=True, windows=True)
+                fetch = ci.select([fetcher], pull_request=pull_request)
+                baseline = ci.select(['unclassified'], pull_request=pull_request)
+                self.assertEqual(fetch['desktops'], baseline['desktops'])
+                self.assertEqual(fetch['apps'], baseline['apps'])
+                self.assert_narrow_plan({**fetch, 'desktops': [], 'apps': []},
+                                        jobs | {'web-chat-contract', 'example-packages'},
+                                        macos=True, windows=True)
+                for paths in ([checker, fetcher], [fetcher, checker]):
+                    self.assertEqual(ci.select(paths, pull_request=pull_request), fetch)
+
+    def test_release_and_bridge_literal_reader_inventory(self):
+        tools = ci.TOOLS_LINUX_VM | ci.TOOLS_MACOS_VM | ci.TOOLS_ALL_HOST_VM
+        inputs = {Path(path).name for path in tools if path.startswith('tool/release/')}
+        inputs |= {Path(path).name for path in ci.BRIDGE_PIN_INPUTS}
+        pattern = re.compile(
+            rb'(?<![\w.-])(?:' + '|'.join(re.escape(name) for name in sorted(inputs)).encode()
+            + rb')(?![\w./+-])',
+        )
+        references = []
+        for reader in tracked_paths('.github', 'test', 'tool', 'scripts', 'packages', 'lib',
+                                    'hook', 'example', 'website/lib', 'website/test'):
+            if reader.endswith('.md') or reader in (
+                'test/ci/test_select_jobs.py',
+                'test/unit/tooling/support/markdown_reader_exemptions.dart',
+                'tool/ci/select_jobs.py',
+            ):
+                continue
+            source = (ROOT / reader).read_bytes()
+            if b'\0' not in source:
+                references.extend(
+                    f'{reader} -> {name.decode()}'
+                    for name in set(pattern.findall(source))
+                    if name.decode() != Path(reader).name
+                )
+        references.sort()
+        self.assertEqual(sha256('\n'.join(references).encode()).hexdigest(), '44db7c1371c54a21d4b7db8d3ae3af1a282c2a32f4ef1ccc98a398645eb17fa5',
+                         'Trace new readers before updating the pin:\n' + '\n'.join(references))
 
     def test_tool_rules_union_with_each_other_and_existing_lanes(self):
         paths = [

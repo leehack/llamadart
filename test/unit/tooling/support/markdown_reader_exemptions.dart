@@ -88,14 +88,22 @@ const Map<String, String> _ciToolFiles = {
       '.md | CHANGELOG | README | copytree | find | glob | listdir | website/',
   'tool/native/test_sync_stable_diffusion_bindings.py': 'glob | listdir',
   'tool/prepare_workspace.dart': 'listSync',
+  'tool/release/collect_pr_changelog.dart':
+      '.md | CHANGELOG | doc/ | git cat-file | git diff | git ls-tree | git show | ls-files | website/',
+  'tool/release/companion_pub_preflight.dart': 'cp -r | listSync',
+  'tool/release/patch_branch.dart':
+      '.md | CHANGELOG | README | git diff | git ls-tree | git show | website/',
   'tool/release/pub_content_limits.dart': '.md | CHANGELOG | README | doc/',
   'tool/release/stage_genkit_package.py': '.md | CHANGELOG | README | glob',
+  'tool/release/verify_release_candidate.sh': 'git show',
   'tool/testing/check_platform_boundaries.dart': 'listSync',
   'tool/testing/check_released_changelog_sections.dart':
       '.md | CHANGELOG | doc/ | git diff | git ls-tree | git show | website/',
   'tool/testing/check_webgpu_bridge_tag.dart':
       '.md | CHANGELOG | README | doc/ | git show | ls-files | website/',
   'tool/testing/prepare_llama_cpp_source.sh': 'git checkout | git clone',
+  'tool/testing/release_metadata_readiness.dart':
+      '.md | CHANGELOG | README | website/',
   'tool/testing/run_local_e2e.dart': '.md',
   'tool/testing/test_matrix.dart':
       '.md | CHANGELOG | CONTRIBUTING | README | doc/',
@@ -105,8 +113,11 @@ const Map<String, String> _ciToolFiles = {
   'tool/testing/validation/remote.dart': 'listSync',
   'tool/testing/verify_release_docs_versions.dart':
       '.md | CHANGELOG | README | SKILL | git show | skills/ | website/',
+  'website/lib/src/layouts/docs_layout.dart': '.md | doc/ | website/',
+  'website/lib/src/layouts/site_layout.dart': 'website/',
   'website/lib/src/site/sidebar.dart': 'doc/',
   'website/lib/src/site/site_model.dart': '.md',
+  'website/lib/src/site/versioned_loader.dart': '.md',
 };
 
 const Map<String, String> _validationFiles = {
@@ -411,8 +422,6 @@ const Map<String, Exemption> suiteExemptions = {
           '.md | AGENTS | CONTRIBUTING | doc/ | git diff',
       'tool/testing/high_risk_readiness.dart':
           '.md | git cat-file | git diff | git ls-tree',
-      'tool/testing/release_metadata_readiness.dart':
-          '.md | CHANGELOG | README | website/',
     },
     gate: null,
   ),
