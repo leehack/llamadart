@@ -18,7 +18,7 @@ embedding model. See [runtime support](https://github.com/leehack/llamadart/blob
 
 ## Install
 
-Requires Dart 3.12 or newer, Genkit 1.x and llamadart 0.20.6 or newer 0.20.x.
+Requires Dart 3.12 or newer, Genkit 1.x and llamadart 0.21.0 or newer in the 0.21.x series.
 
 ```bash
 dart pub add genkit genkit_llamadart
@@ -30,8 +30,8 @@ platform setup. Apple apps using Swift Package Manager need the runtime
 companion matching their model family:
 
 ```bash
-flutter pub add 'llamadart_llama_cpp_flutter:^0.20.0'
-flutter pub add 'llamadart_litert_lm_flutter:^0.20.0'
+flutter pub add 'llamadart_llama_cpp_flutter:^0.21.0'
+flutter pub add 'llamadart_litert_lm_flutter:^0.21.0'
 ```
 
 Choose the GGUF companion, the LiteRT-LM companion, or both if your app uses
@@ -42,7 +42,7 @@ llamadart supports Android, iOS, macOS, Linux, Windows and Web. Backend features
 and setup differ by platform.
 
 Try the [DartPad Preview example](https://preview.dartpad.dev/?package=genkit_llamadart&root=example/dartpad&file=example/dartpad/lib/main.dart), available starting in genkit_llamadart 3.10.0.
-The playground uses llamadart 0.20.7 or newer and lets GGUF sessions choose
+The playground uses llamadart 0.21.x and lets GGUF sessions choose
 between SmolLM2 135M (default), Qwen3.5 0.8B, and Gemma 4 E2B (desktop Chrome
 with WebAssembly memory64). GGUF and Gemini support multi-turn chat. LiteRT-LM
 runs single-turn in Chrome with WebGPU and offers Qwen3 0.6B (default)

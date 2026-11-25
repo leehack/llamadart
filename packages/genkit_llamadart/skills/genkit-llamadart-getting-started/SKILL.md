@@ -64,6 +64,8 @@ description: >-
   loading a model. See [generation controls](../../doc/usage.md#generation-settings).
 - `ModelFormat` and `LiteRtLmActivationDataType` are re-exported for source/load
   configuration; use `ComputeDevice` instead of deprecated device selectors.
+- Use `ignoreEos: true` with a bounded `maxTokens` for native llama.cpp text
+  benchmarks. Omit it for active tools, constrained JSON, WebGPU and LiteRT-LM.
 - Stream with `ai.generateStream<Object?, LlamaDartGenerationConfig>(...)`:
   iterate the chunks for `chunk.text`, then `await stream.onResult` for the
   final response.

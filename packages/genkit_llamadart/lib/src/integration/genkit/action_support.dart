@@ -107,6 +107,7 @@ Map<String, dynamic> capabilityMetadataFor(
       'presencePenalty': capabilities?.supportsPresencePenalty == true,
       'thinkingBudget': capabilities?.supportsThinkingBudget == true,
       'streamBatching': capabilities?.supportsStreamBatching == true,
+      'ignoreEos': capabilities?.supportsIgnoreEos == true,
       'promptPrefixControl':
           const bool.fromEnvironment('dart.library.io') &&
           capabilities?.runtime == llama.LlamaRuntime.llamaCpp,

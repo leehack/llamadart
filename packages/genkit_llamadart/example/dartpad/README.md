@@ -6,7 +6,7 @@ in genkit_llamadart 3.10.0.
 
 | Option | Model | Requirements |
 | --- | --- | --- |
-| GGUF | SmolLM2 135M (~105 MB, default), Qwen3.5 0.8B (~533 MB), or Gemma 4 E2B (~3 GB) | llamadart 0.20.7 or newer. Gemma 4 E2B can take several minutes to download. Use desktop Chrome. The current source prefers `memory64` and can fall back to wasm32 single-thread with automatic staging. Safari and mobile browsers are unsupported for this GGUF. |
+| GGUF | SmolLM2 135M (~105 MB, default), Qwen3.5 0.8B (~533 MB), or Gemma 4 E2B (~3 GB) | llamadart 0.21.x. Gemma 4 E2B can take several minutes to download. Use desktop Chrome. The current source prefers `memory64` and can fall back to wasm32 single-thread with automatic staging. Safari and mobile browsers are unsupported for this GGUF. |
 | LiteRT-LM | Qwen3 0.6B (~343 MB, default) or Gemma 4 E2B (~2 GB) | Desktop Chrome with WebGPU. Gemma 4 E2B reached ~3 GB peak browser memory on desktop Chrome and ~7 GB on Safari. Keep the Safari tab visible while loading. Reloading the page or switching back to the model re-downloads the file. |
 | Gemini | Gemini 3.1 Flash-Lite | A Gemini API key and access to Google's API. Prompts are sent to Google. |
 

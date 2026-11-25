@@ -20,6 +20,7 @@ void main() {
           backendName: 'CPU',
           supportsMinP: true,
           supportsThinkingBudget: true,
+          supportsIgnoreEos: true,
           speculativeDecodingStrategies: strategies,
         );
       var factories = 0;
@@ -41,6 +42,7 @@ void main() {
       expect(snapshot.capabilities!.backendName, 'CPU');
       expect(snapshot.capabilities!.supportsMinP, true);
       expect(snapshot.capabilities!.supportsThinkingBudget, true);
+      expect(snapshot.capabilities!.supportsIgnoreEos, true);
       strategies.clear();
       expect(snapshot.capabilities!.speculativeDecodingStrategies, {
         SpeculativeDecodingStrategy.ngramSimple,

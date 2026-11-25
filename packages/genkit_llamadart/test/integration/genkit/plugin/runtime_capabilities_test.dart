@@ -138,6 +138,7 @@ void main() {
             'presencePenalty': false,
             'thinkingBudget': false,
             'streamBatching': false,
+            'ignoreEos': false,
             'promptPrefixControl': false,
             'speculativeDecodingStrategies': <String>[],
           },
@@ -507,6 +508,82 @@ void main() {
     },
   );
 
+  const ignoreEosConfig = {'ignoreEos': true};
+  const ignoreEosRuntime = llama.LlamaEngineCapabilities(
+    isSupported: true,
+    runtime: llama.LlamaRuntime.llamaCpp,
+    supportsIgnoreEos: true,
+    supportsToolCalling: true,
+    supportsStructuredOutput: true,
+    supportsGrammar: true,
+  );
+
+  test('ignoreEos reaches native inference and appears in metadata', () async {
+    runtime.capabilitySnapshot = ignoreEosRuntime;
+    await model(_request()..config = ignoreEosConfig);
+    expect(runtime.lastGenerationParams?.ignoreEos, true);
+    expect((_state(model.metadata)['generation'] as Map)['ignoreEos'], true);
+
+    await model(_request()..config = {'ignoreEos': false});
+    expect(runtime.lastGenerationParams?.ignoreEos, false);
+    await model(_request());
+    expect(runtime.lastGenerationParams?.ignoreEos, false);
+  });
+
+  test('ignoreEos permits requests with tools disabled', () async {
+    runtime.capabilitySnapshot = ignoreEosRuntime;
+    final request = _request(tools: _tools)
+      ..toolChoice = genkit.ToolChoice.none
+      ..config = ignoreEosConfig;
+    await model(request);
+    expect(runtime.lastGenerationParams?.ignoreEos, true);
+  });
+
+  test('ignoreEos requires runtime support before inference', () async {
+    for (final capabilities in [_nativeLiteRt, _textOnly]) {
+      runtime.capabilitySnapshot = capabilities;
+      await expectLater(
+        model(_request()..config = ignoreEosConfig),
+        throwsA(
+          _status(genkit.StatusCode.unimplemented).having(
+            (error) => error.toString(),
+            'diagnostic',
+            contains('ignoreEos'),
+          ),
+        ),
+      );
+      expect((_state(model.metadata)['generation'] as Map)['ignoreEos'], false);
+    }
+    expect(runtime.createCallCount, 0);
+    await model(_request()..config = {'ignoreEos': false});
+    expect(runtime.createCallCount, 1);
+  });
+
+  test(
+    'ignoreEos rejects constrained output and active tools before inference',
+    () async {
+      runtime.capabilitySnapshot = ignoreEosRuntime;
+      for (final request in [
+        _request(output: genkit.OutputConfig(format: 'json')),
+        _request(tools: _tools),
+      ]) {
+        await expectLater(
+          model(request..config = ignoreEosConfig),
+          throwsA(
+            _status(genkit.StatusCode.unimplemented).having(
+              (error) => error.toString(),
+              'diagnostic',
+              contains('ignoreEos'),
+            ),
+          ),
+        );
+      }
+      expect(runtime.createCallCount, 0);
+      expect(runtime.chatTemplateCallCount, 0);
+      expect(runtime.generateCallCount, 0);
+    },
+  );
+
   test('text-only runtime runs single-turn text', () async {
     runtime.capabilitySnapshot = _textOnly;
     expect((await model(_request())).text, 'ok');
@@ -659,6 +736,7 @@ void main() {
         ),
         const LlamaDartGenerationConfig(speculativeDecoding: true),
         const LlamaDartGenerationConfig(reusePromptPrefix: false),
+        LlamaDartGenerationConfig.fromJson(ignoreEosConfig),
         const LlamaDartGenerationConfig(streamBatchTokenThreshold: 1),
       ]) {
         final request = _request()..config = config.toJson();

@@ -1275,7 +1275,7 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
           contains('crypto@3.0.7'),
           contains('genkit@1.0.0'),
           contains('http@1.6.0'),
-          contains('llamadart@0.20.6'),
+          contains('llamadart@0.21.0'),
           contains('schemantic@1.0.0'),
         ),
       );
@@ -1299,6 +1299,16 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
       }
     },
   );
+
+  test('Genkit publisher uses the current llamadart lower bound', () {
+    final jobs = readWorkflow('publish_genkit_pubdev')['jobs'] as Map;
+    final steps = (jobs['dependency-compatibility']['steps'] as List)
+        .cast<Map>();
+    final resolve = steps.singleWhere(
+      (step) => step['name'] == 'Resolve lower-bound runtime dependencies',
+    );
+    expect(resolve['run'], contains('llamadart@0.21.0'));
+  });
 
   test('selector exposes the companion job and validation harness OS', () {
     final changes = readWorkflow('ci')['jobs']['changes'] as Map;

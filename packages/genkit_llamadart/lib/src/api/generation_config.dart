@@ -54,6 +54,7 @@ class LlamaDartGenerationConfig {
     this.penalty,
     this.maxTokens,
     this.presencePenalty,
+    this.ignoreEos,
     this.thinkingBudget,
     this.speculativeDecoding,
     this.speculativeDecodingConfig,
@@ -91,6 +92,7 @@ class LlamaDartGenerationConfig {
       minP: asDouble(json['minP']),
       penalty: asDouble(json['penalty']),
       presencePenalty: controlDouble(json, 'presencePenalty'),
+      ignoreEos: controlBool(json, 'ignoreEos'),
       thinkingBudget: thinkingBudgetFromJson(json['thinkingBudget']),
       speculativeDecoding: controlBool(json, 'speculativeDecoding'),
       speculativeDecodingConfig: speculativeConfigFromJson(
@@ -199,6 +201,13 @@ class LlamaDartGenerationConfig {
   /// output incomplete; inspect the final Genkit result.
   final int? maxTokens;
 
+  /// Continues past end-of-generation tokens when true. Defaults to false.
+  ///
+  /// Native llama.cpp still stops at token or context limits, stop sequences
+  /// and cancellation. Grammar-constrained output and active tools are
+  /// incompatible with this option.
+  final bool? ignoreEos;
+
   /// Additional strings that stop generation when encountered.
   ///
   /// Structured output also preserves stop sequences supplied by the template.
@@ -248,6 +257,7 @@ class LlamaDartGenerationConfig {
     );
     return {
       if (presencePenalty != null) 'presencePenalty': presencePenalty,
+      if (ignoreEos != null) 'ignoreEos': ignoreEos,
       if (thinkingBudget != null)
         'thinkingBudget': thinkingBudgetToJson(thinkingBudget!),
       if (speculativeDecoding != null)

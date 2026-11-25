@@ -55,6 +55,7 @@ Map<String, dynamic> generationConfigSchema() {
         'parallelToolCalls',
         'speculativeDecoding',
         'reusePromptPrefix',
+        'ignoreEos',
       ])
         key: boolean,
       for (final key in ['sourceLangCode', 'targetLangCode']) key: string,

@@ -130,6 +130,7 @@ llama.GenerationParams toGenerationParams(LlamaDartGenerationConfig config) {
     minP: config.minP ?? LlamaDartGenerationConfig.defaultMinP,
     penalty: config.penalty ?? LlamaDartGenerationConfig.defaultPenalty,
     presencePenalty: config.presencePenalty ?? 0.0,
+    ignoreEos: config.ignoreEos ?? false,
     thinkingBudget: config.thinkingBudget,
     speculativeDecoding: config.speculativeDecoding ?? false,
     speculativeDecodingConfig: config.speculativeDecodingConfig,

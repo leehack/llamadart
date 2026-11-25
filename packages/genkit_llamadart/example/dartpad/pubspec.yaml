@@ -14,7 +14,7 @@ dependencies:
   genkit_llamadart:
     path: ../..
   http: ^1.6.0
-  llamadart: ^0.20.7
+  llamadart: ^0.21.0
   material_ui: ^1.4.0
 
 dev_dependencies:

@@ -68,6 +68,7 @@ llama.LlamaEngineCapabilities _copyCapabilities(
     supportsMinP: value.supportsMinP,
     supportsThinkingBudget: value.supportsThinkingBudget,
     supportsStreamBatching: value.supportsStreamBatching,
+    supportsIgnoreEos: value.supportsIgnoreEos,
     speculativeDecodingStrategies: Set.unmodifiable(
       value.speculativeDecodingStrategies,
     ),
