@@ -10,10 +10,12 @@ import 'package:hooks/hooks.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
+import 'package:llamadart/src/hook/apple_companion_constraint.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:llamadart/src/hook/windows_file_version.dart';
 
 import '../../../hook/build.dart' as build_hook;
+import '../../support/hook_core_version.dart';
 import '../../support/hook_project_root.dart';
 import '../../support/hooks_runner_layout.dart';
 import '../../support/native_bundle_cache.dart';
@@ -275,6 +277,10 @@ void main() {
   test(
     'a locked v0.4.0 Apple companion still links with upgrade guidance',
     () async {
+      final constraint = appleCompanionConstraint(
+        readCheckoutCoreVersion(),
+        firstPinningRelease: stableDiffusionAppleCompanionVersion,
+      )!;
       final defines = await _flutterAppleApp(
         companions: const [_stableDiffusionCompanionName],
         defines: {
@@ -309,8 +315,10 @@ void main() {
               'stable-diffusion-native@v0.4.0, an earlier stable_diffusion',
             ),
             contains('Compatibility: no Apple changes'),
-            contains('^0.20.7'),
-            contains('v0.4.0-1'),
+            contains(
+              'Depend on `$_stableDiffusionCompanionName: $constraint` '
+              'to link $stableDiffusionReleaseTag.',
+            ),
           ),
         ),
       );
