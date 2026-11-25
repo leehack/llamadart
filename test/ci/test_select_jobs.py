@@ -651,20 +651,43 @@ class SelectionTest(unittest.TestCase):
                 self.assertEqual(plan['apps'], [])
                 self.assertEqual(plan['desktops'], [])
 
-    def test_studio_native_regressions_are_required_with_the_studio_lane(self):
-        plan = ci.select(['packages/llamadart_studio/lib/main.dart'])
-        self.assertTrue(ci.expected_jobs(plan)['studio-macos'])
+    def test_studio_native_regressions_require_the_standalone_macos_job(self):
+        plan = ci.select(['packages/llamadart_studio/lib/main.dart'], pull_request=True)
+        expected = ci.expected_jobs(plan)
+        self.assertTrue(expected['studio-macos'])
+        self.assertFalse(expected['companion-packages'])
+        needs = {'changes': {'result': 'success'}}
+        needs.update({job: {'result': 'success' if selected else 'skipped'}
+                      for job, selected in expected.items()})
+        self.assertEqual(ci.aggregate(plan, needs), [])
+        for result in ('skipped', 'cancelled', 'failure'):
+            needs['studio-macos']['result'] = result
+            self.assertEqual(ci.aggregate(plan, needs),
+                             [f'studio-macos: selected=True, result={result}'])
+
+    def test_full_host_matrix_rejects_incomplete_shards_and_cancelled_jobs(self):
+        plan = ci.select(['.github/workflows/ci.yml'], pull_request=True)
+        host_rows = plan['test-other-os-matrix']
+        self.assertEqual([(row['os'], row['lane'], row['shard'], row['shards'])
+                          for row in host_rows], [
+            ('macos-latest', 'macos', 1, 2),
+            ('macos-latest', 'macos', 2, 2),
+            ('windows-latest', 'windows-tooling', 1, 1),
+            ('windows-latest', 'windows-runtime', 1, 1),
+        ])
         needs = {'changes': {'result': 'success'}}
         needs.update({job: {'result': 'success' if selected else 'skipped'}
                       for job, selected in ci.expected_jobs(plan).items()})
         self.assertEqual(ci.aggregate(plan, needs), [])
-        needs['studio-macos']['result'] = 'skipped'
-        self.assertTrue(ci.aggregate(plan, needs))
-        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
-        native = workflow.split('\n  studio-macos:\n', 1)[1].split('\n  genkit:\n', 1)[0]
-        self.assertIn('runs-on: macos-15', native)
-        self.assertIn('macos_static_semantics_test.dart', native)
-        self.assertIn('macos_app_delegate_test.dart', native)
+        for row in host_rows:
+            with self.subTest(row=row), self.assertRaisesRegex(ValueError, 'Other-OS matrix'):
+                ci.aggregate({**plan, 'test-other-os-matrix': [r for r in host_rows if r != row]},
+                             needs)
+        needs['test-other-os']['result'] = 'cancelled'
+        self.assertEqual(ci.aggregate(plan, needs),
+                         ['test-other-os: selected=True, result=cancelled'])
+        del needs['test-other-os']
+        self.assertIn('test-other-os: selected=True, result=None', ci.aggregate(plan, needs))
 
     def test_ci_passes_the_root_sdk_pin_directly(self):
         root_pin = (ROOT / '.flutter-version').read_text().strip()
@@ -1106,7 +1129,15 @@ class SelectionTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout)['jobs'],
                              ci.select([], force_full=True)['jobs'])
-            self.assertIn('web-chat-contract=true', output.read_text())
+            written = dict(line.split('=', 1) for line in output.read_text().splitlines())
+            self.assertEqual(written['web-chat-contract'], 'true')
+            for key in ('studio-macos', 'companion-job', 'macos-validation-memory', 'apple-cache'):
+                with self.subTest(key=key):
+                    self.assertEqual(written.get(key), 'true')
+            self.assertEqual(json.loads(written['companions']),
+                             ['packages/' + name for name in ci.COMPANIONS])
+            self.assertEqual(json.loads(written['test-other-os-matrix']),
+                             json.loads(result.stdout)['test-other-os-matrix'])
 
 
 class AggregateTest(unittest.TestCase):
@@ -1476,7 +1507,7 @@ class MacosPathGatingTest(unittest.TestCase):
 
     def test_recent_pr_diffs_never_exceed_base_macos_job_count(self):
         def macos_job_count(plan):
-            return (3 * int(plan['macos-native'])
+            return (sum(row['lane'] == 'macos' for row in plan['test-other-os-matrix'])
                     + int(ci.companion_job_selected(plan))
                     + int(plan['studio-macos'])
                     + int('macos-15' in plan['desktops']))

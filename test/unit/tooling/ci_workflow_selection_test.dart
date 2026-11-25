@@ -1366,26 +1366,18 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
       (s) => s['name'] == 'Test validation process memory',
     );
     expect(memory['run'], 'dart test test/process_memory_test.dart');
-    const memorySelected =
-        "\${{ !cancelled() && matrix.lane == 'windows-runtime' && matrix.shard == 2 && needs.changes.outputs.validation-harness == 'true' }}";
     expect(
       jobs['test-other-os']['strategy']['matrix']['include'],
       r'${{ fromJSON(needs.changes.outputs.test-other-os-matrix) }}',
     );
     final full = await selected(['lib/llamadart.dart']);
-    final legs = (full['test-other-os-matrix'] as List).cast<Map>();
-    expect(
-      legs.where(
-        (leg) => leg['lane'] == 'windows-runtime' && leg['shard'] == 2,
-      ),
-      hasLength(1),
-    );
-    expect(
-      legs.singleWhere(
-        (leg) => leg['lane'] == 'windows-runtime' && leg['shard'] == 2,
-      )['os'],
-      'windows-latest',
-    );
+    final runtime = (full['test-other-os-matrix'] as List)
+        .cast<Map>()
+        .singleWhere((leg) => leg['lane'] == 'windows-runtime');
+    expect(runtime['os'], 'windows-latest');
+    final memorySelected =
+        "\${{ !cancelled() && matrix.lane == 'windows-runtime' && "
+        "matrix.shard == ${runtime['shard']} && needs.changes.outputs.validation-harness == 'true' }}";
     expect(memory['if'], memorySelected);
     // PowerShell keeps only the last command's exit code, so this is a step.
     final install = native[native.indexOf(memory) - 1];
@@ -2229,6 +2221,33 @@ runs:
         jobs()['test-other-os']['name'],
         r'Test Native (${{ matrix.lane }}, ${{ matrix.shard }}/${{ matrix.shards }})',
       );
+    });
+
+    test('reduced host matrix keeps every host suite exactly once', () {
+      final all = lanes();
+      final files = rootTestFiles();
+      final weights = readWeights();
+      for (final (lane, count) in [
+        ('macos', 2),
+        ('windows-tooling', 1),
+        ('windows-runtime', 1),
+      ]) {
+        expect(all[lane]!.legs, [
+          for (var shard = 1; shard <= count; shard++) (shard, count),
+        ], reason: lane);
+        final hostFiles = laneFiles(lane, files);
+        final shards = partitionTests(
+          hostFiles,
+          weights[testShardLanes[lane]]!,
+          count,
+        );
+        expect(shards, everyElement(isNotEmpty), reason: lane);
+        expect(
+          shards.expand((shard) => shard),
+          unorderedEquals(hostFiles),
+          reason: lane,
+        );
+      }
     });
 
     test('the selector enumerates every root test file', () {

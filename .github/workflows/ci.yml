@@ -1275,12 +1275,12 @@ jobs:
 
       # Two steps: Windows PowerShell would ignore a failing first command.
       - name: Install validation harness dependencies
-        if: ${{ !cancelled() && matrix.lane == 'windows-runtime' && matrix.shard == 2 && needs.changes.outputs.validation-harness == 'true' }}
+        if: ${{ !cancelled() && matrix.lane == 'windows-runtime' && matrix.shard == 1 && needs.changes.outputs.validation-harness == 'true' }}
         working-directory: packages/llamadart_validation
         run: dart pub get
 
       - name: Test validation process memory
-        if: ${{ !cancelled() && matrix.lane == 'windows-runtime' && matrix.shard == 2 && needs.changes.outputs.validation-harness == 'true' }}
+        if: ${{ !cancelled() && matrix.lane == 'windows-runtime' && matrix.shard == 1 && needs.changes.outputs.validation-harness == 'true' }}
         working-directory: packages/llamadart_validation
         run: dart test test/process_memory_test.dart
 
