@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -218,6 +219,69 @@ void main() {
       );
       expect(classify, contains('exit 1'));
       expect(classify, contains('jq -e --argjson expected'));
+    });
+
+    test(
+      'advisory accepts main and patch bases and rejects other branches',
+      () async {
+        final workflow = read('.github/workflows/high_risk_readiness.yml');
+        final classify = workflow
+            .split(RegExp(r'^      - name: ', multiLine: true))
+            .singleWhere((step) => step.contains('id: classify'))
+            .split('run: |\n')
+            .last;
+        final scratch = Directory.systemTemp.createTempSync('pr5-advisory-');
+        addTearDown(() => scratch.deleteSync(recursive: true));
+        final gh = File('${scratch.path}/gh')
+          ..writeAsStringSync(r'''#!/bin/bash
+case "$2" in
+  repos/owner/repo/pulls/1) printf '%s\n' "$PR" ;;
+  repos/owner/repo/pulls/1/files) printf '%s\n' '[[{"filename":"AGENTS.md"}]]' ;;
+  *) exit 64 ;;
+esac
+''');
+        expect(Process.runSync('chmod', ['+x', gh.path]).exitCode, 0);
+        for (final (base, code) in [
+          ('main', 0),
+          ('release/1.0.x', 0),
+          ('feature/x', 65),
+          ('release/1.0.1', 65),
+        ]) {
+          final result = await Process.run(
+            'bash',
+            ['-c', classify],
+            environment: {
+              'PATH': '${scratch.path}:${Platform.environment['PATH']}',
+              'RUNNER_TEMP': scratch.path,
+              'GITHUB_OUTPUT': '${scratch.path}/out',
+              'DEFAULT_BRANCH': 'main',
+              'REPOSITORY': 'owner/repo',
+              'PR_NUMBER': '1',
+              'PR': jsonEncode({
+                'base': {
+                  'ref': base,
+                  'sha': 'a' * 40,
+                  'repo': {'full_name': 'owner/repo'},
+                },
+                'head': {'sha': 'b' * 40},
+                'changed_files': 1,
+              }),
+            },
+          );
+          expect(result.exitCode, code, reason: '$base: ${result.stderr}');
+        }
+      },
+      skip: Platform.isWindows ? 'Runs the Bash workflow step.' : false,
+    );
+
+    test('high-risk backport audit covers exact and adapted patches', () {
+      final runbook = read('doc/high_risk_pre_merge_readiness.md');
+      expect(runbook, contains('Classify each backport diff'));
+      expect(runbook, contains('delta audit'));
+      expect(runbook, contains('patch equivalence'));
+      expect(runbook, contains('release branch dependencies'));
+      expect(runbook, contains('CI at the backport head'));
+      expect(runbook, contains('adapted backport needs a full audit'));
     });
 
     test('schema makes evaluator decisions computed and enum-complete', () {

@@ -45,12 +45,13 @@ void main() {
   final workflow =
       loadYaml(File('.github/workflows/pr_changelog.yml').readAsStringSync())
           as YamlMap;
+  const patchBranch = 'release/[0-9]+.[0-9]+.x';
   final pullRequest = workflow['on']['pull_request'] as YamlMap;
   final jobs = workflow['jobs'] as YamlMap;
   final verify = jobs['release-prep'] as YamlMap;
 
   test('the PR workflow keeps body edits separate from heavy CI', () {
-    expect(pullRequest['branches'], ['main']);
+    expect(pullRequest['branches'], ['main', patchBranch]);
     expect(pullRequest['types'], [
       'opened',
       'reopened',
@@ -97,9 +98,39 @@ void main() {
     },
   );
 
-  test('advances of main feed open preps into the named check', () async {
+  test('Backport validates patch-base events using the base tool', () {
+    final backport = jobs['backport'] as YamlMap;
+    expect(backport['name'], 'Backport');
+    expect(backport['permissions'], {
+      'contents': 'read',
+      'issues': 'read',
+      'pull-requests': 'read',
+    });
+    expect(
+      backport['if'],
+      "github.event_name == 'pull_request' && "
+      "startsWith(github.event.pull_request.base.ref, 'release/')",
+    );
+    final steps = (backport['steps'] as YamlList).cast<YamlMap>();
+    final checkout = steps.first;
+    expect(checkout['uses'], 'actions/checkout@v7');
+    expect(
+      checkout['with']['ref'],
+      r'${{ github.event.pull_request.base.sha }}',
+    );
+    expect(checkout['with']['fetch-depth'], 0);
+    expect(checkout['with']['persist-credentials'], isFalse);
+    expect(steps[2]['run'], 'dart pub get');
+    expect(
+      steps.last['run'],
+      'dart tool/release/patch_branch.dart backport-guard --event',
+    );
+    expect(steps.last['env']['GH_TOKEN'], r'${{ github.token }}');
+  });
+
+  test('base advances find open core preps', () async {
     expect(workflow['on']['push'], {
-      'branches': ['main'],
+      'branches': ['main', patchBranch],
     });
     expect(workflow['on']['workflow_run']['workflows'], ['Docs Version Cut']);
     expect(workflow['on']['workflow_run']['types'], ['completed']);
@@ -121,7 +152,7 @@ void main() {
     final output = File('${temp.path}/output');
     final gh = File('${temp.path}/gh')
       ..writeAsStringSync(r'''#!/bin/bash
-[[ "$*" == 'api --paginate --slurp repos/owner/repo/pulls?base=main&state=open&per_page=100' ]] || exit 64
+[[ "$*" == 'api --paginate --slurp repos/owner/repo/pulls?base='$EXPECTED_BASE'&state=open&per_page=100' ]] || exit 64
 cat "$PREP_PAGES"
 ''');
     expect(Process.runSync('chmod', ['+x', gh.path]).exitCode, 0);
@@ -154,18 +185,28 @@ cat "$PREP_PAGES"
           ],
         ]),
       );
-    final result = await Process.run(
-      'bash',
-      ['-e', '-o', 'pipefail', '-c', step['run'] as String],
-      environment: {
-        'PATH': '${temp.path}:${Platform.environment['PATH']}',
-        'PREP_PAGES': pages.path,
-        'GITHUB_REPOSITORY': 'owner/repo',
-        'GITHUB_OUTPUT': output.path,
-      },
-    );
-    expect(result.exitCode, 0, reason: '${result.stderr}');
-    expect(output.readAsStringSync(), 'numbers=[4,5]\n');
+    for (final (event, ref, base) in [
+      ('push', 'main', 'main'),
+      ('push', 'release/0.21.x', 'release/0.21.x'),
+      ('workflow_run', 'release/0.21.x', 'main'),
+    ]) {
+      final result = await Process.run(
+        'bash',
+        ['-e', '-o', 'pipefail', '-c', step['run'] as String],
+        environment: {
+          'PATH': '${temp.path}:${Platform.environment['PATH']}',
+          'PREP_PAGES': pages.path,
+          'GITHUB_REPOSITORY': 'owner/repo',
+          'GITHUB_OUTPUT': output.path,
+          'GITHUB_EVENT_NAME': event,
+          'GITHUB_REF_NAME': ref,
+          'EXPECTED_BASE': base,
+        },
+      );
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      expect(output.readAsStringSync(), 'numbers=[4,5]\nbase_ref=$base\n');
+      output.deleteSync();
+    }
   }, skip: Platform.isWindows ? 'Runs the Bash workflow step.' : false);
 
   test('release prep runs with read-only API access and no Actions cache', () {
@@ -186,7 +227,7 @@ cat "$PREP_PAGES"
   });
 
   test(
-    'base refresh requires the current main SHA and the tested PR merge ref',
+    'base refresh requires the current target SHA and the tested PR merge ref',
     () async {
       final steps = (verify['steps'] as YamlList).cast<YamlMap>();
       final checkout = steps.singleWhere(
@@ -199,6 +240,10 @@ cat "$PREP_PAGES"
       final step = steps.singleWhere(
         (step) => step['name'] == 'Read current release prep PR',
       );
+      expect(
+        step['env']['BASE_REF'],
+        r'${{ needs.open-preps.outputs.base-ref }}',
+      );
       final temp = Directory.systemTemp.createTempSync('p3rp-pr-snapshot-');
       addTearDown(() => temp.deleteSync(recursive: true));
       final output = File('${temp.path}/env');
@@ -206,18 +251,20 @@ cat "$PREP_PAGES"
       final gh = File('${temp.path}/gh')
         ..writeAsStringSync(r'''#!/bin/bash
 case "$*" in
-  'api repos/owner/repo/git/ref/heads/main --jq .object.sha') echo "$MAIN_SHA" ;;
+  'api repos/owner/repo/git/ref/heads/release/0.21.x --jq .object.sha') echo "$BASE_SHA" ;;
   'api repos/owner/repo/pulls/4') cat "$PR_RESPONSE" ;;
   api\ graphql\ *' -F number=4 '*viewerMergeBodyText*) echo '{"data":{"repository":{"pullRequest":{"viewerMergeHeadlineText":"GitHub title (#4)","viewerMergeBodyText":"GitHub body"}}}}' ;;
   *) exit 64 ;;
 esac
 ''');
       expect(Process.runSync('chmod', ['+x', gh.path]).exitCode, 0);
-      final main = 'a' * 40;
+      const target = 'release/0.21.x';
+      final baseTip = 'a' * 40;
       final head = 'b' * 40;
       Future<ProcessResult> run(
         String base, {
         String repo = 'owner/repo',
+        String baseRef = target,
         String body = 'Original description',
       }) {
         response.writeAsStringSync(
@@ -228,7 +275,7 @@ esac
             'body': body,
             'base': {
               'sha': base,
-              'ref': 'main',
+              'ref': baseRef,
               'repo': {'full_name': 'owner/repo'},
             },
             'head': {
@@ -247,15 +294,17 @@ esac
             'RUNNER_TEMP': temp.path,
             'PR_NUMBER': '4',
             'PR_RESPONSE': response.path,
-            'MAIN_SHA': main,
+            'BASE_SHA': baseTip,
+            'BASE_REF': target,
           },
         );
       }
 
       expect((await run('c' * 40)).exitCode, isNot(0));
-      expect((await run(main, repo: 'fork/repo')).exitCode, isNot(0));
+      expect((await run(baseTip, repo: 'fork/repo')).exitCode, isNot(0));
+      expect((await run(baseTip, baseRef: 'main')).exitCode, isNot(0));
       expect(output.existsSync(), isFalse);
-      final result = await run(main);
+      final result = await run(baseTip);
       expect(result.exitCode, 0, reason: '${result.stderr}');
       final snapshot = File('${temp.path}/release-prep-event.json');
       expect(output.readAsStringSync(), 'PR_EVENT_PATH=${snapshot.path}\n');
@@ -267,7 +316,7 @@ esac
         ..writeAsStringSync(r'''#!/bin/bash
 case "$*" in
   'show -s --format=%P HEAD') echo "$TESTED_BASE $TESTED_HEAD" ;;
-  "show $MAIN_SHA:tool/release/pr_changelog.dart") cat "$BODY_CHECK" ;;
+  "show $BASE_SHA:tool/release/pr_changelog.dart") cat "$BODY_CHECK" ;;
   'rev-parse HEAD'|"rev-parse HEAD^{tree}") echo "$TESTED_MERGE" ;;
   *commit-tree*) cp "${!#}" "$RUNNER_TEMP/squash" && echo "$TESTED_MERGE" ;;
   "checkout --detach $TESTED_MERGE") ;;
@@ -288,7 +337,12 @@ echo "Core release prep: $CORE_PREP"
 ''');
       File('${temp.path}/tool/release/verify_release_candidate.sh')
         ..createSync(recursive: true)
-        ..writeAsStringSync('cat "\$3"\n');
+        ..writeAsStringSync(
+          r'[[ "$4" == release/0.21.x ]] || exit 64'
+          '\n'
+          r'cat "$3"'
+          '\n',
+        );
       expect(Process.runSync('chmod', ['+x', git.path, dart.path]).exitCode, 0);
       final verifyStep = steps.singleWhere(
         (step) =>
@@ -301,7 +355,7 @@ echo "Core release prep: $CORE_PREP"
               'title': 'Stale title',
               'number': 99,
               'body': '## Changelog\nN/A: Stale description.',
-              'base': {'sha': main},
+              'base': {'sha': baseTip, 'ref': 'main'},
               'head': {'sha': head},
             },
           }),
@@ -316,9 +370,9 @@ echo "Core release prep: $CORE_PREP"
               'RUNNER_TEMP': temp.path,
               'GITHUB_EVENT_PATH': push.path,
               'GITHUB_EVENT_NAME': 'push',
-              'GITHUB_SHA': main,
+              'GITHUB_SHA': baseTip,
               'PR_EVENT_PATH': snapshot.path,
-              'MAIN_SHA': main,
+              'BASE_SHA': baseTip,
               'TESTED_BASE': testedBase,
               'TESTED_HEAD': head,
               'TESTED_MERGE': 'd' * 40,
@@ -332,7 +386,7 @@ echo "Core release prep: $CORE_PREP"
       final staleMerge = await check('c' * 40);
       expect(staleMerge.exitCode, 1);
       expect(staleMerge.stderr, contains('Tested merge must have the PR base'));
-      final badBody = await check(main);
+      final badBody = await check(baseTip);
       expect(badBody.exitCode, 1);
       expect(
         badBody.stderr,
@@ -340,16 +394,16 @@ echo "Core release prep: $CORE_PREP"
       );
       expect(
         (await run(
-          main,
+          baseTip,
           body: '## Changelog\nN/A: Prepares the release.',
         )).exitCode,
         0,
       );
-      final fresh = await check(main);
+      final fresh = await check(baseTip);
       expect(fresh.exitCode, 0, reason: '${fresh.stderr}');
       expect(fresh.stdout, contains('Core release prep: false'));
 
-      final squash = await check(main, corePrep: true);
+      final squash = await check(baseTip, corePrep: true);
       expect(squash.exitCode, 0, reason: '${squash.stderr}');
       expect(
         'Refreshed title (#4)\n\n## Changelog\nN/A: Prepares the release.'

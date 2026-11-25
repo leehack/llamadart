@@ -170,10 +170,10 @@ How changes reach GitHub Pages:
 
 - Ordinary pushes or merges to `main` do **not** deploy GitHub Pages.
 - **Tag-triggered release deployment:** Pushing a core `v*` tag triggers
-  `docs_version_cut.yml`, which runs `dart run tool/cut_version.dart <version>`
-  in `website/` to snapshot `docs/` and `sidebars.json` (making that release
-  the latest at `/docs/...`),
-  and pushes to `main`. When `docs_version_cut.yml` completes successfully
+  `docs_version_cut.yml`, which snapshots the tag's `docs/` and `sidebars.json`
+  into a worktree based on `main` and pushes the snapshot to `main`.
+  `/docs/...` serves the highest released version. When
+  `docs_version_cut.yml` completes successfully
   (`workflow_run`), `docs_pages.yml` builds the site with
   `./tool/docs/build_site.sh` and deploys it to GitHub Pages.
 - **Manual deployment:** Triggering `docs_pages.yml` via `workflow_dispatch` on

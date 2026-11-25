@@ -156,6 +156,9 @@ analyze and the relevant tests before the final commit.
 
 ## Changelog and releases
 
+- Cut patch releases from `release/M.m.x` and land fixes on `main` first.
+  Follow the [release workflow](website/docs/maintainers/release-workflow.md)
+  for backports and forward-port exceptions.
 - Every PR has a top-level `## Changelog` with one-line, column-zero
   `- ` bullets or a specific standalone `N/A: reason`. Use the optional
   `[core]` or a package prefix from the PR template. Package scopes are
@@ -171,7 +174,6 @@ analyze and the relevant tests before the final commit.
   minor in the docs changelog and moves whole root sections to the archive
   only when needed for pub.dev's 256 KiB file limit. Compact related bullets
   and record specific SHA-based dispositions for material rewrites.
-  See [Release workflow](website/docs/maintainers/release-workflow.md).
 - Before release prep or a change to current install snippets, run
   `dart run tool/testing/verify_release_docs_versions.dart`, then again with
   `--release-prep`; resolve pending companion bumps in the release-prep PR.
@@ -192,6 +194,9 @@ analyze and the relevant tests before the final commit.
 
 ## Pull requests
 
+- Use squash merges only on release branches. A backport PR copies the
+  authored main PR body and adds both `Backport of <PR URL>` and
+  `(cherry picked from commit <40-hex main SHA>)` under `## Summary`.
 - `main` stays production-ready. The PR body follows
   `.github/pull_request_template.md`; fill every section or mark it N/A with a
   reason.
