@@ -71,7 +71,7 @@ case "$1" in
       '-s --format=%P') echo "${STUB_PARENTS:-$STUB_BASE}" ;;
       '-s --format=%s') echo "${STUB_SUBJECT:-Prepare release (#104)}" ;;
       '-s --format=%B') echo 'Immutable release message' ;;
-      *) printf 'name: llamadart\nversion: 0.12.9\n' ;;
+      *) printf 'name: llamadart\nversion: %s\n' "${STUB_PREVIOUS_VERSION:-0.12.9}" ;;
     esac
     ;;
   ls-remote)
@@ -315,6 +315,7 @@ const _coreListing = 'https://pub.dev/api/packages/llamadart';
 const _preflightScript = 'tool/release/companion_pub_preflight.dart';
 const _verifierScript = 'tool/testing/verify_release_docs_versions.dart';
 const _candidateScript = 'tool/release/verify_release_candidate.sh';
+const _parityScript = 'tool/release/patch_branch.dart';
 const _policyScript = 'tool/testing/check_released_changelog_sections.dart';
 const _collectorScript = 'tool/release/collect_pr_changelog.dart';
 const _strictBridge = 'tool/testing/check_webgpu_bridge_tag.dart';
@@ -342,6 +343,7 @@ _runRelease(
   String workflow,
   _Release release, {
   Map<String, String> env = const {},
+  String baseRef = 'main',
 }) {
   final version = release.version ?? '0.13.0';
   final sandbox = _Sandbox();
@@ -376,10 +378,17 @@ _runRelease(
   );
   final githubOutput = '${sandbox.root}/validate_output';
   File(githubOutput).createSync();
+  final eventValues = {
+    'github.token': 'github-token',
+    'github.event.pull_request.number': '104',
+    'github.event.pull_request.base.ref': baseRef,
+  };
+  final validationEnv = _resolveEnv(validateStep, eventValues);
+  problems.addAll(validationEnv.problems);
   final validate = sandbox.run(
     validateStep,
     workingDirectory: repo,
-    env: {'GITHUB_OUTPUT': githubOutput, ...env},
+    env: {...validationEnv.env, 'GITHUB_OUTPUT': githubOutput, ...env},
   );
   if (validate.exitCode != 0 &&
       !_continuesOnError(validateStep) &&
@@ -394,9 +403,9 @@ _runRelease(
   }
 
   final resolved = _resolveEnv(publishStep, {
+    ...eventValues,
     for (final output in _outputs(githubOutput).entries)
       'steps.${validateStep['id']}.outputs.${output.key}': output.value,
-    'github.token': 'github-token',
     'secrets.RELEASE_AUTOMATION_TOKEN': 'release-token',
   });
   if (validate.exitCode == 0) problems.addAll(resolved.problems);
@@ -1097,6 +1106,97 @@ void main() {
   group('release_on_prep_merge.yml', () {
     final workflow = _read(_releaseWorkflow);
 
+    test('post-merge workflow runs for main and patch branches', () {
+      final events = (loadYaml(workflow) as YamlMap)['on'] as YamlMap;
+      expect(events['pull_request']['branches'], [
+        'main',
+        'release/[0-9]+.[0-9]+.x',
+      ]);
+      expect(events['pull_request']['types'], ['closed']);
+    });
+
+    _Release patchRelease(String version) => (
+      name: version,
+      version: version,
+      failingDart: const {},
+      missingCompanions: const {},
+      remote: (_) {},
+    );
+
+    test(
+      'tags a patch only from its matching release branch and checks its recovery marker',
+      () {
+        const base = 'release/0.21.x';
+        const version = '0.21.1';
+        final run = _runRelease(
+          workflow,
+          patchRelease(version),
+          baseRef: base,
+          env: {'STUB_PREVIOUS_VERSION': '0.21.0'},
+        );
+        expect(run.problems, isEmpty);
+        expect(run.validate.exitCode, 0, reason: '${run.validate.stderr}');
+        expect(run.publish?.exitCode, 0, reason: '${run.publish?.stderr}');
+        expect(_pushed(run.calls, 'v$version'), isTrue);
+        expect(
+          run.calls,
+          containsAllInOrder([
+            'dart run $_parityScript parity --line 0.21 '
+                '--branch $_otherSha --main refs/remotes/origin/main',
+            matches('^dart run $_collectorScript .* --base-ref $base\$'),
+            'git fetch --no-tags --no-recurse-submodules '
+                'https://github.com/leehack/llamadart.git refs/heads/$base',
+            'git ls-tree FETCH_HEAD -- tool/release/recoveries/$_releaseSha.json',
+          ]),
+        );
+      },
+    );
+
+    for (final (base, version) in [
+      ('main', '0.21.1'),
+      ('release/0.21.x', '0.22.0'),
+      ('release/0.21.x', '0.21.0'),
+      ('release/0.20.x', '0.21.1'),
+      ('feature/x', '0.21.0'),
+    ]) {
+      test('rejects $version from $base before writing tags', () {
+        final run = _runRelease(workflow, patchRelease(version), baseRef: base);
+        expect(run.validate.exitCode, isNonZero);
+        expect(run.validate.stderr, contains(base));
+        expect(run.validate.stderr, contains(version));
+        expect(run.publish, isNull);
+        expect(_pushedAnyTag(run.calls), isFalse);
+      });
+    }
+
+    for (final (base, previous, version) in [
+      ('release/0.21.x', '0.21.0', '0.21.2'),
+      ('release/0.21.x', '0.20.0', '0.21.1'),
+      ('release/0.21.x', '0.21.2', '0.21.1'),
+      ('release/0.21.x', '0.21.2', '0.21.2'),
+      ('release/0.21.x', '0.21.0', '0.21.1+1'),
+      ('release/0.21.x', '0.21.0+1', '0.21.1'),
+      ('release/0.21.x', '0.21.18446744073709551616', '0.21.1'),
+    ]) {
+      test('rejects patch sequence $previous to $version on $base', () {
+        final run = _runRelease(
+          workflow,
+          patchRelease(version),
+          baseRef: base,
+          env: {'STUB_PREVIOUS_VERSION': previous},
+        );
+        expect(run.validate.exitCode, isNonZero);
+        expect(run.validate.stderr, contains('next patch on $base'));
+        expect(run.validate.stderr, contains('$previous -> $version'));
+        expect(
+          run.calls,
+          isNot(contains(startsWith('dart run $_parityScript'))),
+        );
+        expect(run.publish, isNull);
+        expect(_pushedAnyTag(run.calls), isFalse);
+      });
+    }
+
     List<String> stalePrepProblems(String source) {
       final errors = <String>[];
       for (final state in [
@@ -1240,10 +1340,18 @@ void main() {
       expect(
         run.calls,
         contains(
+          'dart run $_parityScript parity --main $_otherSha '
+          '--require-closed-forward-ports',
+        ),
+      );
+      expect(
+        run.calls,
+        contains(
           matches(
             r'^dart run tool/release/collect_pr_changelog[.]dart '
             '--version 0.13.0 --from v0.12.9 --through $_otherSha '
-            '--verify-input .+/release-prep-message.md --candidate $_releaseSha\$',
+            '--verify-input .+/release-prep-message.md --candidate $_releaseSha '
+            '--base-ref main\$',
           ),
         ),
       );
@@ -1268,6 +1376,7 @@ void main() {
     }
 
     for (final gate in [
+      _parityScript,
       _policyScript,
       _collectorScript,
       _verifierScript,
@@ -1318,8 +1427,8 @@ void main() {
           'dart run $_preflightScript || true\n',
         ),
         'ignores a failed release verifier': (source) => source.replaceFirst(
-          r'bash tool/release/verify_release_candidate.sh "$through" "$release_sha" "$landed_body"',
-          r'bash tool/release/verify_release_candidate.sh "$through" "$release_sha" "$landed_body" || true',
+          r'bash tool/release/verify_release_candidate.sh "$through" "$release_sha" "$landed_body" "$BASE_REF"',
+          r'bash tool/release/verify_release_candidate.sh "$through" "$release_sha" "$landed_body" "$BASE_REF" || true',
         ),
         'continues past a failed validation': (source) => source.replaceFirst(
           '        id: release\n',

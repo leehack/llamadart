@@ -2,10 +2,10 @@ name: PR changelog
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'release/[0-9]+.[0-9]+.x']
     types: [opened, reopened, synchronize, edited, ready_for_review, labeled, unlabeled]
   push:
-    branches: [main]
+    branches: [main, 'release/[0-9]+.[0-9]+.x']
   # The docs version cut pushes to main using GITHUB_TOKEN.
   workflow_run:
     workflows: [Docs Version Cut]
@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr-changelog-${{ github.event.pull_request.number || 'main' }}
+  group: pr-changelog-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref_name) || 'main' }}
   cancel-in-progress: false
 
 jobs:
@@ -34,6 +34,29 @@ jobs:
           sdk: 3.13.1
       - run: dart tool/release/pr_changelog.dart --event
 
+  backport:
+    name: Backport
+    if: github.event_name == 'pull_request' && startsWith(github.event.pull_request.base.ref, 'release/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.1
+      - run: dart pub get
+      - run: dart tool/release/patch_branch.dart backport-guard --event
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   open-preps:
     name: Find open core release preps
     if: github.event_name != 'pull_request'
@@ -43,20 +66,28 @@ jobs:
       pull-requests: read
     outputs:
       numbers: ${{ steps.list.outputs.numbers }}
+      base-ref: ${{ steps.list.outputs.base_ref }}
     steps:
       - id: list
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          numbers="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls?base=main&state=open&per_page=100" |
+          base_ref=main
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            base_ref="$GITHUB_REF_NAME"
+          fi
+          numbers="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls?base=$base_ref&state=open&per_page=100" |
             jq -c --arg repo "$GITHUB_REPOSITORY" '
               [.[][] | select(.head.repo.full_name == $repo)
               | select(.head.ref | startswith("release/genkit_llamadart-") | not)
               | select(any(.labels[]; .name == "release-prep") or
                        (.head.ref | test("^release/(prep-[0-9]+\\.[0-9]+\\.[0-9]+([-+][A-Za-z0-9._-]+)?|[0-9]+\\.[0-9]+\\.[0-9]+([-+][A-Za-z0-9._-]+)?-prep)$")))
               | .number]')"
-          echo "numbers=$numbers" >> "$GITHUB_OUTPUT"
+          {
+            echo "numbers=$numbers"
+            echo "base_ref=$base_ref"
+          } >> "$GITHUB_OUTPUT"
 
   release-prep:
     name: Verify release prep${{ matrix.number != 0 && format(' (#{0})', matrix.number) || '' }}
@@ -76,7 +107,7 @@ jobs:
         number: ${{ fromJSON(needs.open-preps.outputs.numbers || '[0]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Base-advance events run open PR code in the default branch cache scope.
+    # Base-advance events run open PR code in the target branch cache scope.
     cache-mode: none
     permissions:
       contents: read
@@ -97,18 +128,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ matrix.number }}
+          BASE_REF: ${{ needs.open-preps.outputs.base-ref }}
         shell: bash
         run: |
           snapshot="$RUNNER_TEMP/release-prep-event.json"
-          main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+          tip="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BASE_REF" --jq .object.sha)"
           if ! gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" |
-            jq -e --arg repo "$GITHUB_REPOSITORY" --argjson number "$PR_NUMBER" --arg main "$main" '
+            jq -e --arg repo "$GITHUB_REPOSITORY" --argjson number "$PR_NUMBER" --arg ref "$BASE_REF" --arg tip "$tip" '
               select(.number == $number and .state == "open" and
-                     .head.repo.full_name == $repo and .base.repo.full_name == $repo and .base.ref == "main" and
+                     .head.repo.full_name == $repo and .base.repo.full_name == $repo and .base.ref == $ref and
                      (.head.sha | test("^[0-9a-f]{40}$")) and (.base.sha | test("^[0-9a-f]{40}$")) and
-                     .base.sha == $main)
+                     .base.sha == $tip)
               | {pull_request: .}' > "$snapshot"; then
-            echo "Could not read open PR #$PR_NUMBER against current main $main." >&2
+            echo "Could not read open PR #$PR_NUMBER against current $BASE_REF $tip." >&2
             exit 1
           fi
           echo "PR_EVENT_PATH=$snapshot" >> "$GITHUB_ENV"
@@ -128,12 +160,13 @@ jobs:
           set -euo pipefail
           snapshot="${PR_EVENT_PATH:-$GITHUB_EVENT_PATH}"
           base="$(jq -r .pull_request.base.sha "$snapshot")"
+          base_ref="$(jq -r .pull_request.base.ref "$snapshot")"
           head="$(jq -r .pull_request.head.sha "$snapshot")"
           if [[ "$(git show -s --format=%P HEAD)" != "$base $head" ]]; then
             echo "Tested merge must have the PR base and head as parents." >&2
             exit 1
           fi
-          echo "Verifying PR head $head against main $base."
+          echo "Verifying PR head $head against $base_ref $base."
           if [[ -n "${PR_EVENT_PATH:-}" ]]; then
             body_check="$RUNNER_TEMP/pr_changelog.dart"
             git show "$base:tool/release/pr_changelog.dart" > "$body_check"
@@ -155,7 +188,7 @@ jobs:
                 commit-tree "$tree" -p "$base" -F "$message")" || return 1
               git checkout --detach "$squash" || return 1
               git show -s --format=%B "$squash" > "$message" || return 1
-              bash tool/release/verify_release_candidate.sh "$base" "$squash" "$message"
+              bash tool/release/verify_release_candidate.sh "$base" "$squash" "$message" "$base_ref"
             }
             for variant in coauthor signoff combined plain; do
               case "$variant" in
