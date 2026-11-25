@@ -929,6 +929,115 @@ void main() {
     expect(await repo.check(repo.prep(), prep: true), isEmpty);
   });
 
+  group('minor prep imports', () {
+    const minor = '## 1.0.0\n\n- Previous minor.\n\n';
+    const newMinor = '## 1.1.0\n\n- New minor.\n\n';
+    const archived = '## 0.9.0\n\n- Archived.\n';
+    String section(String version, String path) =>
+        '## $version\n\n'
+        "- Keep ${path == _root ? 'the ' : ''}default WebGPU bridge assets.\n"
+        '- Tagged café note.  \n\n';
+
+    String createPatch(String version) => repo.commit({
+      'pubspec.yaml': 'name: llamadart\nversion: $version\n',
+      _root: '# Releases\n\n${section(version, _root)}$minor',
+      _docs: '${section(version, _docs)}$minor$archived',
+    });
+
+    late String secondPatch;
+    setUp(() {
+      repo.base = repo.commit({
+        'pubspec.yaml': 'name: llamadart\nversion: 1.0.0\n',
+        _root: '# Releases\n\n$minor',
+        _docs: '$minor$archived',
+        changelogArchive: archived,
+      });
+      repo.git(['tag', 'v1.0.0']);
+      repo.commit({'main.txt': 'Next minor development.\n'});
+      repo.git(['tag', 'v1.0.3']);
+      repo.base = repo.git(['rev-parse', 'HEAD']);
+      repo.git(['switch', '-c', 'release/1.0.x', 'v1.0.0']);
+      repo.git(['tag', 'v1.0.1', createPatch('1.0.1')]);
+      secondPatch = createPatch('1.0.2');
+      repo.git(['switch', 'main']);
+    });
+
+    String candidate({
+      String version = '1.1.0',
+      String? rootImport,
+      String? docsImport,
+      List<String> imports = const ['1.0.2', '1.0.1'],
+    }) {
+      final current = version == '1.1.0'
+          ? newMinor
+          : '## $version\n\n- New.\n\n';
+      String imported(String path) =>
+          imports.map((release) => section(release, path)).join();
+      return repo.prep(
+        version: version,
+        edits: {
+          _root: '# Releases\n\n$current${rootImport ?? imported(_root)}$minor',
+          _docs:
+              '$current${docsImport ?? imported(_docs)}$minor'
+              '${version == '1.1.0' ? '' : archived}',
+        },
+      );
+    }
+
+    test('accepts exact tag bytes and rejects a late missing patch', () async {
+      final initial = candidate(imports: ['1.0.1']);
+      expect(await repo.check(initial, prep: true), isEmpty);
+      repo.git(['tag', '-a', 'v1.0.2', secondPatch, '-m', 'Late patch']);
+      expect(await repo.check(initial, prep: true), isNotEmpty);
+      expect(await repo.check(candidate(), prep: true), isEmpty);
+    });
+
+    for (final path in [_root, _docs]) {
+      test('rejects changed tagged bytes in $path', () async {
+        repo.git(['tag', 'v1.0.2', secondPatch]);
+        final changed =
+            section('1.0.2', path).replaceFirst('  \n', '\n') +
+            section('1.0.1', path);
+        expect(
+          await repo.check(
+            candidate(
+              rootImport: path == _root ? changed : null,
+              docsImport: path == _docs ? changed : null,
+            ),
+            prep: true,
+          ),
+          isNotEmpty,
+        );
+      });
+    }
+
+    for (final (label, imports) in [
+      ('an on-chain tag', ['1.0.3', '1.0.2', '1.0.1']),
+      ('an unknown tag', ['1.0.4', '1.0.2', '1.0.1']),
+      ('out-of-order tags', ['1.0.1', '1.0.2']),
+    ]) {
+      test('rejects $label', () async {
+        repo.git(['tag', 'v1.0.2', secondPatch]);
+        expect(
+          await repo.check(candidate(imports: imports), prep: true),
+          isNotEmpty,
+        );
+      });
+    }
+
+    test('rejects imports in patch prep', () async {
+      repo.git(['tag', 'v1.0.2', secondPatch]);
+      expect(
+        await repo.check(candidate(version: '1.0.4'), prep: true),
+        isNotEmpty,
+      );
+      expect(
+        await repo.check(candidate(version: '1.0.4', imports: []), prep: true),
+        isEmpty,
+      );
+    });
+  });
+
   for (final (label, edits) in [
     ('preamble', {_root: '# Changed intro\n\n$_new$_published'}),
     (
