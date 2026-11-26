@@ -207,6 +207,10 @@ modalities and speculative strategies before offering them.
   `rawTokenLogprobs(stream)` for `generate`. Entry `bytes` concatenate to the
   streamed bytes, so decode them whole rather than per token. Speculative
   decoding, WebGPU and LiteRT-LM throw `LlamaUnsupportedException`.
+- Native llama.cpp throws `LlamaArgumentException` before decoding for a
+  non-finite `temp`, `topP`, `minP`, `penalty` or `presencePenalty`, a `penalty`
+  outside 0.001-100, a `presencePenalty` outside -100-100, or a positive `temp`
+  outside 0.000001-1000000.
 - `GenerationParams(ignoreEos: true)` keeps generating past end-of-generation
   tokens, until `maxTokens`, the context limit, a stop sequence (including the
   chat template's own stop strings) or cancellation. Only native llama.cpp
