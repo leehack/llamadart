@@ -581,6 +581,20 @@ void main() {
       final doc = File('doc/testing_matrix.md').readAsStringSync();
       expect(doc, contains('`web-bos-eos-prompt-tokens`'));
       expect(doc, contains('## Web BOS/EOS prompt tokens'));
+      final weights =
+          jsonDecode(File('tool/ci/test_shard_weights.json').readAsStringSync())
+              as Map<String, dynamic>;
+      for (final shard in weights.values) {
+        expect(
+          (shard
+              as Map<
+                String,
+                dynamic
+              >)['test/e2e/webgpu/bos_eos_prompt_tokens_e2e_test.dart'],
+          0,
+          reason: 'weight 0 in every shard',
+        );
+      }
     },
   );
 
