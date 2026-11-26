@@ -19,8 +19,13 @@ description: >-
   JSON-compatible data, or supply `parts: [TextPart(text: '...')]` for the
   model-facing presentation. Nonempty text parts are joined with newlines;
   structured `output` remains in Genkit history and is not appended to that
-  presentation. Missing/empty parts fall back to output. Non-text result parts
-  fail with `UNIMPLEMENTED`; multimodal tool results remain unsupported.
+  presentation. Missing/empty parts fall back to output. `MediaPart` images in
+  `parts` (local path, `file://`, `data:` or resolver-fetched HTTP(S)) reach the
+  next turn as typed tool-result content on native llama.cpp with a projector
+  and a qualified tool template (Qwen3-VL); audio, resource, data, video and other non-image
+  parts, and runtimes or templates that cannot carry the media, fail with
+  `UNIMPLEMENTED` before the next model call. Tool-returned local paths are read
+  as given: normalize any derived from untrusted input.
 - Tool input schemas and tool-call arguments must be JSON objects, because
   llamadart passes arguments as `Map<String, dynamic>`. Primitive or list root
   inputs fail with `INVALID_ARGUMENT`. For a no-argument tool, use an object

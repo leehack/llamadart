@@ -315,9 +315,22 @@ Resolver failures have sanitized messages and no original exception cause.
   and used as the model-facing result; `output` stays in Genkit history without
   being appended a second time. Empty text values are preserved. Missing or
   empty `parts` falls back to the normal `output` representation.
-  Image, audio, resource and other non-text result parts fail with
-  `UNIMPLEMENTED` before the next model call; multimodal tool results remain
-  unsupported. Genkit continues to own tool execution, interrupts and resume.
+  Genkit continues to own tool execution, interrupts and resume.
+- Tool results can also carry images: add `MediaPart` values to `parts` and
+  they reach the next model turn as typed tool-result content, in order with
+  the text parts. As with text, `output` stays in Genkit history and is not
+  sent to the model. Images come from local paths, `file://` or `data:` URLs,
+  or from HTTP(S) URLs on native runtimes with a `mediaResolver`, which applies
+  its limits and cancellation. This needs native llama.cpp with a loaded
+  projector and a tool-call template qualified for tool-result media, such as
+  Qwen3-VL's; see the
+  [example](../example/genkit_llamadart_tool_media_example.dart). A runtime or
+  template that cannot carry the media, any audio part (no runtime reports
+  audio tool results yet), and resource, data, video, PDF and other non-image
+  parts fail with `UNIMPLEMENTED` before the next model call rather than becoming text or an
+  extra user turn. Normalize PDFs, video and resources in the application. Local paths and
+  `file://` URLs a tool returns are read as given, so normalize any path that
+  came from untrusted input before returning it.
 - Tool input schemas and tool-request inputs must be JSON objects. Primitive or
   list root inputs cannot be represented by `llamadart`'s map argument API and
   fail with `INVALID_ARGUMENT`.

@@ -83,9 +83,6 @@ void main() {
 
   for (final part in <Object?>[
     {
-      'media': {'url': 'data:image/png;base64,AQID'},
-    },
-    {
       'resource': {'uri': 'private://secret'},
     },
     {

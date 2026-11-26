@@ -2,6 +2,7 @@ tags:
   real-model:
   multimodal-embedding-model:
   tool-model:
+  tool-result-media-model:
   inference-controls:
   speech-model:
   image-model:

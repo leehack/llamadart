@@ -101,7 +101,7 @@ dart run example/genkit_llamadart_owner_example.dart 'hf://unsloth/SmolLM2-135M-
 ```
 
 The same argument can be a local path or a complete HTTPS model URL. Image input
-accepts `MODEL_SOURCE PROJECTOR_SOURCE IMAGE`; multimodal embeddings accept
+and image tool results accept `MODEL_SOURCE PROJECTOR_SOURCE IMAGE`; multimodal embeddings accept
 `MODEL_SOURCE PROJECTOR_SOURCE IMAGE AUDIO`, or
 `--litert MODEL_SOURCE IMAGE AUDIO`. Keep model and projector from a compatible
 pair. LoRA intentionally needs an explicit compatible base/adapter pair; the
@@ -148,6 +148,7 @@ imports in your own application, add `llamadart` explicitly as well as
 | Example | Command | Models/setup |
 | --- | --- | --- |
 | [Image input](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/genkit_llamadart_multimodal_example.dart) | `dart run example/genkit_llamadart_multimodal_example.dart image.png` | Downloads pinned Qwen3.5-0.8B + matching F16 projector (about 738 MB); supply your own image |
+| [Image tool result](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/genkit_llamadart_tool_media_example.dart) | `dart run example/genkit_llamadart_tool_media_example.dart image.png` | Downloads pinned Qwen3-VL-2B Q4_K_M + F16 projector (about 1.8 GB); a tool returns your image to the next model turn |
 | [Transcription](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/genkit_llamadart_transcription_example.dart) | `dart run example/genkit_llamadart_transcription_example.dart input.wav` | Downloads pinned Qwen3-ASR model/projector, about 1 GB; use a short trusted WAV |
 | [Speech synthesis](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/genkit_llamadart_speech_example.dart) | `dart run example/genkit_llamadart_speech_example.dart output.wav` | Downloads pinned Qwen3-TTS model/projector, about 1.5 GB; writes “Hello from Genkit.” as a complete WAV |
 | [Image generation](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/genkit_llamadart_image_example.dart) | `dart run example/genkit_llamadart_image_example.dart output.png` | Downloads pinned SDXS, about 683 MB; enable its native runtime first |

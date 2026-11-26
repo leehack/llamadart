@@ -17,27 +17,38 @@ FutureOr<List<llama.LlamaChatMessage>> resolveLlamaMessages(
   }
   final pending = <(String, String?), String>{};
   final overrides = <(String, String?), llama.LlamaContentPart>{};
+  void collect(genkit.Media media, {bool imagesOnly = false}) {
+    final uri = Uri.tryParse(media.url);
+    if (uri?.scheme != 'http' && uri?.scheme != 'https') return;
+    final type = imagesOnly
+        ? toolResultMediaType(media)
+        : (media.contentType ?? inferMediaContentType(media.url))
+              ?.toLowerCase();
+    if (imagesOnly && !(type?.startsWith('image/') ?? false)) return;
+    if (type == null ||
+        !RegExp(r'^(image|audio)/[a-z0-9!#$&^_.+*-]+$').hasMatch(type)) {
+      throw genkit.GenkitException(
+        'Remote media requires an image/* or audio/* MIME type.',
+        status: genkit.StatusCode.invalidArgument,
+      );
+    }
+    final key = (media.url, media.contentType);
+    pending[key] = type;
+    overrides[key] = type.startsWith('image/')
+        ? llama.LlamaImageContent(bytes: Uint8List(0))
+        : llama.LlamaAudioContent(bytes: Uint8List(0));
+  }
+
   for (final message in messages) {
-    if (message.role == genkit.Role.tool) continue;
     for (final part in message.content) {
-      if (!part.isMedia) continue;
-      final media = part.media!;
-      final uri = Uri.tryParse(media.url);
-      if (uri?.scheme != 'http' && uri?.scheme != 'https') continue;
-      final type = (media.contentType ?? inferMediaContentType(media.url))
-          ?.toLowerCase();
-      if (type == null ||
-          !RegExp(r'^(image|audio)/[a-z0-9!#$&^_.+*-]+$').hasMatch(type)) {
-        throw genkit.GenkitException(
-          'Remote media requires an image/* or audio/* MIME type.',
-          status: genkit.StatusCode.invalidArgument,
-        );
+      if (part.isToolResponse) {
+        for (final resultPart in part.toolResponse!.content ?? const []) {
+          final media = toolResultMediaOf(resultPart);
+          if (media != null) collect(media, imagesOnly: true);
+        }
+      } else if (part.isMedia && message.role != genkit.Role.tool) {
+        collect(part.media!);
       }
-      final key = (media.url, media.contentType);
-      pending[key] = type;
-      overrides[key] = type.startsWith('image/')
-          ? llama.LlamaImageContent(bytes: Uint8List(0))
-          : llama.LlamaAudioContent(bytes: Uint8List(0));
     }
   }
   final validated = toLlamaMessages(messages, mediaOverrides: overrides);
@@ -83,7 +94,19 @@ FutureOr<List<llama.LlamaChatMessage>> resolveLlamaMessages(
         llama.LlamaChatMessage.withContent(
           role: message.role,
           content: [
-            for (final part in message.parts) replacements[part] ?? part,
+            for (final part in message.parts)
+              if (part is llama.LlamaToolResultContent)
+                llama.LlamaToolResultContent(
+                  id: part.id,
+                  name: part.name,
+                  result: part.result,
+                  content: [
+                    for (final nested in part.content)
+                      replacements[nested] ?? nested,
+                  ],
+                )
+              else
+                replacements[part] ?? part,
           ],
         ),
     ];

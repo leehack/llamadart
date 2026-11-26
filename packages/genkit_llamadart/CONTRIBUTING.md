@@ -182,6 +182,29 @@ tests with one test worker, as CI does, to avoid overlapping native inference.
 See [ARCHITECTURE.md](ARCHITECTURE.md#real-model-smoke-tests) for their sources
 and verification.
 
+### Real tool-result media qualification
+
+Image tool results need a vision model whose chat template is qualified for
+tool-result media. This opt-in test is skipped without its fixtures and uses
+the variables of llamadart's `tool-result-image-smoke` scenario:
+
+```bash
+LLAMADART_TOOL_MEDIA_MODEL=/models/Qwen3VL-2B-Instruct-Q4_K_M.gguf \
+LLAMADART_TOOL_MEDIA_MMPROJ=/models/mmproj-Qwen3VL-2B-Instruct-F16.gguf \
+dart test -t real-model test/integration/genkit/plugin/real_model_tool_result_media_test.dart -j 1
+```
+
+Revision `52d6c8ffea26cc873ac5ad116f8631268d7eb503` of
+`Qwen/Qwen3-VL-2B-Instruct-GGUF`: the model's SHA-256 is
+`089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae` and the
+projector's is
+`c3d5afbef5287953acd57b4043d2269456e5761a4eaccb3b71b062996970aea5`.
+A Genkit tool returns a solid red or blue PNG; the model must name the color on
+the next turn. For a closest-family model, set
+`LLAMADART_TOOL_MEDIA_CHAT_TEMPLATE` to llamadart's
+`test/fixtures/templates/Qwen3-VL-2B-Instruct.jinja`. Run it with an isolated
+`TMPDIR` and record model, backend, OS and result in PR evidence.
+
 ### Real tool-model qualification
 
 Run this optional production Genkit tool-loop qualification before releasing

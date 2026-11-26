@@ -69,6 +69,14 @@ void requireRuntimeCapability(
   );
 }
 
+/// The parts of [message], with each tool result followed by its content.
+Iterable<llama.LlamaContentPart> inputPartsWithToolResults(
+  llama.LlamaChatMessage message,
+) => message.parts.expand(
+  (part) =>
+      part is llama.LlamaToolResultContent ? [part, ...part.content] : [part],
+);
+
 void checkRuntimeModelRequest(
   LlamaModelDefinition definition,
   genkit.ModelRequest request,
@@ -104,6 +112,23 @@ void checkRuntimeModelRequest(
         .isNotEmpty) {
       require(capabilities?.supportsMultiTurnChat, 'multi-turn history');
     }
+  }
+
+  final resultMedia = messages
+      .expand((message) => message.parts)
+      .whereType<llama.LlamaToolResultContent>()
+      .expand((result) => result.content);
+  if (resultMedia.any((part) => part is llama.LlamaImageContent)) {
+    require(
+      capabilities?.toolResultMedia.contains(llama.LlamaToolResultMedia.image),
+      'image tool-result content',
+    );
+  }
+  if (resultMedia.any((part) => part is llama.LlamaAudioContent)) {
+    require(
+      capabilities?.toolResultMedia.contains(llama.LlamaToolResultMedia.audio),
+      'audio tool-result content',
+    );
   }
 
   // A custom native runtime older than LiteRT-LM v0.18.0 can under-report bundle encoders.
@@ -182,7 +207,7 @@ void checkRuntimeGenerationConfig(
     }
   }
   final hasMedia = messages
-      .expand((m) => m.parts)
+      .expand(inputPartsWithToolResults)
       .any((p) => p is llama.LlamaImageContent || p is llama.LlamaAudioContent);
   if ((hasMedia && (params.thinkingBudget != null || speculative != null)) ||
       (speculative != null &&

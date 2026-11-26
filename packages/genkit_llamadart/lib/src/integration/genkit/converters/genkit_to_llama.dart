@@ -35,7 +35,7 @@ List<llama.LlamaChatMessage> toLlamaMessages(
         converted.add(
           llama.LlamaChatMessage.withContent(
             role: llama.LlamaChatRole.tool,
-            content: [_toLlamaToolResult(part.toolResponse)],
+            content: [_toLlamaToolResult(part.toolResponse, mediaOverrides)],
           ),
         );
       }
@@ -49,7 +49,7 @@ List<llama.LlamaChatMessage> toLlamaMessages(
           (media == null
               ? null
               : mediaOverrides[(media.url, media.contentType)]) ??
-          _toLlamaPart(part);
+          _toLlamaPart(part, mediaOverrides);
       if (convertedPart != null) {
         parts.add(convertedPart);
       }
@@ -223,7 +223,10 @@ llama.LlamaChatRole _toLlamaRole(genkit.Role role) {
   };
 }
 
-llama.LlamaContentPart? _toLlamaPart(genkit.Part part) {
+llama.LlamaContentPart? _toLlamaPart(
+  genkit.Part part,
+  Map<(String, String?), llama.LlamaContentPart> mediaOverrides,
+) {
   if (part.isText) {
     return llama.LlamaTextContent(part.text!);
   }
@@ -244,7 +247,7 @@ llama.LlamaContentPart? _toLlamaPart(genkit.Part part) {
   }
 
   if (part.isToolResponse) {
-    return _toLlamaToolResult(part.toolResponse!);
+    return _toLlamaToolResult(part.toolResponse!, mediaOverrides);
   }
 
   if (part.isReasoning) {
@@ -409,14 +412,111 @@ String _normalizeToolResultOutput(Object? output) {
   }
 }
 
-llama.LlamaToolResultContent _toLlamaToolResult(genkit.ToolResponse response) =>
-    llama.LlamaToolResultContent(
+llama.LlamaToolResultContent _toLlamaToolResult(
+  genkit.ToolResponse response,
+  Map<(String, String?), llama.LlamaContentPart> mediaOverrides,
+) {
+  final content = response.content;
+  if (content == null || content.isEmpty) {
+    return llama.LlamaToolResultContent(
       id: response.ref,
       name: response.name,
-      result: response.content?.isNotEmpty == true
-          ? response.content!.map(_toolResultText).join('\n')
-          : _normalizeToolResultOutput(response.output),
+      result: _normalizeToolResultOutput(response.output),
     );
+  }
+  final parts = [
+    for (final part in content) _toToolResultPart(part, mediaOverrides),
+  ];
+  if (parts.every((part) => part is llama.LlamaTextContent)) {
+    return llama.LlamaToolResultContent(
+      id: response.ref,
+      name: response.name,
+      result: parts
+          .cast<llama.LlamaTextContent>()
+          .map((part) => part.text)
+          .join('\n'),
+    );
+  }
+  // As with text, the presentation replaces the structured output for the
+  // model; Genkit keeps the output in history.
+  return llama.LlamaToolResultContent(
+    id: response.ref,
+    name: response.name,
+    result: null,
+    content: parts,
+  );
+}
+
+/// The media of a tool-result part that holds only media, else null.
+genkit.Media? toolResultMediaOf(Object? part) {
+  final value = part is genkit.Part ? part.toJson() : part;
+  if (value is! Map ||
+      !value.keys.every((key) => key == 'media' || key == 'metadata')) {
+    return null;
+  }
+  final media = value['media'];
+  if (media is! Map ||
+      media['url'] is! String ||
+      (media['contentType'] != null && media['contentType'] is! String)) {
+    return null;
+  }
+  return genkit.Media(
+    url: media['url'] as String,
+    contentType: media['contentType'] as String?,
+  );
+}
+
+llama.LlamaContentPart _toToolResultPart(
+  Object? part,
+  Map<(String, String?), llama.LlamaContentPart> mediaOverrides,
+) {
+  final media = toolResultMediaOf(part);
+  if (media != null) {
+    final type = toolResultMediaType(media);
+    final remote = RegExp(
+      r'^https?:',
+      caseSensitive: false,
+    ).hasMatch(media.url);
+    final isImage = type?.startsWith('image/') ?? false;
+    final isAudio = type?.startsWith('audio/') ?? false;
+    if (type == null && media.url.toLowerCase().startsWith('data:')) {
+      throw genkit.GenkitException(
+        'Invalid media data URL; check its MIME type and encoded payload.',
+        status: genkit.StatusCode.invalidArgument,
+      );
+    }
+    if (!isImage && !(isAudio && !remote)) {
+      throw genkit.GenkitException(
+        'Tool results carry image media only; return an image from a local '
+        'path, file URL, data URL or resolver-fetched HTTP(S) URL, or '
+        'normalize other media in the application.',
+        status: genkit.StatusCode.unimplemented,
+      );
+    }
+    final converted =
+        mediaOverrides[(media.url, media.contentType)] ??
+        _toLlamaMediaPart(media);
+    if (converted is llama.LlamaImageContent && converted.url != null) {
+      throw genkit.GenkitException(
+        'Remote images in tool results need a LlamaDartMediaResolver on a '
+        'native runtime; otherwise return a local path or data URL.',
+        status: genkit.StatusCode.invalidArgument,
+      );
+    }
+    return converted;
+  }
+  return llama.LlamaTextContent(_toolResultText(part));
+}
+
+/// The lower-cased media type of [media], or null when unknown or malformed.
+String? toolResultMediaType(genkit.Media media) {
+  try {
+    return (media.contentType ?? inferMediaContentType(media.url))
+        ?.toLowerCase();
+  } on FormatException {
+    return null;
+  }
+}
 
 String _toolResultText(Object? part) {
   final value = part is genkit.Part ? part.toJson() : part;
@@ -426,7 +526,7 @@ String _toolResultText(Object? part) {
     return value['text'] as String;
   }
   throw genkit.GenkitException(
-    'llamadart tool-result content supports text parts only; return TextPart values or structured output.',
+    'llamadart tool-result content supports text and image media parts only.',
     status: genkit.StatusCode.unimplemented,
   );
 }
