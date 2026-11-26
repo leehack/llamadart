@@ -104,9 +104,9 @@ Dart, so the read is an unguarded call on a tracked context. It is not routed
 through `LlamaCppObjectCalls`, because no `llama_dart_` function reads the
 logits and a wrapper that does would be a `llamadart-native` change. Two
 properties keep it inside the settle window above: it runs immediately after
-a guarded call that ended on a synchronized graph (the prompt decode, or the
-sample of the token it reads), so `llama_get_logits_ith` only returns the
-output pointer, and the pass over the logits takes about 0.5 ms at a
+a guarded call that ended on a synchronized graph (the prompt decode, or
+the `tokenToPiece` call that follows the sample of the token it reads), so
+`llama_get_logits_ith` only returns the output pointer, and the pass over the logits takes about 0.5 ms at a
 152,000-token vocabulary, once per generated token, before the next guarded
 decode begins. Teardown frees nothing until 250 ms after the end of that
 guarded call. A read that overlaps an exit would need the isolate to stall

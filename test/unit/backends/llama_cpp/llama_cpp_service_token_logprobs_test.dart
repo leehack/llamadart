@@ -240,6 +240,17 @@ void main() {
     }
   });
 
+  test('a token with no text still gets an entry, in order', () async {
+    final full = entriesOf(
+      await run(_ungrammared.copyWith(logitBias: {1: 10000}, maxTokens: 4)),
+    );
+
+    expect(full, hasLength(4));
+    expect(full.every((entry) => entry.sampled.token == 1), isTrue);
+    expect(full.every((entry) => entry.sampled.bytes.isEmpty), isTrue);
+    expect(full.every((entry) => entry.top.length == 3), isTrue);
+  });
+
   test('a null callback or topLogprobs reads no logits', () async {
     final noCallback = await run(_sampled, callback: false);
     expect(streamBytes(noCallback), hasLength(6));

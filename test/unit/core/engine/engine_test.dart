@@ -6077,6 +6077,35 @@ void main() {
       });
     }
 
+    test(
+      'native chat generation rejects topLogprobs before generating',
+      () async {
+        final backend = _LogprobsMockBackend(nativeChat: true);
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await engine.loadModel('qwen-test.gguf');
+
+        await expectLater(
+          engine.create(messages, params: params),
+          emitsError(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains(backend.backendName), contains('topLogprobs')),
+            ),
+          ),
+        );
+        await expectLater(
+          engine.create(
+            messages,
+            params: const GenerationParams(topLogprobs: 99),
+          ),
+          emitsError(isA<LlamaArgumentException>()),
+        );
+        expect(backend.nativeGenerateChatCalls, 0);
+      },
+    );
+
     test('rejects values outside the range before generating', () async {
       final backend = _LogprobsMockBackend();
       final engine = LlamaEngine(backend);
@@ -7446,12 +7475,13 @@ class _LogprobsMockBackend extends NativeChatMockBackend
     implements
         BackendGenerationCapabilitiesSupport,
         BackendTokenLogprobsReporting {
-  _LogprobsMockBackend({this.capability = true});
+  _LogprobsMockBackend({this.capability = true, this.nativeChat = false});
 
   final bool capability;
+  final bool nativeChat;
 
   @override
-  bool get supportsNativeChatGeneration => false;
+  bool get supportsNativeChatGeneration => nativeChat;
 
   List<List<int>>? generationBytes;
   List<LlamaGeneratedTokenLogprobs> entries = [];

@@ -2666,6 +2666,10 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       if (resolvedParams.topLogprobs != null) {
         await _checkTokenLogprobs(resolvedParams, requestEpoch);
         if (request.isCancelled()) return;
+        throw LlamaUnsupportedException(
+          '${await _backendNameOf(backend)} generates chat natively and '
+          'does not report GenerationParams.topLogprobs.',
+        );
       }
       _ensureReady();
 

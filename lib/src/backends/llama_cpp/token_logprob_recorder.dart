@@ -97,9 +97,9 @@ final class TokenLogprobRecorder {
   /// Reads the logits of the last decoded position of [context].
   ///
   /// [sampledBytes] are the bytes the sampled [token] added to the stream.
-  /// The read is the last step of a guarded sample call: it only copies
-  /// values out of the context's output buffer, which the 250 ms exit
-  /// teardown settle window after that call covers.
+  /// The read follows the guarded sample and `tokenToPiece` calls and only
+  /// copies values out of the context's output buffer, which the 250 ms exit
+  /// teardown settle window after those calls covers.
   LlamaGeneratedTokenLogprobs read(
     Pointer<llama_context> context,
     int token,

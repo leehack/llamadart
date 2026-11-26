@@ -718,7 +718,9 @@ abstract class BackendGenerationUsageReporting {
 /// Backend probe for the token log-probabilities of a generation stream.
 ///
 /// A backend that implements it reports `tokenLogprobs` in its
-/// [BackendGenerationCapabilities].
+/// [BackendGenerationCapabilities]. The engine reads entries only for
+/// [LlamaBackend.generate] streams; a request with `topLogprobs` on a backend
+/// that generates chat natively throws `LlamaUnsupportedException`.
 abstract class BackendTokenLogprobsReporting {
   /// Returns the entries of [generation], a stream this backend returned
   /// from a generation call that set [GenerationParams.topLogprobs], that
