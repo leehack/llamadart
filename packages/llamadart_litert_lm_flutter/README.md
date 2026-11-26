@@ -38,7 +38,7 @@ normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.20.0`.
 The runtime loads dedicated ASR `.litertlm` containers such as Whisper tiny.
 
-Companion `0.21.x` pairs with core `0.22.x`. The published `0.20.x` companion
+Companion `0.22.x` pairs with core `0.22.x`. The published `0.20.x` companion
 uses the `v0.19.1` runtime line. Earlier pairings are in the
 [changelog](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md).
 
