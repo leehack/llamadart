@@ -174,7 +174,7 @@ stream rules of each format.
 
 ### BOS and EOS in llama.cpp templates
 
-On native llama.cpp and on the Web with bridge assets `v0.1.95` or newer,
+On native llama.cpp and on the Web with bridge assets `v0.1.95+`,
 `engine.getMetadata()` reports the vocabulary's BOS and EOS token text as
 `tokenizer.ggml.bos_token` and `tokenizer.ggml.eos_token`, resolved as
 llama.cpp resolves them (including its default ids for a vocabulary that sets
@@ -185,7 +185,7 @@ On the Web, the bridge also reports the effective
 `tokenizer.ggml.add_bos_token` (`"true"` or `"false"`). When it is `"true"`,
 llamadart removes the leading BOS text a template rendered, because the bridge
 adds BOS itself. When it is `"false"`, a BOS rendered by the template is sent
-as written. Assets before `v0.1.95` report none of the three keys: templates
+as written. Older assets report none of the three keys: templates
 render the default BOS and EOS text (such as `<s>` and `</s>`), and the
 leading BOS is removed as if `add_bos_token` were `"true"`.
 

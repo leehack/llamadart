@@ -1772,8 +1772,8 @@ and `tokenizer.ggml.eos_token` text and that a chat-template prompt tokenizes to
 the ids an unmodified `llama-server` returns
 (`test/fixtures/bos_eos_prompt_tokens_upstream.json`), in direct and worker
 runtimes on CPU Wasm. The same fixture backs the native
-`gguf_bos_eos_prompt_tokens_e2e_test.dart`. Bridge assets before `v0.1.95` omit
-the metadata, so this scenario fails on them. Stage
+`gguf_bos_eos_prompt_tokens_e2e_test.dart`. Older bridge assets omit the
+metadata, so this scenario fails on them. Stage
 `build/web_bos_eos_prompt_tokens/config.json`:
 
 ```json
