@@ -73,12 +73,14 @@ File writeSyntheticModernBertGguf(
 /// whose runtime forces non-causal attention even with a true metadata value.
 /// [uint32Metadata] adds keys the architecture loader ignores. [bosText]
 /// replaces the text of the `<s>` token. [tokenizerModel] replaces the
-/// default `llama` vocabulary type.
+/// default `llama` vocabulary type. [int32ArrayMetadata] adds int32 array
+/// keys such as `tokenizer.ggml.suppress_tokens`.
 File writeSyntheticLlamaGguf(
   String path, {
   String architecture = 'llama',
   Map<String, int> uint32Metadata = const {},
   Map<String, String> stringMetadata = const {},
+  Map<String, List<int>> int32ArrayMetadata = const {},
   int? eosTokenId,
   int? poolingType,
   bool? causalAttention,
@@ -114,6 +116,8 @@ File writeSyntheticLlamaGguf(
         key: _GgufValue.uint32(value),
       for (final MapEntry(:key, :value) in stringMetadata.entries)
         key: _GgufValue.string(value),
+      for (final MapEntry(:key, :value) in int32ArrayMetadata.entries)
+        key: _GgufValue.int32s(value),
     },
     tensors: {
       'token_embd.weight': _weights(random, [_embd, _tokens.length]),

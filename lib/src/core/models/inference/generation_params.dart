@@ -887,6 +887,24 @@ enum SamplerControl {
 
   /// Applies [GenerationParams.logitBias].
   logitBias,
+
+  /// Applies [GenerationParams.typicalP].
+  typicalP,
+
+  /// Applies [GenerationParams.topNSigma].
+  topNSigma,
+
+  /// Applies [GenerationParams.xtcProbability] and
+  /// [GenerationParams.xtcThreshold].
+  xtc,
+
+  /// Applies [GenerationParams.dynatempRange] and
+  /// [GenerationParams.dynatempExponent].
+  dynamicTemperature,
+
+  /// Applies [GenerationParams.mirostat], [GenerationParams.mirostatTau] and
+  /// [GenerationParams.mirostatEta].
+  mirostat,
 }
 
 /// Parameters controlling the token sampling and generation process.
@@ -977,6 +995,58 @@ class GenerationParams {
   /// or a [thinkingBudget], and at least one token must remain unsuppressed.
   /// Model suppression and [ignoreEos] still apply.
   final Map<int, double> logitBias;
+
+  /// Locally typical sampling threshold on native llama.cpp, in (0, 1].
+  ///
+  /// The default, 1.0, disables it.
+  final double typicalP;
+
+  /// Top-n-sigma threshold on native llama.cpp: keeps tokens whose logit is
+  /// within this many standard deviations of the highest one.
+  ///
+  /// The default, -1, disables it; otherwise the value must be positive and
+  /// finite.
+  final double topNSigma;
+
+  /// Chance, in [0, 1], that the exclude-top-choices (XTC) sampler removes
+  /// every candidate at or above [xtcThreshold] except the least likely one,
+  /// on native llama.cpp. The default, 0.0, disables XTC.
+  final double xtcProbability;
+
+  /// Probability a candidate needs for XTC to remove it, in (0, 0.5].
+  ///
+  /// Native llama.cpp turns XTC off above 0.5, so larger values throw.
+  final double xtcThreshold;
+
+  /// Dynamic temperature range on native llama.cpp: [temp] varies by this
+  /// amount around its value with the candidates' entropy.
+  ///
+  /// The default, 0.0, keeps [temp] fixed. [temp] minus this range must be at
+  /// least 0.01 as a 32-bit float, and it cannot be combined with a grammar (including one from
+  /// tools or a response format), a [thinkingBudget], [ignoreEos],
+  /// model-suppressed tokens or a [logitBias] of [double.negativeInfinity]:
+  /// llama.cpp can then select a masked token.
+  final double dynatempRange;
+
+  /// Exponent that maps normalized entropy to the dynamic temperature when
+  /// [dynatempRange] is positive; must be positive and finite.
+  final double dynatempExponent;
+
+  /// Mirostat mode on native llama.cpp: 0 disables it, 1 and 2 select
+  /// Mirostat versions 1 and 2.
+  ///
+  /// Mirostat replaces the top-K, top-P, min-P and `dist` stages of the
+  /// sampler chain with temperature followed by Mirostat; penalties,
+  /// [logitBias] and the grammar still apply. Combining it with [typicalP],
+  /// [topNSigma], XTC or dynamic temperature, or with a [temp] of zero,
+  /// throws `LlamaArgumentException`.
+  final int mirostat;
+
+  /// Mirostat target surprise, positive and finite.
+  final double mirostatTau;
+
+  /// Mirostat learning rate, positive and finite.
+  final double mirostatEta;
 
   /// Random seed for the sampler.
   ///
@@ -1124,6 +1194,15 @@ class GenerationParams {
     this.frequencyPenalty = 0.0,
     this.penaltyLastN = 64,
     this.logitBias = const {},
+    this.typicalP = 1.0,
+    this.topNSigma = -1.0,
+    this.xtcProbability = 0.0,
+    this.xtcThreshold = 0.1,
+    this.dynatempRange = 0.0,
+    this.dynatempExponent = 1.0,
+    this.mirostat = 0,
+    this.mirostatTau = 5.0,
+    this.mirostatEta = 0.1,
     this.seed,
     this.stopSequences = const [],
     this.ignoreEos = false,
@@ -1167,6 +1246,15 @@ class GenerationParams {
     double? frequencyPenalty,
     int? penaltyLastN,
     Map<int, double>? logitBias,
+    double? typicalP,
+    double? topNSigma,
+    double? xtcProbability,
+    double? xtcThreshold,
+    double? dynatempRange,
+    double? dynatempExponent,
+    int? mirostat,
+    double? mirostatTau,
+    double? mirostatEta,
     int? seed,
     List<String>? stopSequences,
     bool? ignoreEos,
@@ -1197,6 +1285,15 @@ class GenerationParams {
       frequencyPenalty: frequencyPenalty ?? this.frequencyPenalty,
       penaltyLastN: penaltyLastN ?? this.penaltyLastN,
       logitBias: logitBias ?? this.logitBias,
+      typicalP: typicalP ?? this.typicalP,
+      topNSigma: topNSigma ?? this.topNSigma,
+      xtcProbability: xtcProbability ?? this.xtcProbability,
+      xtcThreshold: xtcThreshold ?? this.xtcThreshold,
+      dynatempRange: dynatempRange ?? this.dynatempRange,
+      dynatempExponent: dynatempExponent ?? this.dynatempExponent,
+      mirostat: mirostat ?? this.mirostat,
+      mirostatTau: mirostatTau ?? this.mirostatTau,
+      mirostatEta: mirostatEta ?? this.mirostatEta,
       seed: seed ?? this.seed,
       stopSequences: stopSequences ?? this.stopSequences,
       ignoreEos: ignoreEos ?? this.ignoreEos,

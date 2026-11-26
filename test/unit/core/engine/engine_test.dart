@@ -6019,17 +6019,27 @@ void main() {
         frequencyPenalty: 1,
         penaltyLastN: 0,
         logitBias: {3: 2},
+        typicalP: 0.5,
+        topNSigma: 1,
+        xtcProbability: 0.5,
+        dynatempRange: 0.5,
+        mirostat: 2,
       );
       final error = emitsError(
         isA<LlamaUnsupportedException>().having(
           (error) => error.message,
           'message',
-          allOf(
+          allOf([
             contains(backend.backendName),
             contains('frequencyPenalty'),
             contains('penaltyLastN'),
             contains('logitBias'),
-          ),
+            contains('typicalP'),
+            contains('topNSigma'),
+            contains('xtc'),
+            contains('dynamicTemperature'),
+            contains('mirostat'),
+          ]),
         ),
       );
       await expectLater(engine.generate('hello', params: params), error);

@@ -452,6 +452,15 @@ const params = GenerationParams(
   frequencyPenalty: 0.0,
   penaltyLastN: 64,
   logitBias: {},
+  typicalP: 1.0,
+  topNSigma: -1.0,
+  xtcProbability: 0.0,
+  xtcThreshold: 0.1,
+  dynatempRange: 0.0,
+  dynatempExponent: 1.0,
+  mirostat: 0,
+  mirostatTau: 5.0,
+  mirostatEta: 0.1,
   topLogprobs: null,
   stopSequences: ['</s>'],
   thinkingBudget: null,
@@ -488,6 +497,39 @@ Important fields:
   generated token. `null` (the default) reports none, 0 reports the sampled
   token, and N up to 20 adds the N most probable alternatives. See
   [Token log-probabilities](#token-log-probabilities).
+- `typicalP`: locally typical sampling on native llama.cpp, in (0, 1]. The
+  default, 1.0, disables it.
+- `topNSigma`: keeps tokens whose logit is within this many standard
+  deviations of the highest one, on native llama.cpp. The default, -1,
+  disables it; other values must be positive and finite.
+- `xtcProbability` and `xtcThreshold`: exclude-top-choices sampling on native
+  llama.cpp. With the given probability it removes every candidate at or above
+  `xtcThreshold` (greater than 0, at most 0.5; default 0.1) except the least
+  likely one. The default probability, 0, disables it, and a threshold needs a
+  positive probability.
+- `dynatempRange` and `dynatempExponent`: dynamic temperature on native
+  llama.cpp. A positive range varies `temp` by up to that amount with the
+  entropy of the candidates, shaped by the exponent (default 1). `temp` minus
+  the range must be at least 0.01 as a 32-bit float (`temp: 1` with a range of
+  0.99 throws), so the lowest temperature cannot overflow the logits, and an exponent needs a positive range. A non-empty grammar
+  (including one from tools or `responseFormat`), a thinking budget,
+  `ignoreEos`, model-suppressed tokens or a negative-infinity `logitBias`
+  throw `LlamaUnsupportedException`, because llama.cpp can then select a
+  masked token ([llamadart-native#235](https://github.com/leehack/llamadart-native/issues/235)).
+- `mirostat`, `mirostatTau` and `mirostatEta`: Mirostat 1 or 2 on native
+  llama.cpp (0 disables it); `mirostatTau` (default 5) and `mirostatEta`
+  (default 0.1) must be positive and need a non-zero mode. Mirostat replaces
+  the top-K, top-P, min-P and `dist` stages with temperature followed by
+  Mirostat; penalties, `logitBias` and the grammar still apply. A positive
+  `temp` is required, and `typicalP`, `topNSigma`, XTC and dynamic
+  temperature throw `LlamaArgumentException` with it instead of being ignored.
+  llama.cpp's own sampler setup also drops the penalties in Mirostat mode;
+  llamadart keeps them, so set `penalty: 1` and no presence or frequency
+  penalty to match it.
+  Without Mirostat the samplers run in the order top-n-sigma, top-K, typical,
+  top-P, min-P, XTC, then temperature. Invalid values throw
+  `LlamaArgumentException` before decoding. Every value is checked as the
+  32-bit float llama.cpp receives, so one that rounds to 0 or infinity throws.
 - `presencePenalty`: llama.cpp presence penalty (finite, -100 to 100 on native
   llama.cpp); `0.0` preserves the
   existing behavior. WebGPU applies it only with bridge assets whose
@@ -557,7 +599,7 @@ reject unsupported non-default options as described below.
 | --- | --- | --- | --- | --- | --- |
 | `penalty` | `supportsPenalty` | Yes | Yes | Runtime export resolves | No |
 | `presencePenalty` | `supportsPresencePenalty` | Yes | Bridge reports | Runtime export resolves | No |
-| `frequencyPenalty`, `penaltyLastN`, `logitBias` | `samplerControls` | Yes | No | No | No |
+| `frequencyPenalty`, `penaltyLastN`, `logitBias`, `typicalP`, `topNSigma`, XTC, dynamic temperature, `mirostat` | `samplerControls` | Yes | No | No | No |
 | `topLogprobs` | `supportsTokenLogprobs` | Yes, without speculative decoding | No | No | No |
 | `minP` | `supportsMinP` | Yes | Bridge reports | No | No |
 | `thinkingBudget` | `supportsThinkingBudget` | Runtime export resolves | Bridge reports | Runtime export resolves and the bundle declares a thinking channel | No |

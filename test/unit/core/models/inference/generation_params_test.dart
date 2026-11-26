@@ -14,6 +14,15 @@ void main() {
       frequencyPenalty: 0.75,
       penaltyLastN: -1,
       logitBias: const {21: -3},
+      typicalP: 0.9,
+      topNSigma: 2,
+      xtcProbability: 0.4,
+      xtcThreshold: 0.2,
+      dynatempRange: 0.3,
+      dynatempExponent: 2,
+      mirostat: 2,
+      mirostatTau: 4,
+      mirostatEta: 0.2,
       ignoreEos: true,
       grammarRoot: 'main',
       grammarLazy: true,
@@ -49,6 +58,15 @@ void main() {
     expect(copied.penaltyLastN, -1);
     expect(copied.logitBias, {21: -3.0});
     expect(copied.copyWith(logitBias: const {}).logitBias, isEmpty);
+    expect(copied.typicalP, 0.9);
+    expect(copied.topNSigma, 2);
+    expect(copied.xtcProbability, 0.4);
+    expect(copied.xtcThreshold, 0.2);
+    expect(copied.dynatempRange, 0.3);
+    expect(copied.dynatempExponent, 2);
+    expect(copied.mirostat, 2);
+    expect(copied.mirostatTau, 4);
+    expect(copied.mirostatEta, 0.2);
     expect(copied.topLogprobs, isNull);
     final scored = copied.copyWith(topLogprobs: 5);
     expect(scored.topLogprobs, 5);
@@ -103,6 +121,15 @@ void main() {
     expect(params.frequencyPenalty, 0.0);
     expect(params.penaltyLastN, 64);
     expect(params.logitBias, isEmpty);
+    expect(params.typicalP, 1.0);
+    expect(params.topNSigma, -1.0);
+    expect(params.xtcProbability, 0.0);
+    expect(params.xtcThreshold, 0.1);
+    expect(params.dynatempRange, 0.0);
+    expect(params.dynatempExponent, 1.0);
+    expect(params.mirostat, 0);
+    expect(params.mirostatTau, 5.0);
+    expect(params.mirostatEta, 0.1);
     expect(params.topLogprobs, isNull);
     expect(params.speculativeDecoding, isFalse);
     expect(params.speculativeDecodingConfig, isNull);

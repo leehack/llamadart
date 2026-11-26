@@ -459,6 +459,16 @@
     },
     {
       "surfaces": [
+        "matrix:typicalP, topNSigma, xtcProbability/xtcThreshold, dynatempRange/dynatempExponent, mirostat/mirostatTau/mirostatEta"
+      ],
+      "exemption": {
+        "id": "native-extended-sampler-controls",
+        "reason": "The sampler_controls pack has no cases for typical-P, top-n-sigma, XTC, dynamic temperature or Mirostat. Synthetic GGUF VM tests check sampler-chain order, deterministic behavior, single-token grammars and pre-decode validation; VM and Chrome tests check unavailable runtimes. The pack follow-up adds model-backed reproducibility.",
+        "issue": "https://github.com/leehack/llamadart/issues/2307"
+      }
+    },
+    {
+      "surfaces": [
         "capability:LlamaEngineCapabilities.supportsTokenLogprobs",
         "matrix:topLogprobs"
       ],
