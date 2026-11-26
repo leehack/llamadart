@@ -271,6 +271,19 @@ void main() {
     );
   });
 
+  test('token log-probabilities are unavailable unless declared', () {
+    const generation = BackendGenerationCapabilities(
+      presencePenalty: false,
+      minP: false,
+      thinkingBudget: false,
+    );
+    expect(generation.tokenLogprobs, isFalse);
+    expect(
+      const LlamaEngineCapabilities(isSupported: true).supportsTokenLogprobs,
+      isFalse,
+    );
+  });
+
   test('reports a single-turn LiteRT-LM web runtime', () async {
     final engine = await loaded(
       _RuntimeBackend(
