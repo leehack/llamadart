@@ -43,8 +43,9 @@ Backport the patch changelog import (PR3b) before the `0.22.0` prep.
   [patch plan](https://github.com/leehack/llamadart/blob/main/doc/patch_plan_template.md)
   for `release/M.m.x`. Track follow-ups as individual triaged issues.
   The next minor prep will import the published patch changelog sections
-  verbatim from their tags. Keep patch publication outside an open minor
-  prep so its notes receipt stays current.
+  verbatim from their tags. Each patch tag outside main's first-parent chain
+  must fork from the previous minor tag. Pause patch publication from the start
+  of minor prep until the minor is tagged so its notes receipt stays current.
 
 Configure the GitHub ruleset manually for `release/*.x`. Restrict deletion
 and force pushes, require squash PRs and Copilot review, and start with no
