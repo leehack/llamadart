@@ -9,6 +9,7 @@ import 'package:yaml/yaml.dart';
 const _posixOnly = 'runs workflow scripts under a POSIX Bash runtime';
 
 const _releaseWorkflow = '.github/workflows/release_on_prep_merge.yml';
+const _corePublishWorkflow = '.github/workflows/publish_pubdev.yml';
 const _companionWorkflow = '.github/workflows/publish_companion_pubdev.yml';
 const _ciWorkflow = '.github/workflows/ci.yml';
 
@@ -45,10 +46,16 @@ fi
   'sleep': '',
   'gh': r'''
 if [[ "$1" == release ]]; then
+  if [[ "$2" == view && -f "$STUB_STATE/release_missing" ]]; then
+    exit 1
+  fi
   exit 0
 fi
 ''',
   'git': r'''
+if [[ -n "${REAL_GIT_PATH:-}" ]]; then
+  PATH="$REAL_GIT_PATH" exec git "$@"
+fi
 case "$1" in
   rev-parse)
     if [[ "$*" == *'^1' ]]; then
@@ -997,6 +1004,95 @@ void main() {
   setUpAll(() {
     if (!Platform.isWindows) _stubBin = _writeStubs();
   });
+
+  group('publish_pubdev.yml', () {
+    final step = _step(
+      _read(_corePublishWorkflow),
+      'create-release',
+      'Create or update release',
+    );
+
+    late _Sandbox sandbox;
+
+    void git(List<String> args) {
+      final result = Process.runSync(
+        'git',
+        args,
+        workingDirectory: sandbox.root,
+        environment: {
+          'GIT_CONFIG_GLOBAL': '/dev/null',
+          'GIT_CONFIG_NOSYSTEM': '1',
+          'GIT_AUTHOR_NAME': 'Test',
+          'GIT_AUTHOR_EMAIL': 'test@example.com',
+          'GIT_COMMITTER_NAME': 'Test',
+          'GIT_COMMITTER_EMAIL': 'test@example.com',
+        },
+      );
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+    }
+
+    ProcessResult run(String tag) => sandbox.run(
+      step,
+      workingDirectory: sandbox.root,
+      env: {
+        'GITHUB_REF_NAME': tag,
+        'REAL_GIT_PATH': Platform.environment['PATH']!,
+      },
+    );
+
+    setUp(() {
+      sandbox = _Sandbox();
+      git(['init', '-q']);
+      git(['commit', '--allow-empty', '-qm', 'Release']);
+      for (final tag in [
+        'v1.9.99',
+        'v1.10.9',
+        'v1.10.10',
+        'v2.0.0-rc.1',
+        'v2.0.0+build',
+        'v01.99.99',
+        'llamadart_llama_cpp_flutter-v3.0.0',
+      ]) {
+        git(['tag', tag]);
+      }
+      git(['remote', 'add', 'origin', sandbox.root]);
+      sandbox.file('release_notes.md', 'Release notes.\n');
+    });
+
+    for (final operation in ['create', 'edit']) {
+      for (final (tag, latest) in [
+        ('v1.10.10', '--latest'),
+        ('v1.9.99', '--latest=false'),
+        ('v2.0.0-rc.1', '--latest=false'),
+      ]) {
+        test('$operation $tag uses $latest', () {
+          if (operation == 'create') sandbox.file('state/release_missing', '');
+          final result = run(tag);
+          expect(result.exitCode, 0, reason: '${result.stderr}');
+          expect(
+            sandbox.calls.where(
+              (call) => call.startsWith('gh release $operation '),
+            ),
+            [
+              'gh release $operation $tag --title $tag --notes-file release_notes.md '
+                  '${operation == 'create' ? '--verify-tag ' : ''}$latest',
+            ],
+          );
+        });
+      }
+    }
+
+    test('a failed remote tag lookup performs no GitHub release write', () {
+      git(['remote', 'set-url', 'origin', '${sandbox.root}/missing']);
+      final result = run('v1.10.10');
+      expect(result.exitCode, isNonZero);
+      expect(result.stderr, contains('does not appear to be a git repository'));
+      expect(
+        sandbox.calls.where((call) => call.startsWith('gh release ')),
+        isEmpty,
+      );
+    });
+  }, skip: Platform.isWindows ? _posixOnly : false);
 
   group('release_on_prep_merge.yml', () {
     final workflow = _read(_releaseWorkflow);

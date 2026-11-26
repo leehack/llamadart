@@ -42,6 +42,25 @@ void main() {
     );
   });
 
+  test('orders stable versions numerically across release lines', () {
+    write('versions.json', '["0.10.0", "0.9.10", "0.9.2"]');
+    expect(cutDocsVersion(root.path, '0.9.3'), isTrue);
+    expect(jsonDecode(read('versions.json')), [
+      '0.10.0',
+      '0.9.10',
+      '0.9.3',
+      '0.9.2',
+    ]);
+    expect(cutDocsVersion(root.path, '0.8.1'), isTrue);
+    expect(jsonDecode(read('versions.json')), [
+      '0.10.0',
+      '0.9.10',
+      '0.9.3',
+      '0.9.2',
+      '0.8.1',
+    ]);
+  });
+
   test('rejects malformed versions and half-written snapshots', () {
     expect(() => cutDocsVersion(root.path, 'v0.2.0'), throwsArgumentError);
     expect(() => cutDocsVersion(root.path, '0.2.0-dev'), throwsArgumentError);
