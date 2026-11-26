@@ -81,6 +81,7 @@ class NativeAutoBackend
         BackendGenerationLimitReporting,
         BackendGenerationLimitSupport,
         BackendGenerationUsageReporting,
+        BackendTokenLogprobsReporting,
         BackendRuntimePromptTokenization,
         BackendDartLogLevel {
   final LlamaBackend Function() _llamaCppFactory;
@@ -399,6 +400,19 @@ class NativeAutoBackend
       );
     }
     return null;
+  }
+
+  @override
+  List<LlamaGeneratedTokenLogprobs> takeTokenLogprobs(
+    Stream<List<int>> generation,
+  ) {
+    final delegate = _delegate;
+    if (delegate is BackendTokenLogprobsReporting) {
+      return (delegate as BackendTokenLogprobsReporting).takeTokenLogprobs(
+        generation,
+      );
+    }
+    return const [];
   }
 
   @override

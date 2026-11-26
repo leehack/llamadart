@@ -581,6 +581,69 @@ void main() {
       );
     }
 
+    group('token log-probabilities', () {
+      Future<List<TokenResponse>> tokenResponses(
+        GenerationParams params,
+      ) async {
+        final worker = await _startWorkerInCurrentIsolate(
+          _LogprobsGenerationLlamaCppService(),
+        );
+        final responsePort = ReceivePort();
+        final tokens = <TokenResponse>[];
+        try {
+          final responses = StreamIterator<Object?>(responsePort);
+          worker.sendPort.send(
+            GenerateRequest(1, 'hello', params, 0, responsePort.sendPort),
+          );
+          while (await responses.moveNext()) {
+            final response = responses.current;
+            if (response is TokenResponse) tokens.add(response);
+            if (response is DoneResponse) break;
+          }
+          await responses.cancel();
+        } finally {
+          responsePort.close();
+          await _disposeWorker(worker);
+        }
+        return tokens;
+      }
+
+      List<String> shape(List<TokenResponse> responses) => [
+        for (final response in responses)
+          '${response.bytes} '
+              '${response.logprobs?.map((entry) => entry.sampled.token)}',
+      ];
+
+      test('rides the batch that carries its bytes', () async {
+        final responses = await tokenResponses(
+          const GenerationParams(streamBatchTokenThreshold: 1, topLogprobs: 0),
+        );
+
+        expect(shape(responses), [
+          '[97] (1)',
+          '[98] (2)',
+          '[99] (3)',
+          '[] (4)',
+        ]);
+      });
+
+      test('flushes the entries of a batched tail with it', () async {
+        final responses = await tokenResponses(
+          const GenerationParams(streamBatchTokenThreshold: 8, topLogprobs: 0),
+        );
+
+        expect(shape(responses), ['[97] (1)', '[98, 99] (2, 3, 4)']);
+      });
+
+      test('sends no entries when the request asked for none', () async {
+        final responses = await tokenResponses(
+          const GenerationParams(streamBatchTokenThreshold: 1),
+        );
+
+        expect(shape(responses), ['[97] null', '[98] null', '[99] null']);
+      });
+    });
+
     test('sends no generation usage for an unknown context', () async {
       final worker = await _startWorkerInCurrentIsolate(
         _LimitedGenerationLlamaCppService(null),
@@ -1627,6 +1690,7 @@ class _BlockingLlamaCppService extends LlamaCppService {
     bool countPromptTokensInPenalties = false,
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
+    void Function(List<LlamaGeneratedTokenLogprobs> logprobs)? onTokenLogprobs,
   }) async* {
     if (!generateStarted.isCompleted) {
       generateStarted.complete();
@@ -1693,6 +1757,7 @@ class _UnsupportedGenerationLlamaCppService extends LlamaCppService {
     bool countPromptTokensInPenalties = false,
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
+    void Function(List<LlamaGeneratedTokenLogprobs> logprobs)? onTokenLogprobs,
   }) async* {
     throw LlamaUnsupportedException(
       'missing reasoning-budget wrapper in this test runtime',
@@ -1832,6 +1897,7 @@ class _PromptRecordingLlamaCppService extends LlamaCppService {
     bool countPromptTokensInPenalties = false,
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
+    void Function(List<LlamaGeneratedTokenLogprobs> logprobs)? onTokenLogprobs,
   }) {
     penaltyPolicies.add(countPromptTokensInPenalties);
     callerPrompts.add(prompt);
@@ -1848,6 +1914,7 @@ class _PromptRecordingLlamaCppService extends LlamaCppService {
     bool countPromptTokensInPenalties = false,
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
+    void Function(List<LlamaGeneratedTokenLogprobs> logprobs)? onTokenLogprobs,
   }) {
     penaltyPolicies.add(countPromptTokensInPenalties);
     chatPrompts.add((prompt, mediaMarker));
@@ -1878,6 +1945,7 @@ class _UsageReportingLlamaCppService extends LlamaCppService {
     bool countPromptTokensInPenalties = false,
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
+    void Function(List<LlamaGeneratedTokenLogprobs> logprobs)? onTokenLogprobs,
   }) async* {
     yield const <int>[];
     await Future<void>.delayed(firstTextDelay);
@@ -1890,6 +1958,42 @@ class _UsageReportingLlamaCppService extends LlamaCppService {
   lastGenerationTokenCounts(int contextHandle) => contextHandle == 7
       ? (promptTokens: 11, cachedPromptTokens: 4, completionTokens: 2)
       : null;
+
+  @override
+  void dispose() {}
+}
+
+class _LogprobsGenerationLlamaCppService extends LlamaCppService {
+  @override
+  void initializeBackend() {}
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params,
+    int cancelTokenAddress, {
+    bool countPromptTokensInPenalties = false,
+    List<LlamaContentPart>? parts,
+    void Function(BackendGenerationLimit limit)? onLimit,
+    void Function(List<LlamaGeneratedTokenLogprobs> logprobs)? onTokenLogprobs,
+  }) async* {
+    LlamaGeneratedTokenLogprobs entry(int token, List<int> bytes) =>
+        LlamaGeneratedTokenLogprobs(
+          sampled: LlamaTokenLogprob(token: token, bytes: bytes, logprob: -1),
+          top: const [],
+        );
+    for (final (token, byte) in [(1, 97), (2, 98), (3, 99)]) {
+      onTokenLogprobs?.call([
+        entry(token, [byte]),
+      ]);
+      yield [byte];
+    }
+    onTokenLogprobs?.call([entry(4, const [])]);
+  }
 
   @override
   void dispose() {}
@@ -1915,6 +2019,7 @@ class _LimitedGenerationLlamaCppService extends LlamaCppService {
     bool countPromptTokensInPenalties = false,
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
+    void Function(List<LlamaGeneratedTokenLogprobs> logprobs)? onTokenLogprobs,
   }) async* {
     yield <int>[104, 105];
     final reached = limit;
@@ -1943,6 +2048,7 @@ class _InferenceGenerationLlamaCppService extends LlamaCppService {
     bool countPromptTokensInPenalties = false,
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
+    void Function(List<LlamaGeneratedTokenLogprobs> logprobs)? onTokenLogprobs,
   }) async* {
     throw LlamaInferenceException(
       'grammar sampler failed in this test runtime',

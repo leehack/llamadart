@@ -14,6 +14,7 @@ const _llamaCppGeneration = BackendGenerationCapabilities(
   streamBatching: true,
   ignoreEos: true,
   samplerControls: {SamplerControl.frequencyPenalty, SamplerControl.logitBias},
+  tokenLogprobs: true,
   speculativeDecodingStrategies: <SpeculativeDecodingStrategy>{
     SpeculativeDecodingStrategy.ngramMod,
     SpeculativeDecodingStrategy.mtp,
@@ -199,6 +200,7 @@ void main() {
     expect(textOnly.supportsStreamBatching, isTrue);
     expect(textOnly.supportsIgnoreEos, isTrue);
     expect(textOnly.samplerControls, _llamaCppGeneration.samplerControls);
+    expect(textOnly.supportsTokenLogprobs, isTrue);
     expect(
       textOnly.speculativeDecodingStrategies,
       _llamaCppGeneration.speculativeDecodingStrategies,
@@ -262,6 +264,7 @@ void main() {
     expect(capabilities.supportsStreamBatching, isTrue);
     expect(capabilities.supportsIgnoreEos, isFalse);
     expect(capabilities.samplerControls, isEmpty);
+    expect(capabilities.supportsTokenLogprobs, isFalse);
     expect(
       capabilities.speculativeDecodingStrategies,
       _liteRtLmNativeGeneration.speculativeDecodingStrategies,

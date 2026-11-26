@@ -38,6 +38,55 @@ void main() {
       expect(request.parallelToolCalls, isTrue);
     });
 
+    test('maps logprobs and top_logprobs to topLogprobs', () {
+      Map<String, dynamic> body(Map<String, dynamic> extra) => {
+        'model': 'llamadart-local',
+        'messages': [
+          {'role': 'user', 'content': 'Hello'},
+        ],
+        ...extra,
+      };
+      int? topLogprobs(Map<String, dynamic> extra) =>
+          parseChatCompletionRequest(
+            body(extra),
+            configuredModelId: 'llamadart-local',
+          ).params.topLogprobs;
+
+      expect(topLogprobs({}), isNull);
+      expect(topLogprobs({'logprobs': false}), isNull);
+      expect(topLogprobs({'logprobs': true}), 0);
+      expect(topLogprobs({'logprobs': true, 'top_logprobs': 5}), 5);
+      expect(topLogprobs({'logprobs': true, 'top_logprobs': 20}), 20);
+    });
+
+    test('rejects invalid logprobs requests with a 400 response', () {
+      for (final extra in <Map<String, dynamic>>[
+        {'top_logprobs': 2},
+        {'logprobs': false, 'top_logprobs': 2},
+        {'logprobs': true, 'top_logprobs': 21},
+        {'logprobs': true, 'top_logprobs': -1},
+        {'logprobs': 'yes'},
+      ]) {
+        expect(
+          () => parseChatCompletionRequest(<String, dynamic>{
+            'model': 'llamadart-local',
+            'messages': [
+              {'role': 'user', 'content': 'Hello'},
+            ],
+            ...extra,
+          }, configuredModelId: 'llamadart-local'),
+          throwsA(
+            isA<OpenAiHttpException>().having(
+              (error) => error.statusCode,
+              'statusCode',
+              400,
+            ),
+          ),
+          reason: '$extra',
+        );
+      }
+    });
+
     test('rejects invalid logit_bias with a 400 response', () {
       for (final bias in [
         false,
@@ -654,6 +703,96 @@ void main() {
 
       expect(delta['reasoning_content'], 'I should call a tool.');
       expect(delta.containsKey('content'), isFalse);
+    });
+  });
+
+  group('logprobs responses', () {
+    final entry = LlamaGeneratedTokenLogprobs(
+      sampled: LlamaTokenLogprob(token: 7, bytes: const [72], logprob: -0.5),
+      top: [
+        LlamaTokenLogprob(token: 8, bytes: const [73], logprob: -1.5),
+      ],
+    );
+    final expected = {
+      'content': [
+        {
+          'token': 'H',
+          'id': 7,
+          'logprob': -0.5,
+          'bytes': [72],
+          'top_logprobs': [
+            {
+              'token': 'I',
+              'id': 8,
+              'logprob': -1.5,
+              'bytes': [73],
+            },
+          ],
+        },
+      ],
+    };
+
+    LlamaCompletionChunk chunk({List<LlamaGeneratedTokenLogprobs>? logprobs}) =>
+        LlamaCompletionChunk(
+          id: 'chatcmpl-123',
+          object: 'chat.completion.chunk',
+          created: 123,
+          model: 'ignored',
+          choices: [
+            LlamaCompletionChunkChoice(
+              index: 0,
+              delta: LlamaCompletionChunkDelta(content: 'H'),
+              logprobs: logprobs,
+            ),
+          ],
+        );
+
+    test('streaming chunks carry the logprobs of their tokens', () {
+      final withLogprobs = toOpenAiChatCompletionChunk(
+        chunk(logprobs: [entry]),
+        model: 'llamadart-local',
+        includeRole: false,
+      );
+      final without = toOpenAiChatCompletionChunk(
+        chunk(),
+        model: 'llamadart-local',
+        includeRole: false,
+      );
+
+      expect((withLogprobs['choices'] as List).first['logprobs'], expected);
+      expect((without['choices'] as List).first, isNot(contains('logprobs')));
+    });
+
+    test('the non-stream response concatenates them', () {
+      final accumulator = OpenAiChatCompletionAccumulator()
+        ..addChunk(chunk(logprobs: [entry]))
+        ..addChunk(chunk(logprobs: [entry]));
+      final response = accumulator.toResponseJson(
+        id: 'chatcmpl-123',
+        created: 123,
+        model: 'llamadart-local',
+        promptTokens: 1,
+        completionTokens: 2,
+      );
+      final choice = (response['choices'] as List).first as Map;
+
+      expect((choice['logprobs'] as Map)['content'], [
+        ...expected['content']!,
+        ...expected['content']!,
+      ]);
+    });
+
+    test('the non-stream response has no logprobs unless requested', () {
+      final accumulator = OpenAiChatCompletionAccumulator()..addChunk(chunk());
+      final response = accumulator.toResponseJson(
+        id: 'chatcmpl-123',
+        created: 123,
+        model: 'llamadart-local',
+        promptTokens: 1,
+        completionTokens: 2,
+      );
+
+      expect((response['choices'] as List).first, isNot(contains('logprobs')));
     });
   });
 

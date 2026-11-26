@@ -49,6 +49,12 @@ void main() {
     expect(copied.penaltyLastN, -1);
     expect(copied.logitBias, {21: -3.0});
     expect(copied.copyWith(logitBias: const {}).logitBias, isEmpty);
+    expect(copied.topLogprobs, isNull);
+    final scored = copied.copyWith(topLogprobs: 5);
+    expect(scored.topLogprobs, 5);
+    expect(scored.copyWith(seed: 1).topLogprobs, 5);
+    expect(scored.copyWith(topLogprobs: 0).topLogprobs, 0);
+    expect(scored.copyWith(clearTopLogprobs: true).topLogprobs, isNull);
     expect(updated.ignoreEos, isTrue);
     expect(const GenerationParams().ignoreEos, isFalse);
     expect(updated.copyWith(temp: 1).ignoreEos, isTrue);
@@ -97,6 +103,7 @@ void main() {
     expect(params.frequencyPenalty, 0.0);
     expect(params.penaltyLastN, 64);
     expect(params.logitBias, isEmpty);
+    expect(params.topLogprobs, isNull);
     expect(params.speculativeDecoding, isFalse);
     expect(params.speculativeDecodingConfig, isNull);
     expect(params.isSpeculativeDecodingEnabled, isFalse);

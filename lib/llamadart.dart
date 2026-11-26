@@ -46,7 +46,7 @@ export 'src/core/diagnostics/runtime_setup_report.dart'
 
 // Engine & Chat
 export 'src/core/engine/engine.dart'
-    show LlamaEngine, LlamaEngineCompletionExtension;
+    show LlamaEngine, LlamaEngineCompletionExtension, rawTokenLogprobs;
 export 'src/core/engine/engine_capabilities.dart';
 export 'src/core/engine/llamadart_engine.dart';
 export 'src/core/engine/engine_observer.dart';

@@ -6039,6 +6039,185 @@ void main() {
     },
   );
 
+  group('LlamaEngine token log-probabilities', () {
+    const messages = [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+    ];
+    const params = GenerationParams(topLogprobs: 1);
+
+    LlamaGeneratedTokenLogprobs entry(int token, List<int> bytes) =>
+        LlamaGeneratedTokenLogprobs(
+          sampled: LlamaTokenLogprob(token: token, bytes: bytes, logprob: -1),
+          top: const [],
+        );
+
+    for (final (name, capability, reports) in [
+      ('a runtime that does not advertise them', false, true),
+      ('a backend that cannot report them', true, false),
+    ]) {
+      test('rejects $name before generating', () async {
+        final backend = reports
+            ? _LogprobsMockBackend(capability: capability)
+            : _CapabilityOnlyMockBackend();
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await engine.loadModel('qwen-test.gguf');
+        final error = emitsError(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains(backend.backendName), contains('topLogprobs')),
+          ),
+        );
+
+        expect((await engine.capabilities).supportsTokenLogprobs, capability);
+        await expectLater(engine.generate('hi', params: params), error);
+        await expectLater(engine.create(messages, params: params), error);
+        expect(backend.lastGenerationParams, isNull);
+      });
+    }
+
+    test('rejects values outside the range before generating', () async {
+      final backend = _LogprobsMockBackend();
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('qwen-test.gguf');
+
+      for (final top in [-1, GenerationParams.maxTopLogprobs + 1]) {
+        final error = emitsError(
+          isA<LlamaArgumentException>().having(
+            (error) => error.name,
+            'name',
+            'topLogprobs',
+          ),
+        );
+        final bad = GenerationParams(topLogprobs: top);
+        await expectLater(engine.generate('hi', params: bad), error);
+        await expectLater(engine.create(messages, params: bad), error);
+      }
+      expect(backend.lastGenerationParams, isNull);
+    });
+
+    test('reports the capability and requests no entries by default', () async {
+      final backend = _LogprobsMockBackend()..generationChunks = ['ab'];
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('qwen-test.gguf');
+
+      expect((await engine.capabilities).supportsTokenLogprobs, isTrue);
+      final stream = engine.generate('hi');
+      expect(await stream.join(), 'ab');
+      expect(rawTokenLogprobs(stream), isNull);
+      final completion = await engine.create(messages).collect();
+      expect(completion.logprobs, isNull);
+    });
+
+    test('generate places entries by byte offset, early or not', () async {
+      final backend = _LogprobsMockBackend()
+        ..generationChunks = ['a', 'b', 'c']
+        ..entries = [
+          entry(1, [0x61]),
+          entry(2, [0x62]),
+          entry(3, [0x63]),
+        ];
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('qwen-test.gguf');
+
+      final stream = engine.generate('hi', params: params);
+      final list = rawTokenLogprobs(stream)!;
+      final counts = <int>[];
+      await for (final _ in stream) {
+        counts.add(list.length);
+      }
+
+      expect(counts, [1, 2, 3]);
+      expect(list.map((e) => e.sampled.token), [1, 2, 3]);
+    });
+
+    test(
+      'a split character holds its entry until its first byte shows',
+      () async {
+        final backend = _LogprobsMockBackend()
+          ..generationBytes = [
+            [0xC3],
+            [0xA9],
+            [0x61],
+          ]
+          ..entries = [
+            entry(1, [0xC3]),
+            entry(2, [0xA9]),
+            entry(3, [0x61]),
+          ];
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await engine.loadModel('qwen-test.gguf');
+
+        final stream = engine.generate('hi', params: params);
+        final list = rawTokenLogprobs(stream)!;
+        final texts = <String>[];
+        final counts = <int>[];
+        await for (final text in stream) {
+          texts.add(text);
+          counts.add(list.length);
+        }
+
+        expect(texts, ['é', 'a']);
+        expect(counts, [2, 3]);
+      },
+    );
+
+    test('create carries entries on the chunks they arrived with', () async {
+      final backend = _LogprobsMockBackend()
+        ..generationChunks = ['a', 'b', 'c']
+        ..entries = [
+          entry(1, [0x61]),
+          entry(2, [0x62]),
+          entry(3, [0x63]),
+        ];
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('qwen-test.gguf');
+
+      final chunks = await engine.create(messages, params: params).toList();
+      final tokens = [
+        for (final chunk in chunks)
+          [...?chunk.choices.first.logprobs].map((e) => e.sampled.token),
+      ];
+
+      expect(tokens.expand((ids) => ids), [1, 2, 3]);
+      expect(tokens.first, [1]);
+      expect(chunks.last.choices.first.finishReason, 'stop');
+      final completion = await engine
+          .create(messages, params: params)
+          .collect();
+      expect(completion.logprobs!.map((e) => e.sampled.token), [1, 2, 3]);
+    });
+
+    test(
+      'entries of text the parser drops arrive with the final chunk',
+      () async {
+        final backend = _LogprobsMockBackend()
+          ..generationChunks = ['  ']
+          ..entries = [
+            entry(1, [0x20, 0x20]),
+          ];
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await engine.loadModel('qwen-test.gguf');
+
+        final chunks = await engine.create(messages, params: params).toList();
+
+        expect(chunks.every((c) => c.text.isEmpty), isTrue);
+        expect(chunks.last.choices.first.finishReason, 'stop');
+        expect(
+          chunks.last.choices.first.logprobs!.map((e) => e.sampled.token),
+          [1],
+        );
+      },
+    );
+  });
+
   group('LlamaEngine generation limits', () {
     late LimitReportingMockBackend limitBackend;
     late LlamaEngine limitEngine;
@@ -7248,5 +7427,74 @@ class _RecordingRuntimePromptTokenizer
   ) async {
     prompts.add(prompt);
     return const [7, 8];
+  }
+}
+
+class _CapabilityOnlyMockBackend extends GenerationCapabilitiesMockBackend {
+  _CapabilityOnlyMockBackend()
+    : super(
+        const BackendGenerationCapabilities(
+          presencePenalty: false,
+          minP: false,
+          thinkingBudget: false,
+          tokenLogprobs: true,
+        ),
+      );
+}
+
+class _LogprobsMockBackend extends NativeChatMockBackend
+    implements
+        BackendGenerationCapabilitiesSupport,
+        BackendTokenLogprobsReporting {
+  _LogprobsMockBackend({this.capability = true});
+
+  final bool capability;
+
+  @override
+  bool get supportsNativeChatGeneration => false;
+
+  List<List<int>>? generationBytes;
+  List<LlamaGeneratedTokenLogprobs> entries = [];
+  final Expando<List<LlamaGeneratedTokenLogprobs>> _reported =
+      Expando<List<LlamaGeneratedTokenLogprobs>>();
+
+  @override
+  Future<BackendGenerationCapabilities> generationCapabilities() async =>
+      BackendGenerationCapabilities(
+        presencePenalty: false,
+        minP: false,
+        thinkingBudget: false,
+        tokenLogprobs: capability,
+      );
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) {
+    final bytes = generationBytes;
+    final stream = bytes == null
+        ? super.generate(contextHandle, prompt, params, parts: parts)
+        : () async* {
+            lastGenerationParams = params;
+            for (final event in bytes) {
+              yield event;
+            }
+          }();
+    _reported[stream] = List.of(entries);
+    return stream;
+  }
+
+  @override
+  List<LlamaGeneratedTokenLogprobs> takeTokenLogprobs(
+    Stream<List<int>> generation,
+  ) {
+    final pending = _reported[generation];
+    if (pending == null) return const [];
+    final taken = List.of(pending);
+    pending.clear();
+    return taken;
   }
 }

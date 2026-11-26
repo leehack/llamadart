@@ -2560,6 +2560,7 @@ class WebGpuLlamaBackend
       );
     }
     rejectUnsupportedSamplerControls(params, 'WebGPU');
+    rejectUnsupportedTokenLogprobs(params, 'WebGPU');
     if (params.minP != 0.0 && !capabilities.minP) {
       throw LlamaUnsupportedException(
         'WebGPU Min-P needs bridge assets whose getCompletionCapabilities() '

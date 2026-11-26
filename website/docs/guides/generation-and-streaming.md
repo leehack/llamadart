@@ -689,3 +689,7 @@ prompt is reused unless `reusePromptPrefix` is false. Check
 `engine.supportsNextTokenScoring` first: native llama.cpp and WebGPU bridge
 assets that support it; LiteRT-LM and other bridge assets report false
 and throw `LlamaUnsupportedException`.
+
+To read the probability of each token a generation produces instead, set
+`GenerationParams.topLogprobs` on native llama.cpp; see
+[Token log-probabilities](../configuration/runtime-parameters#token-log-probabilities).

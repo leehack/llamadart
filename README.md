@@ -25,6 +25,13 @@ Native llama.cpp also supports per-occurrence `frequencyPenalty`, a
 `penaltyLastN` history window and token-level `logitBias`. Check
 `(await engine.capabilities).samplerControls` before using these options.
 
+Native llama.cpp can report the log-probability of every generated token, with
+the most probable alternatives, on streamed chat completions and raw generation:
+set `GenerationParams(topLogprobs: 5)` after checking
+`(await engine.capabilities).supportsTokenLogprobs`. The values come from the
+model's raw distribution, before sampling settings. See
+[runtime parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters).
+
 Choose [direct llamadart, Genkit, or Flutter Edge AI](https://llamadart.leehack.com/docs/integrations/choosing-an-api)
 for your application. Genkit is a
 [separate package](https://github.com/leehack/llamadart/tree/main/packages/genkit_llamadart);

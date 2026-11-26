@@ -198,6 +198,15 @@ modalities and speculative strategies before offering them.
   `frequencyPenalty`, `penaltyLastN`, or `logitBias`. Native llama.cpp
   supports these controls. The penalty window defaults to 64; use -1 for the
   full context or 0 to disable repeat, frequency and presence penalties.
+- Check `(await engine.capabilities).supportsTokenLogprobs` before setting
+  `GenerationParams(topLogprobs: n)` (0 to 20) on native llama.cpp. They are
+  raw-distribution values, before logit bias, penalties, grammar and
+  temperature, so the sampled token can be outside `top`. Read them from
+  `chunk.choices.first.logprobs` (the tokens that arrived since the previous
+  chunk, which can lead the chunk's text), `LlamaCompletion.logprobs`, or
+  `rawTokenLogprobs(stream)` for `generate`. Entry `bytes` concatenate to the
+  streamed bytes, so decode them whole rather than per token. Speculative
+  decoding, WebGPU and LiteRT-LM throw `LlamaUnsupportedException`.
 - `GenerationParams(ignoreEos: true)` keeps generating past end-of-generation
   tokens, until `maxTokens`, the context limit, a stop sequence (including the
   chat template's own stop strings) or cancellation. Only native llama.cpp

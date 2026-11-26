@@ -109,6 +109,13 @@ and `max_tokens` override these defaults per call. Native llama.cpp accepts
 from -10000 to 10000. For example, `"logit_bias": {"123": -5}` lowers
 the logit of token 123 in the loaded model.
 
+Set `logprobs: true` (and `top_logprobs` from 0 to 20) to get the
+log-probability of each generated token in `choices[0].logprobs.content`, on
+chat completions streamed or not. Native llama.cpp reports them from the raw
+model distribution, before `temperature`, penalties, `logit_bias` and grammar,
+and each entry also carries the token `id`. A request with `top_logprobs` and
+no `logprobs` is a 400.
+
 ### Default model and thinking mode
 
 The default is Unsloth's `Qwen3.6-27B-UD-Q4_K_XL.gguf` (about 17.6 GB). Plan

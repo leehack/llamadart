@@ -452,6 +452,7 @@ const params = GenerationParams(
   frequencyPenalty: 0.0,
   penaltyLastN: 64,
   logitBias: {},
+  topLogprobs: null,
   stopSequences: ['</s>'],
   thinkingBudget: null,
   speculativeDecoding: false,
@@ -480,6 +481,10 @@ Important fields:
   leave no token to sample, generation throws `LlamaArgumentException`.
   Runtime suppression, including `ignoreEos`, takes precedence over a
   positive bias.
+- `topLogprobs`: native llama.cpp reports the log-probability of each
+  generated token. `null` (the default) reports none, 0 reports the sampled
+  token, and N up to 20 adds the N most probable alternatives. See
+  [Token log-probabilities](#token-log-probabilities).
 - `presencePenalty`: llama.cpp presence penalty; `0.0` preserves the
   existing behavior. WebGPU applies it only with bridge assets whose
   `getCompletionCapabilities()` reports `presencePenalty`. Other WebGPU assets
@@ -544,6 +549,7 @@ reject unsupported non-default options as described below.
 | `penalty` | `supportsPenalty` | Yes | Yes | Runtime export resolves | No |
 | `presencePenalty` | `supportsPresencePenalty` | Yes | Bridge reports | Runtime export resolves | No |
 | `frequencyPenalty`, `penaltyLastN`, `logitBias` | `samplerControls` | Yes | No | No | No |
+| `topLogprobs` | `supportsTokenLogprobs` | Yes, without speculative decoding | No | No | No |
 | `minP` | `supportsMinP` | Yes | Bridge reports | No | No |
 | `thinkingBudget` | `supportsThinkingBudget` | Runtime export resolves | Bridge reports | Runtime export resolves and the bundle declares a thinking channel | No |
 | `grammar`, `grammarTriggers`, `preservedTokens` | `supportsGrammar` | Yes | Yes | No | No |
@@ -557,6 +563,60 @@ Native llama.cpp keeps `mtp` in the set because it accepts an external MTP
 `loadMtp: true`. The `draftSimple`, `draftEagle3`, `draftDflash` and `draftDspark`
 strategies require `draftModel`; a missing draft throws `LlamaArgumentException`
 at generation start. Advertising a strategy does not waive these requirements.
+
+### Token log-probabilities
+
+With `GenerationParams(topLogprobs: N)`, native llama.cpp reports one
+`LlamaGeneratedTokenLogprobs` per generated token: the sampled token and the N
+most probable alternatives, each with its token ID, UTF-8 bytes and natural-log
+probability. Check `(await engine.capabilities).supportsTokenLogprobs` first;
+WebGPU, LiteRT-LM and custom backends that do not report them throw
+`LlamaUnsupportedException`, as does speculative decoding, and a value outside
+0 to 20 throws `LlamaArgumentException`.
+
+```dart
+final completion = await engine
+    .create(messages, params: const GenerationParams(topLogprobs: 3))
+    .collect();
+for (final token in completion.logprobs!) {
+  print('${token.sampled.text}: ${token.sampled.probability}');
+}
+
+final stream = engine.generate(
+  prompt,
+  params: const GenerationParams(topLogprobs: 0),
+);
+await for (final text in stream) {
+  // Entries for the text so far, growing as tokens arrive.
+  final entries = rawTokenLogprobs(stream)!;
+}
+```
+
+- **Raw distribution.** Values are a softmax over the model's logits at each
+  position, before logit bias, repetition, frequency and presence penalties,
+  grammar and temperature, as `llama-server` reports by default
+  (`n_probs`, without `post_sampling_probs`). A grammar or sampler can pick a
+  token that is not among the alternatives, and the sampled token can have a
+  low probability. Post-sampling probabilities are not available: they need a
+  new `llamadart-native` export.
+- **Where they arrive.** `create` puts the tokens whose bytes arrived since
+  the previous chunk on `chunk.choices.first.logprobs` and all of them on
+  `LlamaCompletion.logprobs`; a chunk's text can lag its tokens (a token
+  holding part of a multi-byte character, reasoning, tool-call markup the
+  parser holds back), and tokens the parser never shows as text arrive with
+  the final chunk. `rawTokenLogprobs(stream)` returns the list for a
+  `generate` stream, which grows as bytes arrive. The chunk JSON follows
+  OpenAI's `logprobs.content` shape and adds the token `id`.
+- **Bytes.** A token can hold part of a multi-byte character. Entry `bytes`
+  are the bytes the token added to the stream (alternatives render special
+  tokens as text), so the bytes of consecutive entries concatenate to the
+  streamed bytes even when a character spans two tokens. `text` replaces a
+  partial character with U+FFFD.
+- **Stop sequences.** A token a stop sequence removes entirely is not
+  reported; a token it cuts into is, with all its bytes.
+- **Cost.** Each token costs one pass over the vocabulary logits in Dart
+  (about 0.5 ms at a 152,000-token vocabulary) plus the top-N selection;
+  requests without `topLogprobs` pay one null check per token.
 
 The capability flags are `false` and the sampler and strategy sets are empty
 before a load. Native
