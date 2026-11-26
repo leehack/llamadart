@@ -851,6 +851,7 @@ Future<void> main(List<String> args) async {
         for (final name in [
           'web-lazy-grammar',
           'web-webgpu-generation',
+          'web-bos-eos-prompt-tokens',
           'web-multimodal-embeddings-webgpu',
         ]) {
           for (final browser in ['safari', 'firefox']) {
@@ -977,6 +978,46 @@ Future<void> main(List<String> args) async {
       );
     },
   );
+
+  group('web-bos-eos-prompt-tokens', () {
+    test('dry-run fetches pinned assets and runs the test file', () async {
+      final result = await runLocalE2e(
+        ['--scenario', 'web-bos-eos-prompt-tokens', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(
+        result.stdout,
+        contains(
+          'WEBGPU_BRIDGE_OUT_DIR=/repo/build/web_bos_eos_prompt_tokens/bridge',
+        ),
+      );
+      expect(
+        result.stdout,
+        contains(
+          'dart test -p chrome-webgpu --run-skipped -t local-only '
+          'test/e2e/webgpu/bos_eos_prompt_tokens_e2e_test.dart',
+        ),
+      );
+    });
+
+    test('a real run requires the staged config', () async {
+      final root = await Directory.systemTemp.createTemp('p1989-config-');
+      addTearDown(() => root.delete(recursive: true));
+      final result = await runLocalE2e([
+        '--scenario',
+        'web-bos-eos-prompt-tokens',
+      ], projectRoot: root.path);
+
+      expect(result.exitCode, 64);
+      expect(
+        result.stderr,
+        contains('build/web_bos_eos_prompt_tokens/config.json'),
+      );
+    });
+  });
 
   group('web-webgpu-generation', () {
     test(

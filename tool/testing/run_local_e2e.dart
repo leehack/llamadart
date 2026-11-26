@@ -440,6 +440,7 @@ const Set<String> _dartWebE2eScenarios = {
   'web-multimodal-embeddings',
   'web-multimodal-embeddings-webgpu',
   'web-webgpu-generation',
+  'web-bos-eos-prompt-tokens',
 };
 
 List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
@@ -1894,6 +1895,41 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'test/e2e/webgpu/webgpu_generation_e2e_test.dart',
           ],
           description: 'Web full-offload WebGPU generation',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'web-bos-eos-prompt-tokens',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Check pinned-asset BOS/EOS metadata and prompt tokens against '
+          'llama-server in direct and worker runtimes; needs a staged '
+          'build/web_bos_eos_prompt_tokens/config.json.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'bash',
+          arguments: const ['scripts/fetch_webgpu_bridge_assets.sh'],
+          environment: {
+            'WEBGPU_BRIDGE_OUT_DIR':
+                '${context.projectRoot}/build/web_bos_eos_prompt_tokens/bridge',
+          },
+          description: 'Fetch pinned WebGPU bridge assets for the test server',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'chrome-webgpu',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/webgpu/bos_eos_prompt_tokens_e2e_test.dart',
+          ],
+          description: 'Web BOS/EOS metadata and prompt tokenization',
         ),
       ],
     ),
@@ -4177,6 +4213,19 @@ Future<LocalE2eResult> runLocalE2e(
           'with {"assets":"bridge/","model":"models/<gguf>"} beside a model '
           'that WebGPU does not cap (not Qwen3.5-0.8B); see '
           'test/e2e/webgpu/webgpu_generation_e2e_test.dart.\n',
+    );
+  }
+
+  if (scenario.name == 'web-bos-eos-prompt-tokens' &&
+      !parsed.dryRun &&
+      !File('$root/build/web_bos_eos_prompt_tokens/config.json').existsSync()) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          'web-bos-eos-prompt-tokens requires build/web_bos_eos_prompt_tokens/config.json '
+          'with {"assets":"bridge/","models":["models/<gguf>"]} beside GGUFs '
+          'from test/fixtures/bos_eos_prompt_tokens_upstream.json; see '
+          'test/e2e/webgpu/bos_eos_prompt_tokens_e2e_test.dart.\n',
     );
   }
 

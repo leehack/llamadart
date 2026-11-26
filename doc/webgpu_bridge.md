@@ -74,11 +74,11 @@ before engine creation without it.
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.94`.
+Default pinned tag in the example is `v0.1.95`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.94 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.95 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination.
@@ -101,17 +101,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.94';
+  window.__llamadartBridgeAssetsTag = 'v0.1.95';
 </script>
 ```
 
 That release embeds llama.cpp `v1.0.0`, matching the `hook/build.dart` native pin
 (`v1.0.0-4`, both built from upstream llama.cpp `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`)
-even though the bridge asset tag `v0.1.94` differs from the native runtime tag
-`v1.0.0-4`. Provenance for this immutable consumer artifact: release `456284051`,
-tag commit `618e05dd033cf82d8987c15cd72c19681dc7053f`, bridge source
-`9ab421be07abe212f9ff070ad2b4eafa41559bc5`, and manifest SHA-256
-`24d62c212338dda646a3b815d5883557a01b09997dee4f5b84245c5ab64fa5f6`.
+even though the bridge asset tag `v0.1.95` differs from the native runtime tag
+`v1.0.0-4`. Provenance for this immutable consumer artifact: release `459069362`,
+tag commit `45df7589915d059a2dd285255fea295f9977bfb4`, bridge source
+`5afd49ded5d9734e4c8d0cd400ecc3fd4fc6569b`, and manifest SHA-256
+`a24a0fac2b60c877fd42c8eb4f34930f1a0c7cdb883b750f86a2773a72bc7a08`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
@@ -266,6 +266,14 @@ physical playback, intelligibility or speaker-reference fidelity.
   exceeded the native 4 GiB tensor-payload limit.
   [Issue #2210](https://github.com/leehack/llamadart/issues/2210).
   Explicit staging settings and fetch-backed loading opt-ins take precedence.
+- `v0.1.95+`: model metadata carries `tokenizer.ggml.bos_token` and
+  `tokenizer.ggml.eos_token` (vocabulary text, empty when the model has no
+  such token) and the effective `tokenizer.ggml.add_bos_token` (`"true"` or
+  `"false"`). Chat templates render the model's own BOS and EOS text, and
+  llamadart strips a leading BOS only when the bridge adds one. Older assets
+  omit the keys, so templates render the default `<s>` and `</s>` and the strip
+  is unconditional
+  ([#1989](https://github.com/leehack/llamadart/issues/1989)).
 - `v0.1.94+`: JS-backed staging releases exclusively owned stream buffers
   after copying them. Memory64 WasmFS downloads reserve capacity when the
   length is known and fits the heap. Both core memory modes disable lazy

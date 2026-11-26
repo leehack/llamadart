@@ -556,6 +556,34 @@ void main() {
     },
   );
 
+  test(
+    'the Web BOS/EOS prompt token row reaches its scenario and test',
+    () async {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'web-bos-eos-prompt-tokens',
+      );
+      expect(row.mode, contains('local-only'));
+      final result = await runLocalE2e(
+        row.command.split(' ').skip(3).toList()..add('--dry-run'),
+        projectRoot: '/repo',
+      );
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(
+        result.stdout,
+        contains('test/e2e/webgpu/bos_eos_prompt_tokens_e2e_test.dart'),
+      );
+      expect(
+        File(
+          'test/e2e/webgpu/bos_eos_prompt_tokens_e2e_test.dart',
+        ).existsSync(),
+        isTrue,
+      );
+      final doc = File('doc/testing_matrix.md').readAsStringSync();
+      expect(doc, contains('`web-bos-eos-prompt-tokens`'));
+      expect(doc, contains('## Web BOS/EOS prompt tokens'));
+    },
+  );
+
   test('the Web tool penalty row asserts the call and drops any-response', () {
     final row = testMatrixRows.singleWhere(
       (row) => row.id == 'web-tool-penalty-smoke',

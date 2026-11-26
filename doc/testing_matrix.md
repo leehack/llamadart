@@ -157,11 +157,11 @@ Pick targeted rows based on the touched surface:
 | Speculative decoding, bundled MTP, or n-gram drafting | `llama-cpp-speculative-benchmark`, `gemma4-mtp-smoke` |
 | Embedding API, `embedBatch`, or embedding throughput | `native-embedding-benchmark`, `native-embedding-sweep` |
 | Text embedding profiles, task/document titles or output dimensions | `text-embedding-retrieval` |
-| Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke`, `web-tool-choice-grammar` (Web LFM2) |
+| Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke`, `web-tool-choice-grammar` (Web LFM2), `web-bos-eos-prompt-tokens` (Web BOS/EOS prompts) |
 | Tool-result media (`LlamaToolResultContent.content`, `LlamaToolOutput`) | `root-vm`, `tool-result-image-smoke`, validation `qwen3vl-gguf-cpu` / `-metal` (`M01`) |
 | LiteRT-LM embedding engine | `litert-lm-multimodal-embedding`; includes the documented local-only upstream Web CPU and WebGPU parity diagnostic |
 | LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-json-schema`, `litert-lm-asr-smoke`, `litert-lm-asr-preservation`, `litert-lm-media-preservation`, `litert-lm-utility-preservation` |
-| Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-real-model-smoke-safari`, `web-real-model-smoke-firefox`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `web-webgpu-generation`, `web-tool-choice-grammar` |
+| Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-real-model-smoke-safari`, `web-real-model-smoke-firefox`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `web-webgpu-generation`, `web-bos-eos-prompt-tokens`, `web-tool-choice-grammar` |
 | WebGPU multimodal | `webgpu-multimodal-regression`, `web-speech-task-cancel`, plus `web-speech-to-text-smoke` for typed Qwen3-ASR and `web-text-to-speech-smoke` for typed Qwen3-TTS |
 | Web microphone recorder (`record` bump, permission or interruption handling) | `web-microphone-lifecycle`, `chat-app-web-microphone-device-smoke` for real hardware |
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
@@ -277,7 +277,7 @@ The matrix is designed to cover these essential axes:
 | Axis | Covered by |
 | --- | --- |
 | llama.cpp native GGUF | `root-vm`, `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `gguf-audio-chat-smoke`, `decision-model-smoke` |
-| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-real-model-smoke-safari`, `web-real-model-smoke-firefox`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `web-webgpu-generation`, `web-tool-choice-grammar`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `web-microphone-lifecycle`, `web-text-to-speech-smoke`, `web-speech-task-cancel`, `gemma4-webgpu-mem64`, `decision-model-web-smoke` |
+| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-real-model-smoke-safari`, `web-real-model-smoke-firefox`, `web-tool-penalty-smoke`, `web-lazy-grammar`, `web-webgpu-generation`, `web-bos-eos-prompt-tokens`, `web-tool-choice-grammar`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `web-microphone-lifecycle`, `web-text-to-speech-smoke`, `web-speech-task-cancel`, `gemma4-webgpu-mem64`, `decision-model-web-smoke` |
 | LiteRT-LM native `.litertlm` | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `native-hook-bundles` |
 | LiteRT-LM web `.litertlm` | `gemma4-litert-web` |
 | Model families | Qwen 2.5 prompt reuse, Qwen 3/3.5 chat/multimodal, Gemma 4 tool/thinking/mem64/LiteRT-LM/audio, Laya ModernBERT decision encoder and head |
@@ -1763,6 +1763,26 @@ llamadart does not cap on WebGPU (not Qwen3.5-0.8B). Stage
 
 Copy the model beside it; the runner fetches the pinned assets into `bridge/`
 and uses `chrome-webgpu`. Without a WebGPU adapter the suite fails.
+
+## Web BOS/EOS prompt tokens
+
+`web-bos-eos-prompt-tokens` ([#1989](https://github.com/leehack/llamadart/issues/1989))
+checks that the pinned bridge reports the model's `tokenizer.ggml.bos_token`
+and `tokenizer.ggml.eos_token` text and that a chat-template prompt tokenizes to
+the ids an unmodified `llama-server` returns
+(`test/fixtures/bos_eos_prompt_tokens_upstream.json`), in direct and worker
+runtimes on CPU Wasm. The same fixture backs the native
+`gguf_bos_eos_prompt_tokens_e2e_test.dart`. Bridge assets before `v0.1.95` omit
+the metadata, so this scenario fails on them. Stage
+`build/web_bos_eos_prompt_tokens/config.json`:
+
+```json
+{"assets":"bridge/","models":["models/LFM2-VL-450M-Q4_0.gguf","models/gemma-3-1b-it-Q4_K_M.gguf"]}
+```
+
+Copy the models beside it. Each must be a fixture model whose SHA-256 matches
+(OLMoE and TranslateGemma exceed what the Wasm core loads comfortably). The
+runner fetches the pinned assets into `bridge/` and uses `chrome-webgpu`.
 
 ## Web tool-choice grammar
 

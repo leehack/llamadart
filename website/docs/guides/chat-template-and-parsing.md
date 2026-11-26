@@ -172,14 +172,22 @@ are text.
 See [Template engine internals](./template-engine-internals) for the parse and
 stream rules of each format.
 
-### BOS and EOS in native llama.cpp templates
+### BOS and EOS in llama.cpp templates
 
-On native llama.cpp, `engine.getMetadata()` reports the vocabulary's BOS and
-EOS token text as `tokenizer.ggml.bos_token` and `tokenizer.ggml.eos_token`,
-resolved as llama.cpp resolves them (including its default ids for a
-vocabulary that sets none; empty when the id is negative or has no piece
-text), and templates render them as `bos_token` and `eos_token`. GGUF files
-store only the token ids.
+On native llama.cpp and on the Web with bridge assets `v0.1.95` or newer,
+`engine.getMetadata()` reports the vocabulary's BOS and EOS token text as
+`tokenizer.ggml.bos_token` and `tokenizer.ggml.eos_token`, resolved as
+llama.cpp resolves them (including its default ids for a vocabulary that sets
+none; empty when the id is negative or has no piece text), and templates render
+them as `bos_token` and `eos_token`. GGUF files store only the token ids.
+
+On the Web, the bridge also reports the effective
+`tokenizer.ggml.add_bos_token` (`"true"` or `"false"`). When it is `"true"`,
+llamadart removes the leading BOS text a template rendered, because the bridge
+adds BOS itself. When it is `"false"`, a BOS rendered by the template is sent
+as written. Assets before `v0.1.95` report none of the three keys: templates
+render the default BOS and EOS text (such as `<s>` and `</s>`), and the
+leading BOS is removed as if `add_bos_token` were `"true"`.
 
 ### LiteRT-LM template registry
 
