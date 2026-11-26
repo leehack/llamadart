@@ -1087,6 +1087,9 @@ class BackendGenerationCapabilities {
   /// claim it.
   final bool ignoreEos;
 
+  /// The sampler controls this runtime applies when requested.
+  final Set<SamplerControl> samplerControls;
+
   /// Creates a capability snapshot.
   const BackendGenerationCapabilities({
     required this.presencePenalty,
@@ -1096,7 +1099,34 @@ class BackendGenerationCapabilities {
     this.penalty = false,
     this.streamBatching = false,
     this.ignoreEos = false,
+    this.samplerControls = const {},
   });
+}
+
+/// Sampler controls explicitly requested by [params].
+Set<SamplerControl> requestedSamplerControls(GenerationParams params) {
+  const defaults = GenerationParams();
+  return {
+    if (params.frequencyPenalty != defaults.frequencyPenalty)
+      SamplerControl.frequencyPenalty,
+    if (params.penaltyLastN != defaults.penaltyLastN)
+      SamplerControl.penaltyLastN,
+    if (params.logitBias.isNotEmpty) SamplerControl.logitBias,
+  };
+}
+
+/// Rejects requested sampler controls that [backendName] does not apply.
+void rejectUnsupportedSamplerControls(
+  GenerationParams params,
+  String backendName,
+) {
+  final controls = requestedSamplerControls(params);
+  if (controls.isEmpty) return;
+  throw LlamaUnsupportedException(
+    '$backendName does not support GenerationParams sampler controls: '
+    '${controls.map((control) => control.name).join(', ')}. '
+    'These controls are available on native llama.cpp.',
+  );
 }
 
 /// Optional backend capability reporting [BackendGenerationCapabilities].

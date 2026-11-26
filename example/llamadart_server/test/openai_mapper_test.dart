@@ -14,6 +14,9 @@ void main() {
         'max_tokens': 64,
         'temperature': 0.2,
         'top_p': 0.8,
+        'frequency_penalty': 0.75,
+        'presence_penalty': -0.25,
+        'logit_bias': {'97': 12, '12': -2.5},
         'seed': 42,
         'stop': <String>['END'],
         'enable_thinking': true,
@@ -25,11 +28,38 @@ void main() {
       expect(request.params.maxTokens, 64);
       expect(request.params.temp, 0.2);
       expect(request.params.topP, 0.8);
+      expect(request.params.frequencyPenalty, 0.75);
+      expect(request.params.presencePenalty, -0.25);
+      expect(request.params.logitBias, {97: 12.0, 12: -2.5});
       expect(request.params.penalty, 1.0);
       expect(request.params.seed, 42);
       expect(request.params.stopSequences, <String>['END']);
       expect(request.enableThinking, isTrue);
       expect(request.parallelToolCalls, isTrue);
+    });
+
+    test('rejects invalid logit_bias with a 400 response', () {
+      for (final bias in [
+        false,
+        {'10': false},
+        {'word': 4},
+        {'10': double.negativeInfinity},
+      ]) {
+        expect(
+          () => parseChatCompletionRequest(<String, dynamic>{
+            'model': 'llamadart-local',
+            'messages': [
+              {'role': 'user', 'content': 'Hello'},
+            ],
+            'logit_bias': bias,
+          }, configuredModelId: 'llamadart-local'),
+          throwsA(
+            isA<OpenAiHttpException>()
+                .having((error) => error.statusCode, 'statusCode', 400)
+                .having((error) => error.param, 'param', 'logit_bias'),
+          ),
+        );
+      }
     });
 
     test('uses the Qwen non-thinking profile by default', () {

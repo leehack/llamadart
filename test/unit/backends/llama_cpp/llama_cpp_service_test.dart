@@ -1837,6 +1837,7 @@ void main() {
               params,
               vocab,
               llama_vocab_n_tokens(vocab),
+              1024,
               <int>[],
               withGrammar ? grammar : nullptr,
               root,
@@ -1892,17 +1893,76 @@ void main() {
     },
   );
 
+  test(
+    'puts user logit bias before penalties and preserves the default chain',
+    () {
+      final service = LlamaCppService()..initializeBackend();
+      addTearDown(service.dispose);
+      const defaults = GenerationParams();
+      const defaultNames = ['penalties', 'top-k', 'top-p', 'temp', 'dist'];
+
+      for (final (params, names) in [
+        (defaults, defaultNames),
+        (
+          defaults.copyWith(logitBias: const {3: 2}),
+          ['logit-bias', ...defaultNames],
+        ),
+      ]) {
+        final sampler = _invokePrivateForTesting<Pointer<llama_sampler>>(
+          service,
+          '_initializeSampler',
+          [
+            params,
+            nullptr,
+            259,
+            1024,
+            <int>[],
+            nullptr,
+            nullptr,
+            null,
+            null,
+            null,
+            0,
+            nullptr,
+            false,
+          ],
+        );
+        try {
+          expect(
+            List.generate(
+              llama_sampler_chain_n(sampler),
+              (index) => llama_sampler_name(
+                llama_sampler_chain_get(sampler, index),
+              ).cast<Utf8>().toDartString(),
+            ),
+            names,
+          );
+        } finally {
+          _invokePrivateForTesting<void>(service, '_freeSamplerChain', [
+            sampler,
+          ]);
+        }
+      }
+    },
+  );
+
   test('maps presence penalty to the native penalty sampler', () {
     final service = LlamaCppService();
 
     expect(
       service.debugResolvePenaltySamplerParamsForTesting(
-        const GenerationParams(penalty: 1.0, presencePenalty: 1.5),
+        const GenerationParams(
+          penalty: 1.0,
+          presencePenalty: 1.5,
+          frequencyPenalty: 0.25,
+          penaltyLastN: 32,
+        ),
+        1024,
       ),
       <String, Object>{
-        'lastN': 64,
+        'lastN': 32,
         'repeat': 1.0,
-        'frequency': 0.0,
+        'frequency': 0.25,
         'presence': 1.5,
       },
     );

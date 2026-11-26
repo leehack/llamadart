@@ -2686,6 +2686,34 @@ void main() {
     },
   );
 
+  test('rejects sampler controls on LiteRT-LM Web', () async {
+    const options = [
+      ('frequencyPenalty', GenerationParams(frequencyPenalty: 1)),
+      ('penaltyLastN', GenerationParams(penaltyLastN: 0)),
+      ('logitBias', GenerationParams(logitBias: {3: 1})),
+    ];
+    Matcher namedUnsupported(String option) =>
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains('LiteRT-LM Web'), contains(option)),
+        );
+    _installFakeEngine(chunks: <JSAny?>[]);
+    final backend = LiteRtLmBackend();
+    addTearDown(backend.dispose);
+    final model = await backend.modelLoadFromUrl(
+      'https://example.com/model.litertlm',
+      const ModelParams(),
+    );
+    final context = await backend.contextCreate(model, const ModelParams());
+    for (final (option, params) in options) {
+      await expectLater(
+        backend.generate(context, 'hello', params),
+        emitsError(namedUnsupported(option)),
+      );
+    }
+  });
+
   test('rejects presence penalty on LiteRT-LM web', () async {
     _installFakeEngine(chunks: <JSAny?>[]);
 

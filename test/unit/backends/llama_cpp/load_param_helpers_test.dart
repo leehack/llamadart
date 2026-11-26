@@ -214,13 +214,16 @@ void main() {
     });
   });
 
-  group('createSuppressTokensSampler', () {
-    test('returns nullptr for an empty token list', () {
-      expect(createSuppressTokensSampler(4, const []), nullptr);
+  group('createLogitBiasSampler', () {
+    test('returns nullptr for an empty bias map', () {
+      expect(createLogitBiasSampler(4, const {}), nullptr);
     });
 
-    test('sets model-suppressed token logits to negative infinity', () {
-      final sampler = createSuppressTokensSampler(4, const [1, 3]);
+    test('adds finite biases and bans individual tokens', () {
+      final sampler = createLogitBiasSampler(4, const {
+        1: -2.5,
+        3: double.negativeInfinity,
+      });
       expect(sampler, isNot(nullptr));
 
       final candidates = calloc<llama_token_data>(4);
@@ -241,7 +244,7 @@ void main() {
         llama_sampler_apply(sampler, candidateArray);
 
         expect(candidates[0].logit, 0);
-        expect(candidates[1].logit, double.negativeInfinity);
+        expect(candidates[1].logit, -1.5);
         expect(candidates[2].logit, 2);
         expect(candidates[3].logit, double.negativeInfinity);
       } finally {
