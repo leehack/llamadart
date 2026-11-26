@@ -1,4 +1,6 @@
 import '../../exceptions.dart';
+import '../model_load_options.dart';
+import '../model_source.dart';
 import 'model_download_manager_base.dart';
 
 /// Non-IO placeholder for the package-managed model download manager.
@@ -59,6 +61,18 @@ class DefaultModelDownloadManager extends ThrowingModelDownloadManager {
   String get defaultCacheDirectory => throw LlamaUnsupportedException(
     'File-backed model cache directories are not supported on this platform.',
   );
+
+  /// Non-IO platforms have no file-backed model cache to import into.
+  Future<ModelCacheEntry> importDownloadedFile(
+    ModelSource source,
+    String filePath, {
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    int? expectedBytes,
+    String? etag,
+    String? lastModified,
+  }) async {
+    throw unsupported('importDownloadedFile');
+  }
 
   @override
   Object unsupported(String operation) => LlamaUnsupportedException(

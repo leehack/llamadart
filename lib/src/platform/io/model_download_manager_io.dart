@@ -308,6 +308,156 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     });
   }
 
+  /// Adopts a file that a platform download executor already fetched, such as
+  /// an iOS background `URLSession` or an Android `DownloadManager` download,
+  /// as the cache entry of [source].
+  ///
+  /// The file is verified first: it must be a regular file (not a link), not
+  /// empty, [expectedBytes] long when given, and match
+  /// [ModelLoadOptions.sha256] when set. A rejected file is left where it is
+  /// and the cache is not touched. Then the file is moved into the entry
+  /// under the same locks as [ensureModel]; when it cannot be renamed, such as
+  /// across volumes, it is copied and [filePath] is deleted on a best-effort
+  /// basis. The entry then reads back as a `cacheOnly` hit, replacing any
+  /// earlier entry for [source] and its `.part` file.
+  ///
+  /// [etag] and [lastModified] are stored as the entry's validators.
+  /// [ModelLoadOptions.bearerToken], [ModelLoadOptions.headers],
+  /// [ModelLoadOptions.resume] and [ModelLoadOptions.maxRetries] are accepted
+  /// but ignored, and nothing about them is persisted; the executor owns the
+  /// request.
+  ///
+  /// Throws [LlamaArgumentException] for a local [source],
+  /// [LlamaUnsupportedException] for [ModelCachePolicy.noCache] and
+  /// [ModelCachePolicy.cacheOnly], [LlamaModelException] when verification or
+  /// the move fails, and [LlamaStateException] when
+  /// [ModelLoadOptions.cancelToken] is cancelled.
+  Future<ModelCacheEntry> importDownloadedFile(
+    ModelSource source,
+    String filePath, {
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    int? expectedBytes,
+    String? etag,
+    String? lastModified,
+  }) async {
+    _throwIfCancelled(options);
+    if (source.isLocal) {
+      throw LlamaArgumentException(
+        'importDownloadedFile needs a remote ModelSource.',
+        name: 'source',
+      );
+    }
+    if (options.cachePolicy == ModelCachePolicy.noCache ||
+        options.cachePolicy == ModelCachePolicy.cacheOnly) {
+      throw LlamaUnsupportedException(
+        'importDownloadedFile does not support '
+        'ModelCachePolicy.${options.cachePolicy.name}.',
+      );
+    }
+
+    final downloaded = File(path.normalize(path.absolute(filePath)));
+    if (await FileSystemEntity.type(downloaded.path, followLinks: false) !=
+        FileSystemEntityType.file) {
+      throw LlamaModelException(
+        'Downloaded file for ${_redactedSourceName(source)} is not a file.',
+      );
+    }
+    final bytes = await downloaded.length();
+    if (bytes == 0 || (expectedBytes != null && bytes != expectedBytes)) {
+      throw LlamaModelException(
+        'Downloaded file for ${_redactedSourceName(source)} has $bytes bytes'
+        '${expectedBytes == null ? '' : ', expected $expectedBytes'}.',
+      );
+    }
+    // Hashed before any lock: a multi-gigabyte digest would otherwise hold the
+    // entry lock, which an App Group container makes a suspension risk.
+    String? verifiedSha256;
+    if (options.sha256 != null) {
+      final actual = await _sha256File(downloaded);
+      if (actual != options.sha256) {
+        throw LlamaModelException(
+          'Checksum mismatch for ${_redactedSourceName(source)}.',
+        );
+      }
+      verifiedSha256 = actual;
+    }
+    _throwIfCancelled(options);
+
+    final root = _rootDirectory(options.cacheDirectory);
+    final cacheDir = _cacheDirectory(source, options);
+    final finalFile = File(path.join(cacheDir.path, source.fileName));
+    Future<void> checkDirectory() async {
+      final type = await FileSystemEntity.type(
+        cacheDir.path,
+        followLinks: false,
+      );
+      if (type != FileSystemEntityType.notFound &&
+          await _cacheEntryDirectory(cacheDir, root) == null) {
+        throw LlamaStateException(
+          'Model cache entry must be a directory directly under its cache root.',
+        );
+      }
+    }
+
+    return _withCacheLock(_cacheLockKey(cacheDir), () async {
+      await checkDirectory();
+      await _createCacheDirectory(cacheDir);
+      return _withEntryLock(cacheDir, options, (locked) async {
+        await checkDirectory();
+        await _moveIntoEntry(downloaded, finalFile, bytes);
+        if (locked) {
+          final partFile = File('${finalFile.path}.part');
+          await _adoptOrphanedAttempts(cacheDir, finalFile, partFile);
+          await _deleteIfExists(partFile);
+          await _deleteIfExists(_partMetadataFile(partFile));
+        }
+        final entry = await _entryForFile(
+          source,
+          finalFile,
+          DateTime.now().toUtc(),
+          etag: etag,
+          lastModified: lastModified,
+          sha256Digest: verifiedSha256,
+        );
+        await _writeMetadata(
+          File(path.join(cacheDir.path, _metadataFileName)),
+          entry,
+        );
+        return entry;
+      });
+    });
+  }
+
+  Future<void> _moveIntoEntry(
+    File downloaded,
+    File finalFile,
+    int bytes,
+  ) async {
+    try {
+      await _replaceFile(downloaded, finalFile);
+      return;
+    } on FileSystemException {
+      if (!await downloaded.exists()) {
+        rethrow;
+      }
+    }
+    final staged = File('${finalFile.path}.${_newAttemptId()}.import');
+    try {
+      await downloaded.copy(staged.path);
+      if (await staged.length() != bytes) {
+        throw FileSystemException('Incomplete copy.', staged.path);
+      }
+      await _replaceFile(staged, finalFile);
+    } on FileSystemException catch (error) {
+      await _deleteIfExists(staged);
+      throw LlamaModelException(
+        'Cannot move the downloaded file into the model cache.',
+        '$error',
+      );
+    }
+    await _deleteIfExists(downloaded);
+  }
+
   /// [ownsPartFiles] is true while this call holds the entry's cross-process
   /// lock, so no other process can be writing a part file of the entry.
   Future<ModelCacheEntry> _ensureModelUnlocked(
@@ -492,7 +642,8 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
   }
 
   /// Keeps the largest part file left by earlier attempts of [finalFile] as
-  /// its resume point and deletes the rest, with orphaned metadata temp files.
+  /// its resume point and deletes the rest, with orphaned metadata temp files
+  /// and import copies.
   ///
   /// Call it only while holding the entry lock: without it another process
   /// may still be writing one of these files.
@@ -509,6 +660,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     final metadataTemp = RegExp(
       '^${RegExp.escape(_metadataFileName)}\\.[0-9a-f]{16}\\.tmp\$',
     );
+    final importCopy = RegExp('^$fileName\\.[0-9a-f]{16}\\.import\$');
     final parts = <File>[];
     final orphanedFiles = <File>[];
     await for (final entity in cacheDir.list(followLinks: false)) {
@@ -519,7 +671,8 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       if (name == path.basename(partFile.path) || attemptPart.hasMatch(name)) {
         parts.add(entity);
       } else if (attemptPartMetadata.hasMatch(name) ||
-          metadataTemp.hasMatch(name)) {
+          metadataTemp.hasMatch(name) ||
+          importCopy.hasMatch(name)) {
         orphanedFiles.add(entity);
       }
     }

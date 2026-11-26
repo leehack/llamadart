@@ -79,20 +79,21 @@ Chrome with a signal and does not wait on DevTools.
 
 These need a maintainer decision before the platform executors land. The user-facing behavior and limits are in [Share models between apps](../guides/model-store).
 
+The handoff of a file a platform executor downloaded is settled: core's
+`DefaultModelDownloadManager.importDownloadedFile` verifies it and moves it
+into place under the entry lock.
+
 1. **Stale references.** Whether a user-facing app may drop other apps'
    references, for example after confirming with the user, or references
    expire after a period without use.
 2. **Android file access.** Whether loading from a file descriptor is a
    `llamadart-native` prerequisite, so a Storage Access Framework grant can be
    shared without a file path.
-3. **Background transfer handoff.** Core gains
-   `DefaultModelDownloadManager.importDownloadedFile` to verify a file a
-   platform executor downloaded and move it into place atomically.
-4. **Desktop interop.** Whether the desktop store adopts content-addressed
+3. **Desktop interop.** Whether the desktop store adopts content-addressed
    blobs compatible with the Hugging Face hub cache.
-5. **Multi-file sets.** Whether shard sets, such as the Safetensors sets of
+4. **Multi-file sets.** Whether shard sets, such as the Safetensors sets of
    [#1219](https://github.com/leehack/llamadart/issues/1219), become
    multi-file entries the same way.
-6. **Abandoned partial downloads.** Whether `prune` deletes partial downloads
+5. **Abandoned partial downloads.** Whether `prune` deletes partial downloads
    no app references. Deleting one safely needs core's entry lock, which core
    does not export, or a core `prune` option for partial files.

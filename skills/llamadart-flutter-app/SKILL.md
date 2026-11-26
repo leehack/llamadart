@@ -106,8 +106,11 @@ or shipping runtimes the app does not use.
   `LlamaUnsupportedException`.
 - Do not cancel downloads on every app pause or screen lock. Downloads are
   foreground Dart HTTP requests; a later session resumes from the `.part`
-  file when the server allows it. Background downloads need a custom
-  `ModelDownloadManager`.
+  file when the server allows it. For background downloads, run an Android
+  or iOS platform executor and hand its finished file to
+  `DefaultModelDownloadManager.importDownloadedFile(source, filePath, ...)`,
+  which verifies it (`expectedBytes`, `ModelLoadOptions.sha256`) and moves it
+  into the cache entry; credentials are never stored.
 - Apps, isolates and extensions sharing one cache root (`sharedCache()`,
   `userSelected(...)`, `appGroup(...)`) take a cross-process file lock per
   entry, so a second caller waits and reuses the download. Processes on
