@@ -59,6 +59,31 @@ Map<String, dynamic> buildChatRequestSchemas({required String modelId}) {
         'max_tokens': <String, dynamic>{'type': 'integer', 'minimum': 1},
         'temperature': <String, dynamic>{'type': 'number'},
         'top_p': <String, dynamic>{'type': 'number'},
+        'frequency_penalty': <String, dynamic>{
+          'type': 'number',
+          'minimum': -100,
+          'maximum': 100,
+          'default': 0,
+          'description': 'Additive penalty per occurrence in recent tokens.',
+        },
+        'presence_penalty': <String, dynamic>{
+          'type': 'number',
+          'minimum': -2,
+          'maximum': 2,
+          'default': 0,
+          'description':
+              'Additive penalty for a token present in recent history.',
+        },
+        'logit_bias': <String, dynamic>{
+          'type': 'object',
+          'description':
+              'Finite additive biases keyed by non-negative token IDs in the model vocabulary.',
+          'additionalProperties': <String, dynamic>{
+            'type': 'number',
+            'minimum': -10000,
+            'maximum': 10000,
+          },
+        },
         'seed': <String, dynamic>{'type': 'integer'},
         'n': <String, dynamic>{
           'type': 'integer',

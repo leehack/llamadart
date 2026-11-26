@@ -448,6 +448,17 @@
     },
     {
       "surfaces": [
+        "capability:LlamaEngineCapabilities.samplerControls",
+        "matrix:frequencyPenalty, penaltyLastN, logitBias"
+      ],
+      "exemption": {
+        "id": "native-additional-sampler-controls",
+        "reason": "The sampler_controls pack has no cases for frequency penalties, penalty history windows or logit bias. Synthetic GGUF VM tests check deterministic generation and pre-decode validation; VM and Chrome tests check unavailable runtimes. The pack follow-up adds model-backed reproducibility.",
+        "issue": "https://github.com/leehack/llamadart/issues/2307"
+      }
+    },
+    {
+      "surfaces": [
         "matrix:Web model/projector browser cache and post-abort reload"
       ],
       "exemption": {

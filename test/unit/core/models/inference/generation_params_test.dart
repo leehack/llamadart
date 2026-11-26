@@ -11,6 +11,9 @@ void main() {
       topK: 12,
       minP: 0.05,
       presencePenalty: 1.5,
+      frequencyPenalty: 0.75,
+      penaltyLastN: -1,
+      logitBias: const {21: -3},
       ignoreEos: true,
       grammarRoot: 'main',
       grammarLazy: true,
@@ -41,6 +44,11 @@ void main() {
     expect(updated.topK, 12);
     expect(updated.minP, 0.05);
     expect(updated.presencePenalty, 1.5);
+    final copied = updated.copyWith(seed: 4);
+    expect(copied.frequencyPenalty, 0.75);
+    expect(copied.penaltyLastN, -1);
+    expect(copied.logitBias, {21: -3.0});
+    expect(copied.copyWith(logitBias: const {}).logitBias, isEmpty);
     expect(updated.ignoreEos, isTrue);
     expect(const GenerationParams().ignoreEos, isFalse);
     expect(updated.copyWith(temp: 1).ignoreEos, isTrue);
@@ -86,6 +94,9 @@ void main() {
 
     expect(params.minP, 0.0);
     expect(params.presencePenalty, 0.0);
+    expect(params.frequencyPenalty, 0.0);
+    expect(params.penaltyLastN, 64);
+    expect(params.logitBias, isEmpty);
     expect(params.speculativeDecoding, isFalse);
     expect(params.speculativeDecodingConfig, isNull);
     expect(params.isSpeculativeDecodingEnabled, isFalse);

@@ -877,6 +877,18 @@ class ThinkingBudget {
   final String? forcedMessage;
 }
 
+/// Optional sampler controls that a runtime can apply.
+enum SamplerControl {
+  /// Applies [GenerationParams.frequencyPenalty].
+  frequencyPenalty,
+
+  /// Applies [GenerationParams.penaltyLastN].
+  penaltyLastN,
+
+  /// Applies [GenerationParams.logitBias].
+  logitBias,
+}
+
 /// Parameters controlling the token sampling and generation process.
 ///
 /// Use [GenerationParams] to fine-tune how the model generates text, including
@@ -939,6 +951,28 @@ class GenerationParams {
   /// send only. Backends without an equivalent sampler reject nonzero values
   /// instead of silently ignoring them.
   final double presencePenalty;
+
+  /// Additive penalty per occurrence of a token in the recent history.
+  ///
+  /// Native llama.cpp accepts values from -100 to 100. The default, 0.0,
+  /// disables the frequency penalty.
+  final double frequencyPenalty;
+
+  /// Number of recent tokens considered by repeat, presence and frequency
+  /// penalties on native llama.cpp. The default is 64.
+  ///
+  /// Use -1 for the full context or 0 to disable these penalties. Positive
+  /// values are capped at the context size.
+  final int penaltyLastN;
+
+  /// Additive logit biases by token ID in the loaded native llama.cpp model.
+  ///
+  /// Finite biases range from -10000 to 10000. Use
+  /// [double.negativeInfinity] to ban a token. Bans cannot be combined with
+  /// a non-empty grammar (including one from tools or a response format)
+  /// or a [thinkingBudget], and at least one token must remain unsuppressed.
+  /// Model suppression and [ignoreEos] still apply.
+  final Map<int, double> logitBias;
 
   /// Random seed for the sampler.
   ///
@@ -1063,6 +1097,9 @@ class GenerationParams {
     this.minP = 0.0,
     this.penalty = 1.1,
     this.presencePenalty = 0.0,
+    this.frequencyPenalty = 0.0,
+    this.penaltyLastN = 64,
+    this.logitBias = const {},
     this.seed,
     this.stopSequences = const [],
     this.ignoreEos = false,
@@ -1102,6 +1139,9 @@ class GenerationParams {
     double? minP,
     double? penalty,
     double? presencePenalty,
+    double? frequencyPenalty,
+    int? penaltyLastN,
+    Map<int, double>? logitBias,
     int? seed,
     List<String>? stopSequences,
     bool? ignoreEos,
@@ -1127,6 +1167,9 @@ class GenerationParams {
       minP: minP ?? this.minP,
       penalty: penalty ?? this.penalty,
       presencePenalty: presencePenalty ?? this.presencePenalty,
+      frequencyPenalty: frequencyPenalty ?? this.frequencyPenalty,
+      penaltyLastN: penaltyLastN ?? this.penaltyLastN,
+      logitBias: logitBias ?? this.logitBias,
       seed: seed ?? this.seed,
       stopSequences: stopSequences ?? this.stopSequences,
       ignoreEos: ignoreEos ?? this.ignoreEos,

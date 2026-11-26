@@ -237,6 +237,7 @@ const _appNames = <String>{
   'Qwen3AsrAdapter',
   'Qwen3TtsAdapter',
   'Qwen3WindowedAsrAdapter',
+  'SamplerControl',
   'SopranoTtsAdapter',
   'ReferenceImageEditingRequest',
   'RemoteModelUrl',

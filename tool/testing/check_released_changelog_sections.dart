@@ -234,19 +234,27 @@ List<PublishedPatch> readPublishedPatchSections(
   final git = _Git(root);
   final prefix = 'v$line.';
   final minorTag = '${prefix}0';
-  final tags = git.run(['tag', '--list', '$prefix*']).trim().split('\n');
-  if (!tags.contains(minorTag)) return [];
+  final tagList = git.run(['tag', '--list', '$prefix*']).trim();
+  if (tagList.isEmpty) return [];
+  final tags = tagList.split('\n');
   final patchTags = tags.where((tag) {
     final patch = tag.substring(prefix.length);
     return RegExp(r'^[1-9][0-9]*$').hasMatch(patch);
   }).toList();
   if (patchTags.isEmpty) return [];
+  if (!tags.contains(minorTag)) {
+    throw FormatException('Cannot import patch releases without $minorTag.');
+  }
 
   String commit(String tag) =>
       git.run(['rev-parse', '--verify', 'refs/tags/$tag^{commit}']).trim();
   final minor = commit(minorTag);
   final chain = git.firstParents(through).toSet();
-  if (!chain.contains(minor)) return [];
+  if (!chain.contains(minor)) {
+    throw FormatException(
+      'Core tag $minorTag is off the main first-parent chain.',
+    );
+  }
 
   // Git's version sort can be changed by local versionsort.suffix settings.
   BigInt patchNumber(String tag) => BigInt.parse(tag.substring(prefix.length));
@@ -254,10 +262,10 @@ List<PublishedPatch> readPublishedPatchSections(
   final patches = <PublishedPatch>[];
   for (final tag in patchTags) {
     final sha = commit(tag);
-    if (chain.contains(sha) ||
-        git.firstParents(sha).firstWhere(chain.contains, orElse: () => '') !=
-            minor) {
-      continue;
+    if (chain.contains(sha)) continue;
+    if (git.firstParents(sha).firstWhere(chain.contains, orElse: () => '') !=
+        minor) {
+      throw FormatException('Patch tag $tag must fork from main at $minorTag.');
     }
     final version = tag.substring(1);
     if (git.entry(sha, 'pubspec.yaml')?.mode != '100644' ||

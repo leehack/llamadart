@@ -194,6 +194,10 @@ modalities and speculative strategies before offering them.
   This requires llamadart-native `v1.0.0-4` or WebGPU assets `v0.1.87+` with `thinkingBudgetMultiEnd`. `supportsThinkingBudget` describes
   basic support. An explicit `endTag`, including `</think>`, selects a
   single delimiter.
+- Check `(await engine.capabilities).samplerControls` before setting
+  `frequencyPenalty`, `penaltyLastN`, or `logitBias`. Native llama.cpp
+  supports these controls. The penalty window defaults to 64; use -1 for the
+  full context or 0 to disable repeat, frequency and presence penalties.
 - `GenerationParams(ignoreEos: true)` keeps generating past end-of-generation
   tokens, until `maxTokens`, the context limit, a stop sequence (including the
   chat template's own stop strings) or cancellation. Only native llama.cpp

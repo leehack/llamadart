@@ -326,6 +326,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       supportsThinkingBudget: generation.thinkingBudget,
       supportsStreamBatching: generation.streamBatching,
       supportsIgnoreEos: generation.ignoreEos,
+      samplerControls: Set.unmodifiable(generation.samplerControls),
       speculativeDecodingStrategies: Set.unmodifiable(
         generation.speculativeDecodingStrategies,
       ),
@@ -2526,8 +2527,14 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     try {
       await _rejectUnsupportedVideoInput(parts ?? const <LlamaContentPart>[]);
       if (request.isCancelled()) return;
-      final resolvedParams = await _resolveDraftModel(params, request);
-      if (resolvedParams == null) return;
+      final draftParams = await _resolveDraftModel(params, request);
+      if (draftParams == null) return;
+      final resolvedParams = _snapshotLogitBias(draftParams);
+      final samplerControls = requestedSamplerControls(resolvedParams);
+      if (samplerControls.isNotEmpty) {
+        await _checkSamplerControls(samplerControls, requestEpoch);
+        if (request.isCancelled()) return;
+      }
       if (excludePromptFromPenalties) {
         markPromptExcludedFromPenalties(resolvedParams);
       }
@@ -2618,8 +2625,14 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     var reachedBackend = false;
     try {
       if (request.isCancelled()) return;
-      final resolvedParams = await _resolveDraftModel(params, request);
-      if (resolvedParams == null) return;
+      final draftParams = await _resolveDraftModel(params, request);
+      if (draftParams == null) return;
+      final resolvedParams = _snapshotLogitBias(draftParams);
+      final samplerControls = requestedSamplerControls(resolvedParams);
+      if (samplerControls.isNotEmpty) {
+        await _checkSamplerControls(samplerControls, requestEpoch);
+        if (request.isCancelled()) return;
+      }
       _ensureReady();
 
       try {
@@ -3550,6 +3563,34 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     }
     return (candidate as BackendGenerationCapabilitiesSupport)
         .generationCapabilities();
+  }
+
+  GenerationParams _snapshotLogitBias(GenerationParams params) =>
+      params.logitBias.isEmpty
+      ? params
+      : params.copyWith(logitBias: Map.unmodifiable(params.logitBias));
+
+  Future<void> _checkSamplerControls(
+    Set<SamplerControl> requested,
+    int requestEpoch,
+  ) async {
+    final candidate = backend;
+    final supported = (await _generationCapabilities()).samplerControls;
+    if (_modelEpoch != requestEpoch) {
+      throw LlamaStateException('The model changed during generation setup.');
+    }
+    final missing = requested.difference(supported);
+    if (missing.isEmpty) return;
+    String backendName;
+    try {
+      backendName = await candidate.getBackendName();
+    } catch (_) {
+      backendName = candidate.runtimeType.toString();
+    }
+    throw LlamaUnsupportedException(
+      '$backendName does not support GenerationParams sampler controls: '
+      '${missing.map((control) => control.name).join(', ')}.',
+    );
   }
 
   BackendDecision _decisionBackend() {

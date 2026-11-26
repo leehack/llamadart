@@ -112,6 +112,10 @@ const String _ignoreEosWithGrammar =
     'one from tools or responseFormat). Remove the grammar, use '
     'ToolChoice.none, or set ignoreEos to false.';
 
+const String _tokenBanWithGrammar =
+    'GenerationParams.logitBias cannot ban tokens with a grammar (including '
+    'one from tools or responseFormat). Use finite biases or remove the grammar.';
+
 const String _draftBlockRequirement =
     'for llama.cpp draft-dflash and draft-dspark, which decode a whole draft '
     'block in one micro-batch.';
@@ -3896,6 +3900,11 @@ class LlamaCppService {
       thinkingBudget: _supportsThinkingBudget(),
       streamBatching: true,
       ignoreEos: true,
+      samplerControls: const {
+        SamplerControl.frequencyPenalty,
+        SamplerControl.penaltyLastN,
+        SamplerControl.logitBias,
+      },
       speculativeDecodingStrategies:
           _requiresQwen35VulkanRestriction(modelHandle)
           ? const <SpeculativeDecodingStrategy>{}
@@ -5410,11 +5419,13 @@ class LlamaCppService {
   }
 
   ({int lastN, double repeat, double frequency, double presence})
-  _resolvePenaltySamplerConfig(GenerationParams params) {
+  _resolvePenaltySamplerConfig(GenerationParams params, int nCtx) {
     return (
-      lastN: 64,
+      lastN: params.penaltyLastN == -1
+          ? nCtx
+          : math.min(params.penaltyLastN, nCtx),
       repeat: params.penalty,
-      frequency: 0.0,
+      frequency: params.frequencyPenalty,
       presence: params.presencePenalty,
     );
   }
@@ -5434,14 +5445,76 @@ class LlamaCppService {
   /// Resolves llama.cpp penalty sampler parameters for unit tests.
   Map<String, Object> debugResolvePenaltySamplerParamsForTesting(
     GenerationParams params,
+    int nCtx,
   ) {
-    final config = _resolvePenaltySamplerConfig(params);
+    final config = _resolvePenaltySamplerConfig(params, nCtx);
     return <String, Object>{
       'lastN': config.lastN,
       'repeat': config.repeat,
       'frequency': config.frequency,
       'presence': config.presence,
     };
+  }
+
+  void _validateSamplerControls(
+    GenerationParams params,
+    int vocabSize,
+    List<int> suppressedTokens,
+  ) {
+    final frequency = params.frequencyPenalty;
+    if (!frequency.isFinite || frequency < -100 || frequency > 100) {
+      throw LlamaArgumentException(
+        'GenerationParams.frequencyPenalty must be finite and between -100 and 100.',
+        name: 'frequencyPenalty',
+        invalidValue: frequency,
+      );
+    }
+    if (params.penaltyLastN < -1) {
+      throw LlamaArgumentException(
+        'GenerationParams.penaltyLastN must be -1 or greater.',
+        name: 'penaltyLastN',
+        invalidValue: params.penaltyLastN,
+      );
+    }
+    if (params.logitBias.isEmpty) return;
+
+    final bans = <int>{};
+    for (final MapEntry(key: token, value: bias) in params.logitBias.entries) {
+      if (token < 0 || token >= vocabSize) {
+        throw LlamaArgumentException(
+          'GenerationParams.logitBias token ID $token must be in [0, $vocabSize).',
+          name: 'logitBias',
+          invalidValue: token,
+        );
+      }
+      if (bias == double.negativeInfinity) {
+        bans.add(token);
+      } else if (!bias.isFinite || bias < -10000 || bias > 10000) {
+        throw LlamaArgumentException(
+          'GenerationParams.logitBias values must be finite and between '
+          '-10000 and 10000, or negative infinity.',
+          name: 'logitBias',
+          invalidValue: bias,
+        );
+      }
+    }
+    if (bans.isEmpty) return;
+    if (params.grammar?.isNotEmpty ?? false) {
+      throw LlamaUnsupportedException(_tokenBanWithGrammar);
+    }
+    if (params.thinkingBudget != null) {
+      throw LlamaUnsupportedException(
+        'GenerationParams.logitBias cannot ban tokens with a thinking budget. '
+        'Use finite biases or remove the thinking budget.',
+      );
+    }
+    bans.addAll(suppressedTokens.where((id) => id >= 0 && id < vocabSize));
+    if (bans.length == vocabSize) {
+      throw LlamaArgumentException(
+        'GenerationParams.logitBias and runtime suppression leave no token to sample.',
+        name: 'logitBias',
+      );
+    }
   }
 
   /// Runs [action] while native batch logits are temporarily zeroed.
@@ -5615,6 +5688,13 @@ class LlamaCppService {
       if (params.ignoreEos && (params.grammar?.isNotEmpty ?? false)) {
         throw LlamaUnsupportedException(_ignoreEosWithGrammar);
       }
+      final suppressedTokens = params.ignoreEos
+          ? model.suppressedTokensIgnoringEos ??= List<int>.unmodifiable({
+              ...model.suppressedTokens,
+              ..._calls.endOfGenerationTokens(model.pointer),
+            })
+          : model.suppressedTokens;
+      _validateSamplerControls(params, model.vocabSize, suppressedTokens);
       final thinkingBudgetConfig = _resolveLlamaCppThinkingBudgetConfig(
         params,
         hasMediaParts: hasMediaParts,
@@ -5763,12 +5843,8 @@ class LlamaCppService {
         params,
         vocab,
         model.vocabSize,
-        params.ignoreEos
-            ? model.suppressedTokensIgnoringEos ??= List<int>.unmodifiable({
-                ...model.suppressedTokens,
-                ..._calls.endOfGenerationTokens(model.pointer),
-              })
-            : model.suppressedTokens,
+        nCtx,
+        suppressedTokens,
         grammarPtr,
         rootPtr,
         lazyGrammarConfig,
@@ -7345,6 +7421,7 @@ class LlamaCppService {
     GenerationParams params,
     Pointer<llama_vocab> vocab,
     int vocabSize,
+    int nCtx,
     List<int> suppressedTokens,
     Pointer<Utf8> grammarPtr,
     Pointer<Utf8> rootPtr,
@@ -7360,7 +7437,18 @@ class LlamaCppService {
     );
     _holdSamplerChain(sampler);
 
-    final penaltyConfig = _resolvePenaltySamplerConfig(params);
+    if (params.logitBias.isNotEmpty) {
+      final biasSampler = createLogitBiasSampler(vocabSize, params.logitBias);
+      if (biasSampler == nullptr) {
+        _freeSamplerChain(sampler);
+        throw LlamaInferenceException(
+          'llama.cpp failed to initialize GenerationParams.logitBias.',
+        );
+      }
+      llama_sampler_chain_add(sampler, biasSampler);
+    }
+
+    final penaltyConfig = _resolvePenaltySamplerConfig(params, nCtx);
     final penaltiesSampler = llama_sampler_init_penalties(
       vocabSize,
       penaltyConfig.lastN,
@@ -7371,10 +7459,9 @@ class LlamaCppService {
     llama_sampler_chain_add(sampler, penaltiesSampler);
 
     if (suppressedTokens.isNotEmpty) {
-      final suppressSampler = createSuppressTokensSampler(
-        vocabSize,
-        suppressedTokens,
-      );
+      final suppressSampler = createLogitBiasSampler(vocabSize, {
+        for (final token in suppressedTokens) token: double.negativeInfinity,
+      });
       if (suppressSampler == nullptr) {
         _freeSamplerChain(sampler);
         throw LlamaInferenceException(

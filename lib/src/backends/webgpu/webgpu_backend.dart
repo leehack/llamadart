@@ -2559,6 +2559,7 @@ class WebGpuLlamaBackend
         'on native llama.cpp only.',
       );
     }
+    rejectUnsupportedSamplerControls(params, 'WebGPU');
     if (params.minP != 0.0 && !capabilities.minP) {
       throw LlamaUnsupportedException(
         'WebGPU Min-P needs bridge assets whose getCompletionCapabilities() '

@@ -6004,6 +6004,41 @@ void main() {
     });
   });
 
+  test(
+    'engine rejects unadvertised sampler controls before both generation paths',
+    () async {
+      final backend = LimitReportingMockBackend()..nativeChat = true;
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('qwen-test.gguf');
+      const messages = [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+      ];
+
+      const params = GenerationParams(
+        frequencyPenalty: 1,
+        penaltyLastN: 0,
+        logitBias: {3: 2},
+      );
+      final error = emitsError(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          allOf(
+            contains(backend.backendName),
+            contains('frequencyPenalty'),
+            contains('penaltyLastN'),
+            contains('logitBias'),
+          ),
+        ),
+      );
+      await expectLater(engine.generate('hello', params: params), error);
+      await expectLater(engine.create(messages, params: params), error);
+      expect(backend.lastGenerationParams, isNull);
+      expect(backend.nativeGenerateChatCalls, 0);
+    },
+  );
+
   group('LlamaEngine generation limits', () {
     late LimitReportingMockBackend limitBackend;
     late LlamaEngine limitEngine;
