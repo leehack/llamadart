@@ -52,8 +52,9 @@ and force pushes, require squash PRs and Copilot review, and start with no
 required status checks. Allow branch creation and leave the bypass list
 empty. Use the branch preview to confirm the ruleset covers the release
 branch and excludes prep and Genkit PR branches. Release-branch PRs run
-native release digests, LiteRT-LM smoke, and validation bundle checks. Hosted
-demos stay on `main`.
+native release digests, LiteRT-LM smoke, and validation bundle checks. Pushes
+to release branches also build selected validation targets, including those
+deferred on PRs. Hosted demos stay on `main`.
 
 [Genkit releases](./genkit-package) continue from `main`. Drop Genkit package
 changes from a core backport and treat the backport as adapted.
