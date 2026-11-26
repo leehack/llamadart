@@ -107,7 +107,11 @@ and `max_tokens` override these defaults per call. Native llama.cpp accepts
 `frequency_penalty` from -100 to 100, `presence_penalty` from -2 to 2, and
 `logit_bias` as an object with token IDs as keys and finite numeric values
 from -10000 to 10000. For example, `"logit_bias": {"123": -5}` lowers
-the logit of token 123 in the loaded model.
+the logit of token 123 in the loaded model. Keys must be canonical integers
+(`"5"`, not `"+5"`, `" 5"` or `"05"`). A token ID outside the loaded model's
+vocabulary, like any other sampler value llama.cpp rejects, returns 400
+`invalid_request_error`; with `stream: true` the error arrives as an SSE error
+event because the response has already started.
 
 ### Default model and thinking mode
 
