@@ -59,8 +59,9 @@ jobs:
           observed_head="$(jq -r '.head.sha' "$readiness_dir/pr.json")"
           observed_base="$(jq -r '.base.sha' "$readiness_dir/pr.json")"
           observed_changed_files="$(jq -er '.changed_files | select(type == "number" and . >= 0 and floor == .)' "$readiness_dir/pr.json")"
-          if [[ "$repository" != "$REPOSITORY" || "$base_ref" != "$DEFAULT_BRANCH" ]]; then
-            echo "::error::Diagnostic is restricted to PRs targeting the repository default branch."
+          if [[ "$repository" != "$REPOSITORY" ||
+                ( "$base_ref" != "$DEFAULT_BRANCH" && ! "$base_ref" =~ ^release/[0-9]+\.[0-9]+\.x$ ) ]]; then
+            echo "::error::Diagnostic is restricted to PRs targeting the repository default branch or a patch release branch."
             exit 65
           fi
           if [[ ! "$observed_head" =~ ^[0-9a-f]{40}$ || ! "$observed_base" =~ ^[0-9a-f]{40}$ ]]; then
