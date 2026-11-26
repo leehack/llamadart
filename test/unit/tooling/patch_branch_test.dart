@@ -953,6 +953,12 @@ void main() {
     for (final (name, subject, path, passes) in [
       ('shares a path', 'Revert "Unknown change (#70)"', 'fix', false),
       ('shares no path', 'Revert "Unknown change (#70)"', 'other', true),
+      (
+        'is declared only in the body',
+        'Undo unknown change (#70)',
+        'fix',
+        false,
+      ),
     ]) {
       test('an unresolved revert that $name', () async {
         final revert = repo.mainCommit(
@@ -990,6 +996,139 @@ void main() {
       );
       repo.git(['update-ref', _release, 'HEAD']);
       expect(await repo.parity(all: true), contains('$backport backport'));
+    });
+
+    test('ignores revert phrases that do not start a body line', () async {
+      repo.mainCommit(
+        'Document revert checks (#60)',
+        body: 'Quotes `This reverts commit ` and a `Revert "` subject inline.',
+        file: 'fix',
+        content: 'docs\n',
+      );
+      repo.mainCommit(
+        'Rework the fix (#61)',
+        body: 'Note: This reverts commit $source.',
+        file: 'fix',
+        content: 'tweak\n',
+      );
+      repo.checkoutRelease();
+      final backport = repo.backport(source);
+      expect(await repo.parity(), contains('$backport backport exact'));
+      repo.git(['checkout', '-q', 'main']);
+      expect(await repo.guard(_backport(source)), contains('verified'));
+    });
+
+    test('resolves a revert by its quoted pull request title', () async {
+      repo.mainCommit('Other change (#57)', file: 'fix', content: 'other\n');
+      repo.mainCommit(
+        'Revert "Other change (#57)" (#58)',
+        body: '## Summary\n\nUndo #57.\n',
+        file: 'fix',
+        content: 'change\n',
+      );
+      repo.checkoutRelease();
+      final backport = repo.backport(source);
+      expect(await repo.parity(), contains('$backport backport exact'));
+    });
+
+    test('resolves a declared pull request merged before the minor', () async {
+      repo.mainCommit(
+        'Undo the prep (#58)',
+        body: 'Reverts $_repo#50',
+        file: 'fix',
+        content: 'old\n',
+      );
+      repo.checkoutRelease();
+      final backport = repo.backport(source);
+      expect(await repo.parity(), contains('$backport backport exact'));
+    });
+
+    for (final (name, subject, body) in [
+      ('a commit', 'Revert "Other change" (#58)', 'This reverts commit OTHER.'),
+      (
+        'a pull request',
+        'Revert "Other change (#57)" (#58)',
+        'Reverts $_repo#57',
+      ),
+    ]) {
+      test(
+        'keeps a revert of another commit on a shared path exact: $name',
+        () async {
+          final other = repo.mainCommit(
+            'Other change (#57)',
+            file: 'fix',
+            content: 'other\n',
+          );
+          repo.mainCommit(
+            subject,
+            body: body.replaceAll('OTHER', other),
+            file: 'fix',
+            content: 'change\n',
+          );
+          repo.checkoutRelease();
+          final backport = repo.backport(source);
+          expect(await repo.parity(), contains('$backport backport exact'));
+        },
+      );
+    }
+
+    for (final (name, declaration) in [
+      ('a commit', 'This reverts commit RESTORE.'),
+      ('a pull request', 'Reverts $_repo#60'),
+    ]) {
+      test(
+        'flags a drifted second revert declared against the re-apply by $name',
+        () async {
+          final first = repo.mainRevert(source);
+          final restore = repo.mainRevert(
+            first,
+            subject: 'Restore the fix (#60)',
+            body: _revertBody(first),
+          );
+          repo.mainCommit('Edit the fix (#61)', file: 'fix', content: 'more\n');
+          final second = repo.mainCommit(
+            'Undo the restore (#62)',
+            body: declaration.replaceAll('RESTORE', restore),
+            file: 'fix',
+            content: 'drifted\n',
+          );
+          repo.checkoutRelease();
+          await expectFlagged(repo.backport(source), second);
+        },
+      );
+    }
+
+    test(
+      'flags the backport when only an unrelated backport follows',
+      () async {
+        final other = repo.mainCommit(
+          'Other fix (#57)',
+          body: _landed,
+          file: 'other',
+        );
+        final revert = repo.mainRevert(source);
+        repo.checkoutRelease();
+        final backport = repo.backport(source);
+        repo.backport(
+          other,
+          body: _backport(other, pr: 57, body: _landed),
+          file: 'other',
+        );
+        await expectFlagged(backport, revert);
+      },
+    );
+
+    test('the backport guard rejects an unresolved revert', () async {
+      final revert = repo.mainCommit(
+        'Revert "Unknown change (#70)"',
+        body: 'This reverts commit ${'0' * 40}.',
+        file: 'fix',
+        content: 'unknown\n',
+      );
+      await expectLater(
+        repo.guard(_backport(source)),
+        throwsA(allOf(_failure(source), _failure(revert))),
+      );
     });
 
     test('the backport guard follows the main revert state', () async {

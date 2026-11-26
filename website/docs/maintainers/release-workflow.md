@@ -39,8 +39,10 @@ Backport the patch changelog import (PR3b) before the `0.22.0` prep.
   source, the revert and the backport. Backport the revert after the original
   backport with `git cherry-pick -x <revert SHA>`, or re-apply the source on
   `main` exactly. A revert declares `This reverts commit <full SHA>.` or
-  `Reverts leehack/llamadart#<N>`, or is the exact inverse patch; an
-  unresolved `Revert "` commit that shares a path with the source counts too.
+  `Reverts leehack/llamadart#<N>` on its own line, or is the exact inverse
+  patch. A `Revert "` subject or a body line starting with that declaration
+  whose target resolves to no commit or pull request counts as a revert of
+  any source it shares a path with.
   To keep the backport instead, open a triaged forward-port issue and land one
   release-branch commit that adds
   `tool/release/retained_backports/<backport SHA>.json` and carries

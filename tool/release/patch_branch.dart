@@ -63,6 +63,7 @@ final _forwardLink = RegExp(
       r'/issues/([1-9][0-9]*)$',
 );
 final _revertedCommit = RegExp(r'^This reverts commit ([a-f0-9]{40})\.$');
+final _revertedTitle = RegExp(r'^Revert ".* \(#([1-9][0-9]*)\)"');
 final _revertedPr = RegExp('^Reverts $_repository#([1-9][0-9]*)\$');
 final _recoveryPath = RegExp('^$_recoveryDirectory/([a-f0-9]{40})\\.json\$');
 
@@ -487,6 +488,9 @@ class _MainHistory {
   final _minorTags = <String, String>{};
   final _scans = <String, Future<_Scan>>{};
   final _reverts = <String, Future<_Revert?>>{};
+  late final Set<String> pullRequests = {
+    for (final subject in git.subjects(tip)) ?_prSuffix.firstMatch(subject)?[1],
+  };
 
   String minor(String line) => _minorTags.putIfAbsent(line, () {
     final String sha;
@@ -517,7 +521,7 @@ class _MainHistory {
   }
 
   Future<_Revert?> revertOf(String line, String source) =>
-      _reverts[source] ??= _findRevert(line, source);
+      _reverts['$line $source'] ??= _findRevert(line, source);
 
   Future<_Scan> _scan(String line) => _scans[line] ??= () async {
     final range = '${minor(line)}..$tip';
@@ -554,7 +558,7 @@ class _MainHistory {
         revert = _Revert(sha, unresolved: false);
       } else if (message.revertLike &&
           !message.commits.any(git.hasCommit) &&
-          !message.pullRequests.any(scan.pullRequests.contains) &&
+          !message.pullRequests.any(pullRequests.contains) &&
           (sourcePaths ??= git.changedPaths(
             source,
           )).intersection(git.changedPaths(sha)).isNotEmpty) {
@@ -584,7 +588,10 @@ class _Message {
       pullRequests = {},
       revertLike =
           subject.startsWith('Revert "') ||
-          body.contains('This reverts commit ') {
+          _lines(body).any((line) => line.startsWith('This reverts commit ')) {
+    if (_revertedTitle.firstMatch(subject)?[1] case final number?) {
+      pullRequests.add(number);
+    }
     for (final line in _lines(body)) {
       if (_revertedCommit.firstMatch(line)?[1] case final commit?) {
         commits.add(commit);
@@ -602,16 +609,11 @@ class _Message {
 }
 
 class _Scan {
-  _Scan(this.messages, this.patches, this.inverses)
-    : pullRequests = {
-        for (final message in messages.values)
-          ?_prSuffix.firstMatch(message.subject)?[1],
-      };
+  _Scan(this.messages, this.patches, this.inverses);
 
   final Map<String, _Message> messages;
   final Map<String, String> patches;
   final Map<String, String> inverses;
-  final Set<String> pullRequests;
 }
 
 Future<String> _parity(
@@ -1044,6 +1046,14 @@ class _Git {
     sha,
     '--',
   ]).split('\x00').where((path) => path.isNotEmpty).toSet();
+
+  List<String> subjects(String revision) => text([
+    'log',
+    '--first-parent',
+    '-z',
+    '--format=%s',
+    revision,
+  ]).split('\x00');
 
   Map<String, _Message> messages(String range) {
     final fields = text([
