@@ -234,7 +234,9 @@ List<PublishedPatch> readPublishedPatchSections(
   final git = _Git(root);
   final prefix = 'v$line.';
   final minorTag = '${prefix}0';
-  final tags = git.run(['tag', '--list', '$prefix*']).trim().split('\n');
+  final tagList = git.run(['tag', '--list', '$prefix*']).trim();
+  if (tagList.isEmpty) return [];
+  final tags = tagList.split('\n');
   final patchTags = tags.where((tag) {
     final patch = tag.substring(prefix.length);
     return RegExp(r'^[1-9][0-9]*$').hasMatch(patch);

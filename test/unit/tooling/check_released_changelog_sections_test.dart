@@ -929,6 +929,18 @@ void main() {
     expect(await repo.check(repo.prep(), prep: true), isEmpty);
   });
 
+  test('imports no patch sections when the previous line has no tags', () {
+    expect(
+      readPublishedPatchSections(
+        repo.root,
+        version: '1.3.0',
+        previousVersion: '1.2.0',
+        through: repo.base,
+      ),
+      isEmpty,
+    );
+  });
+
   group('minor prep imports', () {
     const minor = '## 1.0.0\n\n- Previous minor.\n\n';
     const newMinor = '## 1.1.0\n\n- New minor.\n\n';
@@ -1031,6 +1043,22 @@ void main() {
             (error) => error.message,
             'message',
             contains('v1.0.0'),
+          ),
+        ),
+      );
+    });
+
+    test('rejects an off-chain minor tag before importing patches', () {
+      repo.git(['tag', '-d', 'v1.0.0']);
+      repo.git(['tag', 'v1.0.0', secondPatch]);
+
+      expect(
+        imports,
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            'Core tag v1.0.0 is off the main first-parent chain.',
           ),
         ),
       );

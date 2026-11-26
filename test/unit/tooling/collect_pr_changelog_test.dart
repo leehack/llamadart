@@ -921,14 +921,10 @@ void main() {
         expect(output, contains('- Main change.'));
         expect(output, isNot(contains('Squash backport.')));
       } else {
-        await expectLater(
-          collection,
-          throwsA(
-            _formatError(
-              'WARNING $cut: missing final PR number in commit subject.',
-            ),
-          ),
-        );
+        final error = fork == 'v0.21.0'
+            ? 'WARNING $cut: missing final PR number in commit subject.'
+            : 'Patch tag v$tagVersion must fork from main at v0.21.0.';
+        await expectLater(collection, throwsA(_formatError(error)));
       }
     });
   }
@@ -1985,12 +1981,20 @@ fi
   test(
     'retains the previous published minor across a major rollover and patch gaps',
     () async {
-      const headHistory =
-          '## 0.20.2\r\n\r\n- Two.  \r\n\r\n'
-          '## 0.20.0\n\n- Zero.\n\n';
+      const minor = '## 0.20.0\n\n- Zero.\n\n';
+      const headHistory = '## 0.20.2\r\n\r\n- Two.  \r\n\r\n$minor';
       const tail = '## 0.18.7\n\n* Older  release.\n';
-      final repo = _customRepo(history: '$headHistory$tail');
-      await _collect(repo, repo.args(version: '1.0.0', write: true));
+      final repo = _customRepo(previous: '0.20.0', history: '$minor$tail');
+      repo.pr(2, 'N/A: Historical main-branch patch.', {
+        'pubspec.yaml': 'name: llamadart\nversion: 0.20.2\n',
+        _root: '$_rootIntro$headHistory$tail',
+        _docs: '$_docsIntro$headHistory$tail',
+      });
+      repo.git(['tag', 'v0.20.2']);
+      await _collect(
+        repo,
+        repo.args(version: '1.0.0', from: 'v0.20.2', write: true),
+      );
       final root = repo.file(_root).readAsStringSync();
       final docs = repo.file(_docs).readAsStringSync();
       expect(root, startsWith('$_rootIntro## 1.0.0\n'));
