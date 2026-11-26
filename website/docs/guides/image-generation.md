@@ -19,6 +19,10 @@ Image generation is a Preview.
   [memory check](./image-generation-memory-and-limits#memory-check)'s warning, refusal and two-GPU paths have not
   been checked on physical Vulkan hardware
   ([#1024](https://github.com/leehack/llamadart/issues/1024)).
+  Vulkan devices with a subgroup size below 8 can return noise; use
+  `ImageModelParams(device: ComputeDevice.cpu)`
+  ([#992](https://github.com/leehack/llamadart/issues/992),
+  [details](../platforms/known-platform-issues#linux-and-windows)).
 - Model licenses differ, including on commercial use; see
   [Model licenses](../examples/basic-app#model-licenses).
 :::
