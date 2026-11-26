@@ -300,13 +300,14 @@ run. Ordinary push CI uses that event's before/after diff. Retaining
 each run preserves the checks selected for each merge (#1646). The separate
 macOS workflow accounts for intervening merges through its cumulative range.
 
-Obsolete PR bundle runs cancel. Manual and `main` push bundle runs have unique
-concurrency groups and do not cancel one another. On a `main` push, Main macOS
-CI builds the selected macOS desktop bundle. The bundle workflow builds the
-remaining selected targets. A pull request defers Windows and macOS desktop
-builds and the Android build until after merge unless it changes their build
-inputs. The selector keeps these builds on PRs that change the bundle workflow,
-the selector, `hook/`, `lib/src/hook/` (native pins), root
+Obsolete PR bundle runs cancel. Manual runs and pushes to `main` or
+`release/M.m.x` have unique concurrency groups. On a `main` push, Main macOS CI
+builds the selected macOS desktop bundle and the bundle workflow builds the
+remaining selected targets. On a patch-branch push, the bundle workflow builds
+every selected target, including macOS. A pull request defers Windows and macOS
+desktop builds and the Android build until after merge unless it changes their
+build inputs. The selector keeps these builds on PRs that change the bundle
+workflow, the selector, `hook/`, `lib/src/hook/` (native pins), root
 `pubspec.yaml`/`pubspec.lock`, compiled validation package code or bundle
 tooling (`tool/testing/validation*`). The Windows and macOS desktop builds also
 select on `.flutter-version` changes. Android also selects on chat app sources
@@ -315,7 +316,7 @@ outside its tests and other platforms' folders, and the Apple companions'
 desktop and Web builds. A deferred target is absent from the matrix.
 `Validation bundle result` still requires every selected matrix to pass, even
 when `Desktop windows-2022` is absent. A break in a deferred build first shows on
-`main`.
+the push to `main` or the patch branch after merge.
 
 ## Main macOS CI
 

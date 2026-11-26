@@ -1,12 +1,13 @@
 name: Validation bundles
 
 # PRs build Windows and macOS desktops and Android only when they change those
-# targets' build inputs (POST_MERGE_TARGETS in tool/ci/select_jobs.py). On pushes
-# to main, Main macOS CI owns the macOS desktop bundle. This workflow builds
-# the other selected targets.
+# targets' build inputs (POST_MERGE_TARGETS in tool/ci/select_jobs.py).
+# Main macOS CI builds the selected macOS desktop bundle on main pushes. This
+# workflow builds the other selected targets on main and every selected target
+# on patch-branch pushes.
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/[0-9]+.[0-9]+.x']
   pull_request:
     branches: [main, 'release/[0-9]+.[0-9]+.x']
   workflow_dispatch:
