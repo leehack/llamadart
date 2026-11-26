@@ -1155,6 +1155,7 @@ Set<SamplerControl> requestedSamplerControls(GenerationParams params) {
         params.mirostatTau != defaults.mirostatTau ||
         params.mirostatEta != defaults.mirostatEta)
       SamplerControl.mirostat,
+    if (params.dryMultiplier != defaults.dryMultiplier) SamplerControl.dry,
   };
 }
 

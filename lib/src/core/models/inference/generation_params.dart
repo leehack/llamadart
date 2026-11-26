@@ -905,6 +905,11 @@ enum SamplerControl {
   /// Applies [GenerationParams.mirostat], [GenerationParams.mirostatTau] and
   /// [GenerationParams.mirostatEta].
   mirostat,
+
+  /// Applies [GenerationParams.dryMultiplier], [GenerationParams.dryBase],
+  /// [GenerationParams.dryAllowedLength], [GenerationParams.dryPenaltyLastN]
+  /// and [GenerationParams.drySequenceBreakers].
+  dry,
 }
 
 /// Parameters controlling the token sampling and generation process.
@@ -1047,6 +1052,49 @@ class GenerationParams {
 
   /// Mirostat learning rate, positive and finite.
   final double mirostatEta;
+
+  /// Strength of the "Don't Repeat Yourself" (DRY) repetition penalty on
+  /// native llama.cpp, from 0 to 100.
+  ///
+  /// The default, 0.0, disables DRY, and then the other `dry` fields are
+  /// ignored. Otherwise a token that would extend a sequence already seen in
+  /// the last [dryPenaltyLastN] tokens (prompt included) beyond
+  /// [dryAllowedLength] tokens has `dryMultiplier * dryBase ^ (length -
+  /// dryAllowedLength)` subtracted from its logit. The penalty saturates near
+  /// the largest 32-bit float, which bans the token. `llama-server`
+  /// suggests 0.8.
+  ///
+  /// DRY runs after the penalties and before the other samplers. It cannot
+  /// be combined with a grammar (including one from tools or a response
+  /// format) or a [thinkingBudget]: the penalty can leave no valid
+  /// candidate. Sampler setup scans the vocabulary once for the breakers, so
+  /// it adds a small cost to each request that enables DRY.
+  final double dryMultiplier;
+
+  /// Base of the exponential DRY penalty, from 1 to 100. The default is 1.75.
+  final double dryBase;
+
+  /// Length of a repeated sequence that DRY still allows, from 0. The default
+  /// is 2.
+  ///
+  /// It must be smaller than [dryPenaltyLastN].
+  final int dryAllowedLength;
+
+  /// Number of recent tokens DRY scans for repeated sequences, from 1.
+  ///
+  /// The default is 64. A value above the context size is capped at it.
+  final int dryPenaltyLastN;
+
+  /// Strings that end a repeated sequence for DRY, so text on either side of
+  /// one is not treated as a repetition. The default is
+  /// [defaultDrySequenceBreakers]; an empty list uses none.
+  ///
+  /// A list holds at most 64 distinct non-empty strings of at most 40 UTF-8
+  /// bytes each, without NUL characters.
+  final List<String> drySequenceBreakers;
+
+  /// The sequence breakers `llama.cpp` uses for DRY by default.
+  static const List<String> defaultDrySequenceBreakers = ['\n', ':', '"', '*'];
 
   /// Random seed for the sampler.
   ///
@@ -1203,6 +1251,11 @@ class GenerationParams {
     this.mirostat = 0,
     this.mirostatTau = 5.0,
     this.mirostatEta = 0.1,
+    this.dryMultiplier = 0.0,
+    this.dryBase = 1.75,
+    this.dryAllowedLength = 2,
+    this.dryPenaltyLastN = 64,
+    this.drySequenceBreakers = defaultDrySequenceBreakers,
     this.seed,
     this.stopSequences = const [],
     this.ignoreEos = false,
@@ -1255,6 +1308,11 @@ class GenerationParams {
     int? mirostat,
     double? mirostatTau,
     double? mirostatEta,
+    double? dryMultiplier,
+    double? dryBase,
+    int? dryAllowedLength,
+    int? dryPenaltyLastN,
+    List<String>? drySequenceBreakers,
     int? seed,
     List<String>? stopSequences,
     bool? ignoreEos,
@@ -1294,6 +1352,11 @@ class GenerationParams {
       mirostat: mirostat ?? this.mirostat,
       mirostatTau: mirostatTau ?? this.mirostatTau,
       mirostatEta: mirostatEta ?? this.mirostatEta,
+      dryMultiplier: dryMultiplier ?? this.dryMultiplier,
+      dryBase: dryBase ?? this.dryBase,
+      dryAllowedLength: dryAllowedLength ?? this.dryAllowedLength,
+      dryPenaltyLastN: dryPenaltyLastN ?? this.dryPenaltyLastN,
+      drySequenceBreakers: drySequenceBreakers ?? this.drySequenceBreakers,
       seed: seed ?? this.seed,
       stopSequences: stopSequences ?? this.stopSequences,
       ignoreEos: ignoreEos ?? this.ignoreEos,

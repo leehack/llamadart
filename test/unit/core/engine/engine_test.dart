@@ -6114,6 +6114,7 @@ void main() {
         xtcProbability: 0.5,
         dynatempRange: 0.5,
         mirostat: 2,
+        dryMultiplier: 0.8,
       );
       final error = emitsError(
         isA<LlamaUnsupportedException>().having(
@@ -6129,6 +6130,7 @@ void main() {
             contains('xtc'),
             contains('dynamicTemperature'),
             contains('mirostat'),
+            contains('dry'),
           ]),
         ),
       );

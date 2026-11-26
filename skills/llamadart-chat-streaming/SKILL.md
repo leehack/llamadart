@@ -206,6 +206,15 @@ modalities and speculative strategies before offering them.
   `dynatempRange` of at least 0.01 as a 32-bit float and throws
   `LlamaUnsupportedException` with a grammar, thinking budget, `ignoreEos`,
   model-suppressed tokens or a banned token (`-infinity` `logitBias`).
+  DRY (`dryMultiplier` above 0, up to 100) penalizes tokens that extend a
+  repeat of at least `dryAllowedLength` (default 2) tokens within the last
+  `dryPenaltyLastN` (default 64, at most the context size), prompt included,
+  by `dryMultiplier * dryBase ^ (length - dryAllowedLength)`; text after a
+  `drySequenceBreakers` entry (default newline, `:`, `"` and `*`) starts a
+  new repeat. It runs after the penalties, works with Mirostat, and throws
+  `LlamaUnsupportedException` with a grammar (including tools or
+  `responseFormat`) or a thinking budget. While `dryMultiplier` is 0 the other
+  DRY fields are ignored, so zero it to turn DRY off.
 - Check `(await engine.capabilities).supportsTokenLogprobs` before setting
   `GenerationParams(topLogprobs: n)` (0 to 20) on native llama.cpp. They are
   raw-distribution values, before logit bias, penalties, grammar and

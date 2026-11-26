@@ -8938,6 +8938,7 @@ void main() {
         ('mirostat', GenerationParams(mirostat: 1)),
         ('mirostat', GenerationParams(mirostatTau: 4)),
         ('mirostat', GenerationParams(mirostatEta: 0.2)),
+        ('dry', GenerationParams(dryMultiplier: 0.8)),
       ]) {
         await expectLater(
           service.generate(contextHandle, 'hello', params),
