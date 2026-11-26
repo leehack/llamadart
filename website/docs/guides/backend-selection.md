@@ -155,12 +155,15 @@ never falls back to another device:
   devices; keep `auto` or `cpu` there unless you have validated your target
   devices
   ([known limitations](../platforms/known-platform-issues)). On
-  an iOS simulator it uses Metal, as `GpuBackend.metal` does, and Metal
-  returns incorrect output there
-  ([#950](https://github.com/leehack/llamadart/issues/950)); keep `auto` or
-  `cpu` on a simulator. On macOS x86_64 it uses Metal too, which returns
-  garbled output on Intel Macs with AMD GPUs ([#1597](https://github.com/leehack/llamadart/issues/1597)).
-  On both, an explicit GPU `preferredBackend` other than Metal, such as
+  an iOS simulator it throws, since the simulator GPU reports
+  `MTLGPUFamilyApple2` and llama.cpp's Metal kernels need
+  `MTLGPUFamilyApple7`
+  ([#950](https://github.com/leehack/llamadart/issues/950)); use `auto` or
+  `cpu` there, or a physical device. Under `ComputeDevice.auto`, an explicit
+  GPU `preferredBackend` such as `GpuBackend.metal` loads on the CPU and logs a
+  warning on a simulator. On macOS x86_64 it uses Metal, which returns
+  garbled output on Intel Macs with AMD GPUs ([#1597](https://github.com/leehack/llamadart/issues/1597));
+  there an explicit GPU `preferredBackend` other than Metal, such as
   `GpuBackend.vulkan`, under `ComputeDevice.auto` also loads its GPU layers on
   Metal and logs a warning. On
   the Web it needs a WebGPU adapter and a bridge that loads GPU layers. On

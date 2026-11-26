@@ -163,7 +163,9 @@ interface does not establish backend/model support; read `await engine.capabilit
   Native llama.cpp `auto` already runs on the CPU on Android, an iOS
   simulator and macOS x86_64 (Rosetta included). An explicit
   `ComputeDevice.gpu` or `npu` runs on that GPU or NPU or throws
-  `LlamaUnsupportedException`, never on another device; native LiteRT-LM
+  `LlamaUnsupportedException`, never on another device (`gpu` always throws
+  on an iOS simulator, whose GPU cannot run llama.cpp's Metal kernels, and an
+  explicit `GpuBackend.metal` there loads on the CPU with a warning); native LiteRT-LM
   reports a GPU or NPU delegate that fails to start from the first
   generation or `tokenize`. Under `auto` it retries a GPU engine that fails
   to start on the CPU with a warning (`getBackendName()` then reports

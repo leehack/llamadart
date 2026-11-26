@@ -727,8 +727,9 @@ class LlamaCppService {
   ///
   /// [ComputeDevice.cpu] forces the CPU module (or BLAS when requested) and 0
   /// GPU layers. [ComputeDevice.gpu] keeps the requested backend, except that
-  /// Android resolves [GpuBackend.auto] to Vulkan and an iOS simulator or
-  /// macOS x86_64 resolves it to Metal, since their `auto` means the CPU.
+  /// Android resolves [GpuBackend.auto] to Vulkan and macOS x86_64 resolves it
+  /// to Metal, since their `auto` means the CPU. An iOS simulator has no
+  /// usable GPU backend, so it throws [LlamaUnsupportedException].
   /// [ComputeDevice.npu] has no llama.cpp backend.
   static ModelParams resolveComputeDeviceParams(
     ModelParams modelParams, {
@@ -748,11 +749,13 @@ class LlamaCppService {
           gpuLayers: 0,
         );
       case ComputeDevice.gpu:
+        if (isIosSimulator) {
+          throw LlamaUnsupportedException(iosSimulatorGpuUnsupportedMessage);
+        }
         if (isAndroid && modelParams.preferredBackend == GpuBackend.auto) {
           return modelParams.copyWith(preferredBackend: GpuBackend.vulkan);
         }
-        if ((isIosSimulator || isMacosX64) &&
-            modelParams.preferredBackend == GpuBackend.auto) {
+        if (isMacosX64 && modelParams.preferredBackend == GpuBackend.auto) {
           return modelParams.copyWith(preferredBackend: GpuBackend.metal);
         }
         return modelParams;
@@ -769,19 +772,24 @@ class LlamaCppService {
   ///
   /// Android keeps Vulkan bundled, but `auto` currently prefers CPU to avoid
   /// initializing optional GPU backends by default on devices with unstable
-  /// Vulkan stacks. An iOS simulator resolves `auto` to CPU as well: its
-  /// Metal device returns incorrect output from llama.cpp
-  /// (https://github.com/leehack/llamadart/issues/950). So does macOS x86_64,
-  /// Rosetta included: Metal returns garbled output on Intel Macs with AMD
-  /// GPUs (https://github.com/leehack/llamadart/issues/1597), and an x86_64
-  /// process cannot tell an Intel Mac from Rosetta. An explicit backend is
-  /// returned as requested.
+  /// Vulkan stacks. An iOS simulator resolves `auto` and every GPU backend to
+  /// CPU, since Metal is its only GPU backend and its GPU cannot run
+  /// llama.cpp's Metal kernels
+  /// (https://github.com/leehack/llamadart/issues/950). macOS x86_64, Rosetta
+  /// included, resolves `auto` to CPU: Metal returns garbled output on Intel
+  /// Macs with AMD GPUs (https://github.com/leehack/llamadart/issues/1597),
+  /// and an x86_64 process cannot tell an Intel Mac from Rosetta. Any other
+  /// explicit backend is returned as requested.
   static GpuBackend resolvePreferredBackendForLoad(
     ModelParams modelParams, {
     bool isAndroid = false,
     bool isIosSimulator = false,
     bool isMacosX64 = false,
   }) {
+    if (isIosSimulator &&
+        _isSimulatorGpuBackend(modelParams.preferredBackend)) {
+      return GpuBackend.cpu;
+    }
     if ((isAndroid || isIosSimulator || isMacosX64) &&
         modelParams.preferredBackend == GpuBackend.auto) {
       return GpuBackend.cpu;
@@ -812,21 +820,40 @@ class LlamaCppService {
         : resolveGpuLayerCount(modelParams.gpuLayers);
   }
 
-  /// The warning for a model an iOS simulator loaded with [resolvedGpuLayers]
-  /// GPU layers, or `null` when [isIosSimulator] is false or the model runs
-  /// on the CPU.
-  static String? iosSimulatorMetalWarning({
+  /// Why [ComputeDevice.gpu] cannot run llama.cpp on an iOS simulator.
+  static const String iosSimulatorGpuUnsupportedMessage =
+      'ComputeDevice.gpu is not available for llama.cpp on an iOS simulator: '
+      "llama.cpp's Metal kernels need MTLGPUFamilyApple7, and the simulator "
+      'reports MTLGPUFamilyApple2, so they return incorrect output '
+      '(https://github.com/leehack/llamadart/issues/950). Use '
+      'ComputeDevice.auto or ComputeDevice.cpu to run on the CPU, or run on a '
+      'physical iOS device.';
+
+  /// Whether a load requesting [backend] on an iOS simulator would offload to
+  /// Metal, its only GPU backend, and so runs on the CPU instead.
+  static bool _isSimulatorGpuBackend(GpuBackend backend) =>
+      backend != GpuBackend.auto &&
+      backend != GpuBackend.cpu &&
+      backend != GpuBackend.blas;
+
+  /// The warning for an iOS simulator load that asked for the GPU backend
+  /// [requestedBackend] and ran on the CPU instead, or `null` when
+  /// [isIosSimulator] is false or [requestedBackend] is `auto`, `cpu` or
+  /// `blas`.
+  static String? iosSimulatorMetalFallbackWarning({
     required bool isIosSimulator,
-    required int resolvedGpuLayers,
+    required GpuBackend requestedBackend,
   }) {
-    if (!isIosSimulator || resolvedGpuLayers == 0) {
+    if (!isIosSimulator || !_isSimulatorGpuBackend(requestedBackend)) {
       return null;
     }
-    return "llama.cpp's Metal backend is known to return incorrect output on "
-        'the iOS simulator '
-        '(https://github.com/leehack/llamadart/issues/950), and this model '
-        'was loaded with GPU layers there. Use ComputeDevice.auto with '
-        'GpuBackend.auto, or ComputeDevice.cpu, to run it on the CPU.';
+    return 'preferredBackend ${requestedBackend.name} was requested, but '
+        "llama.cpp's Metal kernels, the only GPU backend on the iOS "
+        'simulator, need MTLGPUFamilyApple7 and the simulator reports '
+        'MTLGPUFamilyApple2 '
+        '(https://github.com/leehack/llamadart/issues/950), so the model '
+        'loaded on CPU with 0 GPU layers. Run on a physical iOS device to '
+        'use Metal.';
   }
 
   /// The warning for a model a macOS x86_64 process loaded with
@@ -2186,9 +2213,9 @@ class LlamaCppService {
         'model loaded on $resolvedBackend with 0 GPU layers.',
       );
     }
-    final simulatorWarning = iosSimulatorMetalWarning(
+    final simulatorWarning = iosSimulatorMetalFallbackWarning(
       isIosSimulator: _isIosSimulator,
-      resolvedGpuLayers: _activeResolvedGpuLayers,
+      requestedBackend: modelParams.preferredBackend,
     );
     if (simulatorWarning != null) {
       LlamaLogger.instance.warning(simulatorWarning);

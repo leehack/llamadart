@@ -13,9 +13,9 @@ enum ComputeDevice {
   ///
   /// - llama.cpp native: every layer on the best GPU backend that loads,
   ///   otherwise the CPU; the CPU on Android, on an iOS simulator, whose
-  ///   Metal device returns incorrect output, and in a macOS x86_64 process,
-  ///   Rosetta included, since Metal returns garbled output on Intel Macs
-  ///   with AMD GPUs.
+  ///   GPU cannot run llama.cpp's Metal kernels, and in a macOS x86_64
+  ///   process, Rosetta included, since Metal returns garbled output on
+  ///   Intel Macs with AMD GPUs.
   /// - llama.cpp on the Web: WebGPU when the browser has it, otherwise the
   ///   WebAssembly CPU runtime.
   /// - LiteRT-LM native: the GPU on Android, iOS and macOS, and the CPU on
@@ -33,13 +33,13 @@ enum ComputeDevice {
   cpu,
 
   /// A GPU: for llama.cpp, the best GPU backend that loads, which is Vulkan
-  /// on Android and Metal on an iOS simulator or macOS x86_64, where
-  /// llama.cpp's output can be incorrect; LiteRT-LM's GPU delegate; WebGPU in
-  /// a browser.
+  /// on Android and Metal on macOS x86_64, where llama.cpp's output can be
+  /// incorrect; LiteRT-LM's GPU delegate; WebGPU in a browser.
   ///
   /// A model that would run on the CPU, because no GPU module or device is
   /// present or the browser has no WebGPU, throws
-  /// `LlamaUnsupportedException` instead.
+  /// `LlamaUnsupportedException` instead. So does llama.cpp on an iOS
+  /// simulator, whose GPU cannot run its Metal kernels.
   gpu,
 
   /// A neural processing unit: LiteRT-LM on Android only. llama.cpp, image

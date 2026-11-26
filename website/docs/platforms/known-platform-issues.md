@@ -35,18 +35,19 @@ feature. For which runtime supports which feature, see the
 - iOS x86_64 simulator: no LiteRT-LM runtime is published. Apps that include
   LiteRT-LM must exclude the x86_64 simulator architecture; llama.cpp still
   builds for it. LiteRT-LM throws `LlamaUnsupportedException` there.
-- iOS simulator: llama.cpp on Metal returns incorrect output. On an arm64
-  simulator (iPhone 17 Pro, iOS 26.5, Apple silicon host) Qwen3.5 0.8B
-  (`Q4_K_M`) generates garbage text on Metal and answers correctly on the
-  CPU, and Qwen2.5 0.5B fails on Metal the same way
-  ([#950](https://github.com/leehack/llamadart/issues/950)); the cause is
-  not known. On an iOS simulator `auto` therefore runs llama.cpp on the CPU
-  with 0 GPU layers. `GpuBackend.metal` and `ComputeDevice.gpu` still load on
-  Metal there, and the load logs a warning: use them only to check a model
-  on the simulator's Metal device. Under `ComputeDevice.auto`, another
-  explicit GPU backend, such as `GpuBackend.vulkan`, also loads its GPU
-  layers on Metal and warns, since the Apple runtime has no other GPU
-  backend. The x86_64 (Rosetta) simulator behaves the same. iOS devices and
+- iOS simulator: llama.cpp cannot run on the simulator's GPU. It reports
+  `MTLGPUFamilyApple2`, and llama.cpp's Metal kernels need
+  `MTLGPUFamilyApple7`, so core kernels are unsupported and the output is
+  incorrect. On an arm64 simulator (iPhone 17 Pro, iOS 26.5, Apple silicon
+  host) Qwen3.5 0.8B (`Q4_K_M`) generates garbage text on Metal and answers
+  correctly on the CPU, and Qwen2.5 0.5B fails on Metal the same way
+  ([#950](https://github.com/leehack/llamadart/issues/950)). llama.cpp
+  therefore runs on the CPU with 0 GPU layers there. `ComputeDevice.gpu`
+  throws `LlamaUnsupportedException`. `GpuBackend.metal`, or another explicit
+  GPU backend such as `GpuBackend.vulkan`, under `ComputeDevice.auto` loads on
+  the CPU and logs a warning, since Metal is the Apple runtime's only GPU
+  backend. Test GPU inference on a physical device. The x86_64 (Rosetta)
+  simulator behaves the same. iOS devices and
   Apple silicon macOS are unchanged: `auto` uses Metal, and on an iPhone 16
   Pro its output matches the CPU's. Intel macOS differs: see the next entry.
 - macOS x86_64: upstream llama.cpp Metal returns garbled output on Intel Macs

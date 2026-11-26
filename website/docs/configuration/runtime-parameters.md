@@ -46,7 +46,10 @@ Important fields:
 - `preferredBackend`: backend preference (`auto`, `vulkan`, `metal`, etc).
   On native llama.cpp, `auto` loads on the CPU with 0 GPU layers on Android,
   an iOS simulator and macOS x86_64, Rosetta included ([#1597](https://github.com/leehack/llamadart/issues/1597)); an
-  explicit GPU backend or `device: ComputeDevice.gpu` still loads on the GPU.
+  explicit GPU backend or `device: ComputeDevice.gpu` still loads on the GPU,
+  except on an iOS simulator, whose GPU cannot run llama.cpp's Metal kernels
+  ([#950](https://github.com/leehack/llamadart/issues/950)): an explicit GPU
+  backend loads on the CPU with a warning, and `ComputeDevice.gpu` throws.
   On Linux and Windows, an explicit GPU backend whose module is missing loads
   the model on CPU with 0 GPU layers and logs a Dart warning;
   `getBackendName()` then reports `CPU`. With `device: ComputeDevice.gpu` the
@@ -59,7 +62,7 @@ Important fields:
   not bundle (SYCL, Hexagon). On native llama.cpp a row split load whose
   devices lack them, as on every bundled GPU backend whose module loads, with `GpuBackend.blas`
   or `GpuBackend.cpu`, with `auto` on Android, the iOS simulator and macOS
-  x86_64 (which runs on the CPU), and when the load falls back to the CPU because the requested
+  x86_64 or an explicit GPU backend on the iOS simulator (which run on the CPU), and when the load falls back to the CPU because the requested
   backend is missing or Vulkan is refused, throws `LlamaUnsupportedException`
   naming the device before the model loads; use `ModelSplitMode.layer`. A bundled
   module that fails to load or finds no device loads row on the CPU instead.
