@@ -332,9 +332,11 @@ The lane runs the selected native shards, Studio lifecycle and accessibility
 tests on `macos-15`, Companion Packages on `macos-latest` (including the Apple
 cache and process memory checks), and the portable desktop bundle on
 `macos-15`. `Main macOS result` checks all selected jobs. The concurrency group
-lets the active run finish and keeps one waiting run. A newer queued run can
-replace the waiting run. Selection starts from the last successful baseline,
-so changes from an intervening replaced run stay in the cumulative range.
+for first attempts is scoped to the triggering ref. It lets the active run
+finish and keeps one waiting run. A newer queued run on that ref can replace
+the waiting run. Reruns use their own run ID so older runs cannot replace a
+waiting first attempt. Selection starts from the last successful baseline, so
+changes from an intervening replaced run stay in the cumulative range.
 
 The two-hour schedule is a best-effort backstop. GitHub can delay or drop a
 scheduled run. Dispatch the workflow on `main` to recover after missed events,

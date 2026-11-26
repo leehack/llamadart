@@ -1803,7 +1803,8 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     });
     expect(workflow['permissions'], {'contents': 'read'});
     expect(workflow['concurrency'], {
-      'group': 'main-macos',
+      'group':
+          r"main-macos-${{ github.run_attempt == '1' && github.ref || github.run_id }}",
       'cancel-in-progress': false,
     });
     final jobs = workflow['jobs'] as Map;
@@ -1916,19 +1917,26 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     expect(jobs['companion-packages']['runs-on'], 'macos-latest');
   });
 
-  test(
-    'main push fallback routes macOS checks away from ordinary CI',
-    () async {
+  for (final workflow in ['ci', 'validation_bundles']) {
+    test('main push fallback omits macOS checks in $workflow', () async {
+      final steps = readWorkflow(workflow)['jobs']['changes']['steps'] as List;
+      final selector = steps.singleWhere((step) => step['id'] == 'select');
+      final command = (selector['run'] as String).split(' ');
+      expect(command.first, 'python3');
       final scratch = Directory.systemTemp.createTempSync('main-ci-selection-');
       addTearDown(() => scratch.deleteSync(recursive: true));
       final event = File('${scratch.path}/event.json')..writeAsStringSync('{}');
       final output = File('${scratch.path}/github-output');
+      final head = await Process.run('git', ['rev-parse', 'HEAD']);
+      expect(head.exitCode, 0, reason: '${head.stderr}');
       final selected = await Process.run(
         Platform.isWindows ? 'python' : 'python3',
-        ['tool/ci/select_jobs.py', 'select'],
+        command.skip(1).toList(),
         environment: {
           'GITHUB_EVENT_NAME': 'push',
           'GITHUB_REF': 'refs/heads/main',
+          'GITHUB_SHA': (head.stdout as String).trim(),
+          'GITHUB_RUN_ID': 'offline-fixture',
           'GITHUB_EVENT_PATH': event.path,
           'GITHUB_OUTPUT': output.path,
         },
@@ -1950,8 +1958,8 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
           'web-chat-contract=true',
         ]),
       );
-    },
-  );
+    });
+  }
 
   test('Linux VM tests have published companion tags and require them', () {
     final steps = readWorkflow('ci')['jobs']['test-linux-vm']['steps'] as List;
