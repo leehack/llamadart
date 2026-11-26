@@ -918,7 +918,7 @@ List<String> _companionPublishProblems(String workflow) {
 /// with the working directory each must start in.
 const _ciDryRunJobs = <String, String>{
   'companion-packages': r'${{ inputs.package }}',
-  'model-store': 'packages/llamadart_model_store',
+  'linux-package-checks': 'packages/llamadart_model_store',
 };
 
 /// The composite action holding the steps of the `companion-packages` job.

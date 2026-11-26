@@ -98,6 +98,18 @@ missing or unexpectedly skipped selected jobs. Only deliberately unselected
 jobs may be skipped. The bundle result applies the same rule to target matrices.
 This is executable job accounting, not a new repository protection setting.
 
+Linux Package and Runtime Checks shares one Ubuntu checkout and Flutter setup
+for Model Store, native prompt reuse parity and the model-free validation
+harness. Each check keeps its own selector output. A failed check leaves the
+other selected checks runnable. The aggregate requires a successful outcome
+from every selected step, including when the shared job reports success.
+
+The shared job replaces the Model Store (checkout core), Native Prompt Reuse
+Parity and Validation harness (model-free, ubuntu-latest) statuses. Their
+steps report through the unchanged Test Linux & Web (with Coverage) aggregate.
+Validation harness (model-free, windows-latest) retains its name. It runs the
+process memory suite when selected and the Windows native matrix is absent.
+
 `Markdown Tests` runs only the root suites listed in
 `tool/ci/markdown_test_suites.txt`, for every change that selects no Linux VM
 tests. It carries no coverage, so a Markdown-only commit uploads none to
@@ -245,11 +257,11 @@ across the owner's repositories, and each keeps its own selection on its step:
 selected `companions`, `macos-validation-memory`, and `apple-cache`), then runs
 only the selected steps (`companions` packages, `Test validation process
 memory` via `macos-validation-memory`, and the Apple companion cache-transition
-setup/test via `apple-cache`), each even if an earlier one failed. On Windows
-the process memory test runs in `windows-runtime` shard 1 when
-`windows-native` is true, and otherwise in a `Validation harness` matrix leg (`validation_harness_oses` checks
-`windows-native`, not `test-other-os`), so a validation-only or Mac-only change
-keeps Windows memory coverage without extra native shards. The Genkit job runs
+setup/test via `apple-cache`), each even if an earlier one failed. When the
+validation harness is selected, the Windows process memory test runs in
+`windows-runtime` shard 1 if `windows-native` is true. Otherwise, it runs in the
+standalone `Validation harness (model-free, windows-latest)` job via
+`validation-harness-windows`. The Genkit job runs
 Dart 3.12.0 lower bounds on a fresh tree before it sets up Flutter, so
 `FLUTTER_ROOT` and Flutter's Dart cannot affect them.
 

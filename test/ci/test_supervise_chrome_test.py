@@ -546,20 +546,21 @@ class WorkflowTest(unittest.TestCase):
         for workflow in (ROOT / '.github/workflows').glob('*.yml'):
             self.assertNotIn('--post-done-seconds', workflow.read_text(), workflow.name)
 
-    def test_model_store_keeps_failure_gates_and_uploads_before_job_cancellation(self):
+    def test_model_store_keeps_failure_gates_and_uploads_diagnostics(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
-        lane = workflow.split('\n  model-store:\n', 1)[1].split('\n  analyze:\n', 1)[0]
+        lane = workflow.split('\n  linux-package-checks:\n', 1)[1].split('\n  analyze:\n', 1)[0]
         chrome = lane.index('name: Test on Chrome with bounded shutdown diagnostics')
         upload = lane.index('name: Upload Chrome process and phase diagnostics')
         package_gate = lane.index('name: Check the lane leaves the package unchanged')
         self.assertLess(chrome, upload)
         self.assertLess(upload, package_gate)
-        self.assertIn('if: always()', lane[upload:package_gate])
+        self.assertIn("if: ${{ always() && needs.changes.outputs.model-store == 'true' }}",
+                      lane[upload:package_gate])
         self.assertIn('uses: actions/upload-artifact@', lane[upload:package_gate])
         self.assertIn('--timeout-seconds 180 --', lane[chrome:upload])
         self.assertEqual(lane.count('dart test -p chrome test/model_store_web_test.dart'), 1)
         self.assertNotIn('flutter test --platform chrome', lane)
-        self.assertIn('timeout-minutes: 20', lane)
+        self.assertIn('timeout-minutes: 70', lane)
         self.assertIn('flutter-version: 3.47.1', lane)
         self.assertNotIn('continue-on-error', lane)
         self.assertNotIn('|| true', lane)
