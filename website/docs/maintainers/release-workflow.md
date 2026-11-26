@@ -90,7 +90,9 @@ changelog notes, or checks that the linked forward-port issue is open.
 Before and after the squash merge, `verify_release_candidate.sh` requires
 `main` for `M.m.0` or `release/M.m.x` for `M.m.N` with `N >= 1`. On a patch
 branch the version must advance by exactly one patch within the same line,
-using unsuffixed stable versions. Parity checks the patch branch through the
+using unsuffixed stable versions. A changed companion version must increase
+within the core's release line and keeps its own patch numbering.
+Parity checks the patch branch through the
 prep's parent. For a minor prep it checks all patch lines and requires
 closed forward-port issues. To rehearse, fetch the
 owner branches and tags in a clean clone. Set `through` to the exact
