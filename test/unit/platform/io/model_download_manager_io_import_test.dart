@@ -220,6 +220,41 @@ void main() {
     expect((await manager.get(source.cacheKey))?.bytes, payload.length);
   }, testOn: '!windows');
 
+  test('a cache entry path that is not a directory is rejected', () async {
+    final file = download();
+    Directory(root.path).createSync(recursive: true);
+    File(path.join(root.path, source.cacheDirectoryName)).writeAsStringSync('');
+
+    await expectLater(
+      manager.importDownloadedFile(source, file.path),
+      throwsA(isA<LlamaStateException>()),
+    );
+
+    expect(file.existsSync(), isTrue);
+  });
+
+  test(
+    'reports a failed move and leaves the file in place',
+    () async {
+      final file = download();
+      final entry = Directory(path.join(root.path, source.cacheDirectoryName))
+        ..createSync(recursive: true);
+      expect(Process.runSync('chmod', ['a-w', entry.path]).exitCode, 0);
+
+      await expectLater(
+        manager.importDownloadedFile(source, file.path),
+        throwsA(isA<LlamaModelException>()),
+      );
+
+      expect(file.readAsBytesSync(), payload);
+      expect(entry.listSync(), isEmpty);
+    },
+    testOn: '!windows',
+    skip: Platform.isWindows || _isRoot()
+        ? 'Directory permissions do not bind this user.'
+        : false,
+  );
+
   test('honors cancellation before touching the file', () async {
     final file = download();
     final token = ModelDownloadCancelToken()..cancel();
@@ -237,3 +272,7 @@ void main() {
     expect(root.existsSync(), isFalse);
   });
 }
+
+bool _isRoot() =>
+    !Platform.isWindows &&
+    Process.runSync('id', ['-u']).stdout.toString().trim() == '0';
