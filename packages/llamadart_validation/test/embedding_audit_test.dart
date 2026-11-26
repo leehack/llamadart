@@ -37,6 +37,8 @@ const oldHashes = <String, String>{
       "9c5c0f5a1d6b39dbe91404162dd889857fac031104505e35cd13bdd67233211c",
   "chat-litert-cpu.json":
       "35e2f644c19d7727ba4cdb6ae02fd4f3bc8e2fe5eca7ca89515e9410a90b9f56",
+  "chat-litert-cpu-unicode.json":
+      "35e2f644c19d7727ba4cdb6ae02fd4f3bc8e2fe5eca7ca89515e9410a90b9f56",
   "gemma4-litert-cpu.json":
       "35e2f644c19d7727ba4cdb6ae02fd4f3bc8e2fe5eca7ca89515e9410a90b9f56",
   "chat-gguf-webgpu.json":
@@ -65,6 +67,8 @@ const oldHashes = <String, String>{
       "13a9473f86eff341bb5329f35fa147c4e411fc22d16beabb589ce3006f238b97",
   "chat-litert-gpu.json":
       "4630631b440cdbb5b8b5f2c18c61123314b225ee4025c364d43fd2cc8d60661d",
+  "chat-litert-gpu-unicode.json":
+      "4630631b440cdbb5b8b5f2c18c61123314b225ee4025c364d43fd2cc8d60661d",
   "chat-litert-auto.json":
       "5a06890562ba8a950c3c09ab61331d380f02236c014888e031dd6f7da498737b",
   "gemma4-litert-gpu.json":
@@ -86,6 +90,25 @@ const oldHashes = <String, String>{
 };
 
 void main() {
+  test('focused LiteRT profiles add only exact Unicode to the quick core', () {
+    for (final backend in ['cpu', 'gpu']) {
+      final id = 'chat-litert-$backend';
+      final quick = ValidationProfile.fromJson(
+        jsonDecode(File('assets/profiles/$id.json').readAsStringSync()),
+      );
+      final focused = ValidationProfile.fromJson(
+        jsonDecode(File('assets/profiles/$id-unicode.json').readAsStringSync()),
+      );
+      expect(focused.toJson(), {
+        ...quick.toJson(),
+        'id': '$id-unicode',
+        'selection': 'focused',
+        'focus_features': ['unicode'],
+      });
+      expect(focused.caseIds, [...quick.caseIds, 'C02.generate']);
+    }
+  });
+
   test(
     'embedding deadlines are locked and hashed; existing profiles unchanged',
     () {

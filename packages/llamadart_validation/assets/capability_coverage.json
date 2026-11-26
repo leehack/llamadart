@@ -152,6 +152,17 @@
       ]
     },
     {
+      "id": "unicode",
+      "cases": [
+        "C02.unicode",
+        "C02.generate"
+      ],
+      "profiles": [
+        "assets/profiles/chat-litert-cpu-unicode.json",
+        "assets/profiles/chat-litert-gpu-unicode.json"
+      ]
+    },
+    {
       "id": "sampler_controls",
       "cases": [
         "G01.capability",

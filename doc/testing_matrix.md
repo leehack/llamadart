@@ -377,8 +377,10 @@ the model SHA-256, check public `detokenize([9707, 0, 26525, 232])` against
 runs the chat/thinking/tool/cutoff campaign. The GPU scenario sends the
 `C02.generate` fixture as the first request on a fresh engine and expects
 exactly `Montréal 👋`. The full focused runner separately checks the same
-fixture after other requests. Retain the native adapter and delegate logs to
-verify actual GPU placement.
+fixture after other requests. Use `chat-litert-cpu-unicode` or
+`chat-litert-gpu-unicode` with `validation.dart local --profile <id> --model
+<Qwen3-0.6B.litertlm>` or the native bundle builder to select it. Retain the
+native adapter and delegate logs to verify actual GPU placement.
 
 The updated artifact has revision `e6687177e00897731e7716267eebd4eba0dde7c2`
 and SHA-256 `c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108`.
@@ -389,9 +391,9 @@ must be admitted and its decoded text must fail the exact assertion. Unknown
 artifacts are rejected before applying Qwen token IDs.
 
 Generic `litert-lm-chat-features-smoke` remains available for other models.
-The hosted smoke workflow runs the CPU scenario on Linux and Windows. Use
-separate evidence for other GPU hosts, automatic placement, physical mobile
-devices, and browser WASM or WebGPU.
+The hosted smoke workflow runs the CPU scenario on Linux and Windows. See the
+[Unicode runbook](cross_platform_validation.md#qwen3-litert-lm-unicode-554) for
+the Metal results, physical-device runs and browser applicability.
 
 ## Platform Rows
 

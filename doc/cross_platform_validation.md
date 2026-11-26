@@ -1767,6 +1767,54 @@ OpenCL library declaration to exercise Vulkan. The run reported neither
 a Vulkan device loss nor a Dawn validation error.
 [Test Lab matrix `6720190835810639683`](https://console.firebase.google.com/project/llamadart-cuda-qa-20260916/testlab/histories/bh.192ffd589740b368/matrices/6720190835810639683)
 
+## Qwen3 LiteRT-LM Unicode (#554)
+
+The native `chat-litert-cpu-unicode` and `chat-litert-gpu-unicode` profiles add
+`C02.generate` to the quick sequence. The case requires exactly `Montréal 👋`,
+thinking disabled with no thinking output, and a complete, ordered stream.
+Both profiles lock the corrected 613,722,264-byte bundle with SHA-256
+`c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108`.
+
+On macOS arm64 with Apple M4 Max Metal and LiteRT-LM `v0.20.0`, the
+`qwen3-litert-gpu-unicode` scenario returned `Hello! 😊` for the fixed token
+IDs and `Montréal 👋` on the first chat request. The admitted 614,236,160-byte
+legacy bundle (`555579ff2f4fd13379abe69c1c3ab5200f7338bc92471557f1d6614a6e5ab0b4`)
+returned `Hello!ĠðŁĺĬ` and `MontréalĠðŁĺĬ`, failing both exact assertions.
+The corrected bundle also passed all 18 focused-runner assertions, including
+`C02.generate` after the quick sequence. That JIT run lacked portable-bundle
+provenance and remained unqualified.
+
+For a new physical-device run, build one bundle per backend. On Android arm64,
+use [private model staging](#private-model-staging-for-android-instrumentation)
+with `build --target android --profile <id> --model <verified-bundle>` and plan
+`firebase-android`. For a physical iPhone, use `build --target ios --profile
+<id>` with configured signing and plan `firebase-ios`. The app downloads and
+verifies the same locked bundle on iOS. Collect the exact `C02.generate`
+result, profile and runtime provenance, and adapter/delegate evidence for
+each GPU run. Runs of the new profiles on both physical platforms are pending.
+
+The Chrome 158 WebGPU text-history probe on Apple Metal loaded the corrected
+bundle in direct JS and in the Dart adapter with `@litert-lm/core@0.20.0`.
+Selected fields from the probe log:
+
+```text
+LITERT_TEXT_HISTORY_LOAD: directError=null, adapterError=null, execution=WebGPU, backendId=3
+LITERT_TEXT_HISTORY_RESULT: directHistory="\n\nCEDAR", adapterHistory="CEDAR", adapterSystem="ORCHID"
+Later session recall: Expected: contains 'CEDAR'; Actual: ''
+```
+
+Exact `C02.generate` is N/A on this browser path. After loading the same
+bundle, the Web adapter rejects `enableThinking: false` before generation
+with [`LlamaUnsupportedException`](../lib/src/backends/litert_lm/litert_lm_backend_web.dart):
+
+```text
+LiteRT-LM Web @litert-lm/core@0.20.0 chat does not expose thinking, template kwargs, language or template-clock controls. Use the model defaults.
+```
+
+The text-history probe establishes load and generation on this bundle and
+backend. The Flutter Web validation host continues to reject native LiteRT
+profiles. [#554](https://github.com/leehack/llamadart/issues/554)
+
 ## Linux x64 strict JSON Schema on CPU and GPU (2026-11-14)
 
 `run_local_e2e.dart --scenario litert-lm-json-schema` on a GCE g2-standard-8
