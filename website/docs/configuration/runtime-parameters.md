@@ -501,8 +501,13 @@ Important fields:
   positive probability.
 - `dynatempRange` and `dynatempExponent`: dynamic temperature on native
   llama.cpp. A positive range varies `temp` by up to that amount with the
-  entropy of the candidates, shaped by the exponent (default 1). It needs a
-  positive `temp`, and an exponent needs a positive range.
+  entropy of the candidates, shaped by the exponent (default 1). `temp` minus
+  the range must be at least 0.01, so the lowest temperature cannot overflow
+  the logits, and an exponent needs a positive range. A non-empty grammar
+  (including one from tools or `responseFormat`), a thinking budget,
+  `ignoreEos`, model-suppressed tokens or a negative-infinity `logitBias`
+  throw `LlamaUnsupportedException`, because llama.cpp can then select a
+  masked token ([llamadart-native#235](https://github.com/leehack/llamadart-native/issues/235)).
 - `mirostat`, `mirostatTau` and `mirostatEta`: Mirostat 1 or 2 on native
   llama.cpp (0 disables it); `mirostatTau` (default 5) and `mirostatEta`
   (default 0.1) must be positive and need a non-zero mode. Mirostat replaces
@@ -515,7 +520,8 @@ Important fields:
   penalty to match it.
   Without Mirostat the samplers run in the order top-n-sigma, top-K, typical,
   top-P, min-P, XTC, then temperature. Invalid values throw
-  `LlamaArgumentException` before decoding.
+  `LlamaArgumentException` before decoding. Every value is checked as the
+  32-bit float llama.cpp receives, so one that rounds to 0 or infinity throws.
 - `presencePenalty`: llama.cpp presence penalty; `0.0` preserves the
   existing behavior. WebGPU applies it only with bridge assets whose
   `getCompletionCapabilities()` reports `presencePenalty`. Other WebGPU assets

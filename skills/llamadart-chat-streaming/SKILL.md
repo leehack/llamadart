@@ -202,7 +202,9 @@ modalities and speculative strategies before offering them.
   `xtcThreshold`), dynamic temperature (`dynatempRange`, `dynatempExponent`)
   and Mirostat (`mirostat` 1 or 2, `mirostatTau`, `mirostatEta`). Mirostat
   replaces top-K, top-P and min-P and needs a positive `temp`; invalid values
-  throw `LlamaArgumentException`.
+  throw `LlamaArgumentException`. Dynamic temperature needs `temp` minus
+  `dynatempRange` of at least 0.01 and throws `LlamaUnsupportedException`
+  with a grammar, thinking budget, `ignoreEos` or a banned token.
 - `GenerationParams(ignoreEos: true)` keeps generating past end-of-generation
   tokens, until `maxTokens`, the context limit, a stop sequence (including the
   chat template's own stop strings) or cancellation. Only native llama.cpp

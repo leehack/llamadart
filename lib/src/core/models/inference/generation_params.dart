@@ -1009,15 +1009,19 @@ class GenerationParams {
   /// on native llama.cpp. The default, 0.0, disables XTC.
   final double xtcProbability;
 
-  /// Probability a candidate needs for XTC to remove it, in (0, 1].
+  /// Probability a candidate needs for XTC to remove it, in (0, 0.5].
   ///
-  /// Native llama.cpp turns XTC off for values above 0.5.
+  /// Native llama.cpp turns XTC off above 0.5, so larger values throw.
   final double xtcThreshold;
 
   /// Dynamic temperature range on native llama.cpp: [temp] varies by this
   /// amount around its value with the candidates' entropy.
   ///
-  /// The default, 0.0, keeps [temp] fixed. Requires a positive [temp].
+  /// The default, 0.0, keeps [temp] fixed. [temp] minus this range must be at
+  /// least 0.01, and it cannot be combined with a grammar (including one from
+  /// tools or a response format), a [thinkingBudget], [ignoreEos],
+  /// model-suppressed tokens or a [logitBias] of [double.negativeInfinity]:
+  /// llama.cpp can then select a masked token.
   final double dynatempRange;
 
   /// Exponent that maps normalized entropy to the dynamic temperature when

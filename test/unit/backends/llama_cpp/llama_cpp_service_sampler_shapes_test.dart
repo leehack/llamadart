@@ -42,6 +42,13 @@ const _sampled = GenerationParams(
 );
 
 const _eos = 0;
+
+const _dynamicTemperatureWithMasking =
+    'GenerationParams.dynatempRange cannot be combined with a grammar '
+    '(including one from tools or responseFormat), a thinking budget, '
+    'ignoreEos, model-suppressed tokens or a negative-infinity logitBias: '
+    'llama.cpp can then select a masked token. Use a fixed temp or remove '
+    'them.';
 const _a = 100;
 
 // With a +5 bias on 'a' the greedy token is 'a' (97), and 'b' (98) is the
@@ -288,6 +295,14 @@ void main() {
       expect(await generate(_sampled.copyWith(typicalP: 0.5)), isNot(typical));
     });
 
+    test('typical-P keeps at least one candidate and no more', () async {
+      final tight = _sampled.copyWith(typicalP: 1e-6);
+      final first = await generate(tight);
+      expect(first, hasLength(24));
+      expect(await generate(tight.copyWith(seed: 11)), first);
+      expect(await generate(tight.copyWith(seed: 13)), first);
+    });
+
     test(
       'top-n-sigma narrows high temperature sampling to the top token',
       () async {
@@ -316,6 +331,13 @@ void main() {
         List.filled(12, 97),
       );
       expect(await generate(_xtcOverBias), List.filled(12, 98));
+    });
+
+    test('xtc may remove the top of a two-candidate set', () async {
+      expect(
+        await generate(_xtcOverBias.copyWith(topK: 2)),
+        List.filled(12, 98),
+      );
     });
 
     test('xtc and mirostat use the request seed', () async {
@@ -347,6 +369,37 @@ void main() {
           _sampled.copyWith(dynatempRange: 0.9, dynatempExponent: 3),
         ),
         isNot(dynamic),
+      );
+    });
+
+    test('dynamic temperature applies the request temperature', () async {
+      final params = _sampled.copyWith(dynatempRange: 0.3);
+      final outputs = {
+        for (final temp in [0.5, 1.0, 1.5])
+          temp: await generate(params.copyWith(temp: temp)),
+      };
+      expect(outputs.values.toSet(), hasLength(3));
+    });
+
+    test('dynamic temperature at the floor stays valid', () async {
+      const confident = GenerationParams(
+        maxTokens: 12,
+        penalty: 1,
+        temp: 1,
+        topK: 0,
+        topP: 1,
+        seed: 7,
+        reusePromptPrefix: false,
+        logitBias: {_a: 10000},
+        dynatempRange: 0.98,
+        dynatempExponent: 3,
+      );
+      expect(await generate(confident), List.filled(12, 97));
+      expect(
+        await generate(
+          confident.copyWith(topK: 40, topP: 0.9, logitBias: const {_a: 90}),
+        ),
+        List.filled(12, 97),
       );
     });
 
@@ -426,12 +479,11 @@ void main() {
         'xtc at a low threshold',
         const GenerationParams(xtcProbability: 1, xtcThreshold: 0.005),
       ),
-      ('dynamic temperature', const GenerationParams(dynatempRange: 0.5)),
       ('mirostat 1', const GenerationParams(mirostat: 1)),
       ('mirostat 2', const GenerationParams(mirostat: 2)),
     ]) {
       for (final temp in [0.0, 0.8]) {
-        if (temp == 0 && (params.dynatempRange > 0 || params.mirostat != 0)) {
+        if (temp == 0 && params.mirostat != 0) {
           continue;
         }
         test('$label keeps the only valid token at temp $temp', () async {
@@ -441,7 +493,6 @@ void main() {
             topNSigma: params.topNSigma,
             xtcProbability: params.xtcProbability,
             xtcThreshold: params.xtcThreshold,
-            dynatempRange: params.dynatempRange,
             mirostat: params.mirostat,
           );
           expect(await generate(request), [97]);
@@ -456,10 +507,6 @@ void main() {
       ('typical-P', const GenerationParams(temp: 0.8, typicalP: 0.3)),
       ('top-n-sigma', const GenerationParams(temp: 0.8, topNSigma: 1)),
       ('xtc', const GenerationParams(temp: 0.8, xtcProbability: 1)),
-      (
-        'dynamic temperature',
-        const GenerationParams(temp: 0.8, dynatempRange: 0.5),
-      ),
       ('mirostat 1', const GenerationParams(temp: 0.8, mirostat: 1)),
       ('mirostat 2', const GenerationParams(temp: 0.8, mirostat: 2)),
     ]) {
@@ -470,11 +517,136 @@ void main() {
             typicalP: params.typicalP,
             topNSigma: params.topNSigma,
             xtcProbability: params.xtcProbability,
-            dynatempRange: params.dynatempRange,
             mirostat: params.mirostat,
           ),
         );
         expect(output.join(','), contains(_forcedEndTag.join(',')));
+      });
+    }
+  });
+
+  group('dynamic temperature with masked candidates', () {
+    const masked = _dynamicTemperatureWithMasking;
+    final dynamic = _sampled.copyWith(dynatempRange: 0.5);
+    for (final (label, params) in [
+      ('a grammar', dynamic.copyWith(grammar: 'root ::= "a"')),
+      (
+        'a lazy grammar',
+        dynamic.copyWith(
+          grammar: 'root ::= "a"',
+          grammarLazy: true,
+          grammarTriggers: const [
+            GenerationGrammarTrigger.typed(
+              type: GrammarTriggerType.word,
+              value: 'a',
+            ),
+          ],
+        ),
+      ),
+      ('a thinking budget', dynamic.copyWith(thinkingBudget: _budget)),
+      ('ignoreEos', dynamic.copyWith(ignoreEos: true)),
+      (
+        'a banned token',
+        dynamic.copyWith(logitBias: const {_a: double.negativeInfinity}),
+      ),
+    ]) {
+      test('rejects $label before decoding', () async {
+        await expectLater(
+          generate(params),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              masked,
+            ),
+          ),
+        );
+        expect(decodes, 0);
+      });
+    }
+
+    test('allows finite biases', () async {
+      expect(
+        await generate(dynamic.copyWith(logitBias: const {_a: -10000})),
+        hasLength(24),
+      );
+    });
+
+    // Reproductions of the denormal-temperature and float32-overflow aborts.
+    const abGrammar = 'root ::= ("a" | "b")+';
+    for (final (label, params, unsupported) in [
+      (
+        'range equal to temp with a grammar',
+        _sampled.copyWith(
+          maxTokens: 12,
+          grammar: abGrammar,
+          dynatempRange: 1,
+          logitBias: const {_a: 90},
+        ),
+        false,
+      ),
+      (
+        'range equal to temp with a grammar and top-k',
+        _sampled.copyWith(
+          maxTokens: 12,
+          topK: 40,
+          grammar: abGrammar,
+          dynatempRange: 1,
+          dynatempExponent: 2,
+          logitBias: const {_a: 50},
+        ),
+        false,
+      ),
+      (
+        'range equal to temp with a banned token',
+        _sampled.copyWith(
+          maxTokens: 12,
+          dynatempRange: 1,
+          dynatempExponent: 3,
+          logitBias: const {_a: 40, 130: double.negativeInfinity},
+        ),
+        false,
+      ),
+      (
+        'a safe range with a grammar and a confident bias',
+        _sampled.copyWith(
+          maxTokens: 12,
+          grammar: abGrammar,
+          dynatempRange: 0.5,
+          logitBias: const {_a: 90},
+        ),
+        true,
+      ),
+      (
+        'a range beyond float32 with a grammar',
+        _sampled.copyWith(
+          maxTokens: 12,
+          grammar: abGrammar,
+          dynatempRange: 1e39,
+        ),
+        false,
+      ),
+      (
+        'a threshold that rounds to zero with a grammar',
+        _sampled.copyWith(
+          maxTokens: 12,
+          grammar: abGrammar,
+          xtcProbability: 1,
+          xtcThreshold: 1e-46,
+        ),
+        false,
+      ),
+    ]) {
+      test('rejects $label before decoding', () async {
+        await expectLater(
+          generate(params),
+          throwsA(
+            unsupported
+                ? isA<LlamaUnsupportedException>()
+                : isA<LlamaArgumentException>(),
+          ),
+        );
+        expect(decodes, 0);
       });
     }
   });
@@ -582,6 +754,91 @@ void main() {
         'dynatempExponent without dynatempRange',
         'dynatempExponent',
         const GenerationParams(dynatempExponent: 2),
+      ),
+      (
+        'dynatempRange equal to temp',
+        'dynatempRange',
+        const GenerationParams(temp: 1, dynatempRange: 1),
+      ),
+      (
+        'dynatempRange leaving a lowest temperature under the floor',
+        'dynatempRange',
+        const GenerationParams(temp: 0.5, dynatempRange: 0.495),
+      ),
+      (
+        'dynatempRange and temp whose sum overflows float32',
+        'dynatempRange',
+        const GenerationParams(temp: 3e38, dynatempRange: 1e38),
+      ),
+      (
+        'dynatempRange beyond float32',
+        'dynatempRange',
+        const GenerationParams(temp: 1, dynatempRange: 1e39),
+      ),
+      (
+        'dynatempRange that rounds to zero',
+        'dynatempRange',
+        const GenerationParams(temp: 1, dynatempRange: 1e-46),
+      ),
+      (
+        'dynatempExponent beyond float32',
+        'dynatempExponent',
+        const GenerationParams(dynatempRange: 0.5, dynatempExponent: 1e39),
+      ),
+      (
+        'dynatempExponent that rounds to zero',
+        'dynatempExponent',
+        const GenerationParams(dynatempRange: 0.5, dynatempExponent: 1e-46),
+      ),
+      (
+        'xtcThreshold that rounds to zero',
+        'xtcThreshold',
+        const GenerationParams(xtcProbability: 1, xtcThreshold: 1e-46),
+      ),
+      (
+        'xtcThreshold beyond float32',
+        'xtcThreshold',
+        const GenerationParams(xtcProbability: 1, xtcThreshold: 1e39),
+      ),
+      (
+        'xtcProbability that rounds to zero',
+        'xtcProbability',
+        const GenerationParams(xtcProbability: 1e-46),
+      ),
+      (
+        'typicalP that rounds to zero',
+        'typicalP',
+        const GenerationParams(typicalP: 1e-46),
+      ),
+      (
+        'topNSigma that rounds to zero',
+        'topNSigma',
+        const GenerationParams(topNSigma: 1e-46),
+      ),
+      (
+        'topNSigma beyond float32',
+        'topNSigma',
+        const GenerationParams(topNSigma: 1e39),
+      ),
+      (
+        'mirostatTau that rounds to zero',
+        'mirostatTau',
+        const GenerationParams(mirostat: 2, mirostatTau: 1e-46),
+      ),
+      (
+        'mirostatTau beyond float32',
+        'mirostatTau',
+        const GenerationParams(mirostat: 2, mirostatTau: 1e39),
+      ),
+      (
+        'mirostatEta that rounds to zero',
+        'mirostatEta',
+        const GenerationParams(mirostat: 1, mirostatEta: 1e-46),
+      ),
+      (
+        'mirostatEta beyond float32',
+        'mirostatEta',
+        const GenerationParams(mirostat: 1, mirostatEta: 1e39),
       ),
       ('mirostat mode 3', 'mirostat', const GenerationParams(mirostat: 3)),
       (

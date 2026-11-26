@@ -116,6 +116,26 @@ const String _tokenBanWithGrammar =
     'GenerationParams.logitBias cannot ban tokens with a grammar (including '
     'one from tools or responseFormat). Use finite biases or remove the grammar.';
 
+const String _dynamicTemperatureWithMasking =
+    'GenerationParams.dynatempRange cannot be combined with a grammar '
+    '(including one from tools or responseFormat), a thinking budget, '
+    'ignoreEos, model-suppressed tokens or a negative-infinity logitBias: '
+    'llama.cpp can then select a masked token. Use a fixed temp or remove '
+    'them.';
+
+// With a lowest temperature below this, logits divided by a near-zero dynamic
+// temperature can overflow float32 and turn the probabilities into NaN.
+const double _minDynamicTemperature = 0.01;
+
+final Float32List _float32Scratch = Float32List(1);
+
+/// [value] as llama.cpp receives it: rounded to float32, which can turn a
+/// tiny positive double into 0 and a huge finite one into infinity.
+double _float32(double value) {
+  _float32Scratch[0] = value;
+  return _float32Scratch[0];
+}
+
 const String _draftBlockRequirement =
     'for llama.cpp draft-dflash and draft-dspark, which decode a whole draft '
     'block in one micro-batch.';
@@ -5461,53 +5481,68 @@ class LlamaCppService {
     };
   }
 
-  void _validateSamplingShape(GenerationParams params) {
+  void _validateSamplingShape(
+    GenerationParams params,
+    List<int> suppressedTokens,
+  ) {
     final typicalP = params.typicalP;
-    if (!(typicalP > 0 && typicalP <= 1)) {
+    final typicalP32 = _float32(typicalP);
+    if (!(typicalP32 > 0 && typicalP32 <= 1)) {
       throw LlamaArgumentException(
-        'GenerationParams.typicalP must be greater than 0 and at most 1.',
+        'GenerationParams.typicalP must be greater than 0 and at most 1 as '
+        'a 32-bit float.',
         name: 'typicalP',
         invalidValue: typicalP,
       );
     }
     final topNSigma = params.topNSigma;
-    if (topNSigma != -1 && !(topNSigma > 0 && topNSigma.isFinite)) {
+    final topNSigma32 = _float32(topNSigma);
+    if (topNSigma != -1 && !(topNSigma32 > 0 && topNSigma32.isFinite)) {
       throw LlamaArgumentException(
         'GenerationParams.topNSigma must be -1 to disable it, or positive '
-        'and finite.',
+        'and finite as a 32-bit float.',
         name: 'topNSigma',
         invalidValue: topNSigma,
       );
     }
     final xtcProbability = params.xtcProbability;
-    if (!(xtcProbability >= 0 && xtcProbability <= 1)) {
+    final xtcProbability32 = _float32(xtcProbability);
+    if (!(xtcProbability32 >= 0 && xtcProbability32 <= 1) ||
+        (xtcProbability > 0 && xtcProbability32 == 0)) {
       throw LlamaArgumentException(
-        'GenerationParams.xtcProbability must be between 0 and 1.',
+        'GenerationParams.xtcProbability must be 0 or between a positive '
+        '32-bit float and 1.',
         name: 'xtcProbability',
         invalidValue: xtcProbability,
       );
     }
     final xtcThreshold = params.xtcThreshold;
-    if (!(xtcThreshold > 0 && xtcThreshold <= 0.5)) {
+    final xtcThreshold32 = _float32(xtcThreshold);
+    if (!(xtcThreshold32 > 0 && xtcThreshold32 <= 0.5)) {
       throw LlamaArgumentException(
         'GenerationParams.xtcThreshold must be greater than 0 and at most '
-        '0.5; llama.cpp turns XTC off above 0.5.',
+        '0.5 as a 32-bit float; llama.cpp turns XTC off above 0.5.',
         name: 'xtcThreshold',
         invalidValue: xtcThreshold,
       );
     }
     final dynatempRange = params.dynatempRange;
-    if (!(dynatempRange >= 0 && dynatempRange.isFinite)) {
+    final dynatempRange32 = _float32(dynatempRange);
+    if (!(dynatempRange32 >= 0 && dynatempRange32.isFinite) ||
+        (dynatempRange > 0 && dynatempRange32 == 0)) {
       throw LlamaArgumentException(
-        'GenerationParams.dynatempRange must be finite and at least 0.',
+        'GenerationParams.dynatempRange must be 0 or a positive, finite '
+        '32-bit float.',
         name: 'dynatempRange',
         invalidValue: dynatempRange,
       );
     }
     final dynatempExponent = params.dynatempExponent;
-    if (!(dynatempExponent > 0 && dynatempExponent.isFinite)) {
+    final dynatempExponent32 = _float32(dynatempExponent);
+    if (!(dynatempExponent32 > 0 && dynatempExponent32.isFinite)) {
       throw LlamaArgumentException(
-        'GenerationParams.dynatempExponent must be positive and finite.',
+        'GenerationParams.dynatempExponent must be a positive, finite '
+        '32-bit float.',
         name: 'dynatempExponent',
         invalidValue: dynatempExponent,
       );
@@ -5521,17 +5556,21 @@ class LlamaCppService {
       );
     }
     final mirostatTau = params.mirostatTau;
-    if (!(mirostatTau > 0 && mirostatTau.isFinite)) {
+    final mirostatTau32 = _float32(mirostatTau);
+    if (!(mirostatTau32 > 0 && mirostatTau32.isFinite)) {
       throw LlamaArgumentException(
-        'GenerationParams.mirostatTau must be positive and finite.',
+        'GenerationParams.mirostatTau must be a positive, finite 32-bit '
+        'float.',
         name: 'mirostatTau',
         invalidValue: mirostatTau,
       );
     }
     final mirostatEta = params.mirostatEta;
-    if (!(mirostatEta > 0 && mirostatEta.isFinite)) {
+    final mirostatEta32 = _float32(mirostatEta);
+    if (!(mirostatEta32 > 0 && mirostatEta32.isFinite)) {
       throw LlamaArgumentException(
-        'GenerationParams.mirostatEta must be positive and finite.',
+        'GenerationParams.mirostatEta must be a positive, finite 32-bit '
+        'float.',
         name: 'mirostatEta',
         invalidValue: mirostatEta,
       );
@@ -5554,12 +5593,25 @@ class LlamaCppService {
         invalidValue: dynatempExponent,
       );
     }
-    if (dynatempRange > 0 && !(params.temp > 0)) {
-      throw LlamaArgumentException(
-        'GenerationParams.dynatempRange requires a positive temp.',
-        name: 'dynatempRange',
-        invalidValue: dynatempRange,
-      );
+    if (dynatempRange > 0) {
+      final temp32 = _float32(params.temp);
+      final lowest = _float32(temp32 - dynatempRange32);
+      if (!(lowest >= _minDynamicTemperature) ||
+          !_float32(temp32 + dynatempRange32).isFinite) {
+        throw LlamaArgumentException(
+          'GenerationParams.temp minus dynatempRange must be at least '
+          '$_minDynamicTemperature, and their sum must fit in a 32-bit '
+          'float.',
+          name: 'dynatempRange',
+          invalidValue: dynatempRange,
+        );
+      }
+      if ((params.grammar?.isNotEmpty ?? false) ||
+          params.thinkingBudget != null ||
+          suppressedTokens.isNotEmpty ||
+          params.logitBias.values.contains(double.negativeInfinity)) {
+        throw LlamaUnsupportedException(_dynamicTemperatureWithMasking);
+      }
     }
     if (mirostat == 0) {
       if (mirostatTau != defaults.mirostatTau ||
@@ -5836,7 +5888,7 @@ class LlamaCppService {
             })
           : model.suppressedTokens;
       _validateSamplerControls(params, model.vocabSize, suppressedTokens);
-      _validateSamplingShape(params);
+      _validateSamplingShape(params, suppressedTokens);
       final thinkingBudgetConfig = _resolveLlamaCppThinkingBudgetConfig(
         params,
         hasMediaParts: hasMediaParts,
