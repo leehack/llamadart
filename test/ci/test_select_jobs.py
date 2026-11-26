@@ -1134,6 +1134,15 @@ class AggregateTest(unittest.TestCase):
         self.assertEqual(ci.aggregate(mixed, needs, bundle=True),
                          ['app: selected=True, result=failure'])
 
+    def test_bundle_result_requires_a_selected_desktop_build(self):
+        plan = ci.select(['hook/build.dart'], pull_request=True)
+        needs = {'changes': {'result': 'success'}, 'desktop': {'result': 'success'},
+                 'app': {'result': 'success'}}
+        self.assertEqual(ci.aggregate(plan, needs, bundle=True), [])
+        needs['desktop']['result'] = 'skipped'
+        self.assertEqual(ci.aggregate(plan, needs, bundle=True),
+                         ['desktop: selected=True, result=skipped'])
+
     def test_each_selected_job_must_succeed_and_each_unselected_job_must_skip(self):
         for bundle, pull_request in ((False, False), (True, False), (False, True), (True, True)):
             for paths in (['README.md'], ['lib/llamadart.dart'], ['example/chat_app/android/a'],
