@@ -1034,7 +1034,7 @@ void main() {
     test('resolves a declared pull request merged before the minor', () async {
       repo.mainCommit(
         'Undo the prep (#58)',
-        body: 'Reverts $_repo#50',
+        body: 'This reverts commit ${'0' * 40}.\nReverts $_repo#50',
         file: 'fix',
         content: 'old\n',
       );
