@@ -1054,6 +1054,7 @@ void main() {
       git(['init', '-q']);
       git(['commit', '--allow-empty', '-qm', 'Release']);
       for (final tag in [
+        'v1.0.0',
         'v1.9.99',
         'v1.10.9',
         'v1.10.10',

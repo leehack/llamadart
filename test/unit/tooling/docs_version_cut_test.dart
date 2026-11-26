@@ -126,6 +126,26 @@ void main() {
         expect(origin.mainFile(_docsChangelog), '$_docsIntro$pending');
       });
 
+      for (final rewrite in [false, true]) {
+        final action = rewrite ? 'is rewritten' : 'advances';
+        test('refuses to push when main $action after fetch', () {
+          final replacement = origin.git([
+            'commit-tree',
+            'main^{tree}',
+            '-p',
+            rewrite ? 'main^' : 'main',
+            '-m',
+            'Concurrent main update',
+          ]);
+
+          final result = origin.runSteps(moveMainTo: replacement);
+
+          expect(result.exitCode, isNonZero);
+          expect(result.stderr, contains('[rejected]'));
+          expect(origin.mainSha(), replacement);
+        });
+      }
+
       test('cuts a diverged patch into current main from the tag bytes', () {
         const patch = '## 0.9.1\n\n- Patched.\n';
         origin.tagPatch('v0.9.1', {
@@ -331,7 +351,7 @@ class _Origin {
     seed.git(['checkout', '-q', 'main']);
   }
 
-  ProcessResult runSteps({String tag = 'v1.0.0'}) {
+  ProcessResult runSteps({String tag = 'v1.0.0', String? moveMainTo}) {
     final checkout = _Repo(
       Directory('${root.path}/run${_runs++}'),
       seed.environment,
@@ -350,6 +370,9 @@ class _Origin {
 set -euo pipefail
 [[ "$1" == run ]]
 shift
+if [[ -n "${MOVE_MAIN_TO:-}" ]]; then
+  git --git-dir="$ORIGIN_GIT_DIR" update-ref refs/heads/main "$MOVE_MAIN_TO"
+fi
 exec "$REAL_DART" --packages="$PACKAGE_CONFIG" "$@"
 ''');
     final chmod = Process.runSync('chmod', ['+x', dart.path]);
@@ -382,6 +405,10 @@ exec "$REAL_DART" --packages="$PACKAGE_CONFIG" "$@"
         'REAL_DART': Platform.resolvedExecutable,
         'PACKAGE_CONFIG': config.path,
         'TMPDIR': root.path,
+        if (moveMainTo != null) ...{
+          'MOVE_MAIN_TO': moveMainTo,
+          'ORIGIN_GIT_DIR': '${root.path}/origin.git',
+        },
       },
     );
   }
