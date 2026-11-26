@@ -2723,6 +2723,33 @@ void main() {
     }
   });
 
+  test('rejects token log-probabilities on LiteRT-LM Web', () async {
+    _installFakeEngine(chunks: <JSAny?>[]);
+    final backend = LiteRtLmBackend();
+    addTearDown(backend.dispose);
+    final model = await backend.modelLoadFromUrl(
+      'https://example.com/model.litertlm',
+      const ModelParams(),
+    );
+    final context = await backend.contextCreate(model, const ModelParams());
+
+    await expectLater(
+      backend.generate(
+        context,
+        'hello',
+        const GenerationParams(topLogprobs: 2),
+      ),
+      emitsError(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains('LiteRT-LM Web'), contains('topLogprobs')),
+        ),
+      ),
+    );
+    expect((await backend.generationCapabilities()).tokenLogprobs, isFalse);
+  });
+
   test('rejects presence penalty on LiteRT-LM web', () async {
     _installFakeEngine(chunks: <JSAny?>[]);
 

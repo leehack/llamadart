@@ -113,6 +113,13 @@ vocabulary, like any other sampler value llama.cpp rejects, returns 400
 `invalid_request_error`; with `stream: true` the error arrives as an SSE error
 event because the response has already started.
 
+Set `logprobs: true` (and `top_logprobs` from 0 to 20) to get the
+log-probability of each generated token in `choices[0].logprobs.content`, on
+chat completions streamed or not. Native llama.cpp reports them from the raw
+model distribution, before `temperature`, penalties, `logit_bias` and grammar,
+and each entry also carries the token `id`. A request with `top_logprobs` and
+no `logprobs` is a 400.
+
 ### Default model and thinking mode
 
 The default is Unsloth's `Qwen3.6-27B-UD-Q4_K_XL.gguf` (about 17.6 GB). Plan

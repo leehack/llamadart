@@ -1771,6 +1771,7 @@ class LiteRtLmBackend
 
   void _validateGenerationParams(GenerationParams params) {
     rejectUnsupportedSamplerControls(params, 'LiteRT-LM Web');
+    rejectUnsupportedTokenLogprobs(params, 'LiteRT-LM Web');
     const defaults = GenerationParams();
     final unsupported = <String>[];
     if (params.minP != defaults.minP) {

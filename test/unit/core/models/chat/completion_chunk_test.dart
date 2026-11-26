@@ -1,5 +1,6 @@
 import 'package:llamadart/src/core/models/chat/completion_chunk.dart';
 import 'package:llamadart/src/core/models/inference/generation_usage.dart';
+import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -172,5 +173,59 @@ void main() {
       expect(value.finishReason, isNull);
       expect(value.choices.single.finishReason, 'content_filter');
     });
+  });
+
+  test('LlamaCompletionChunkChoice writes logprobs as OpenAI content', () {
+    final choice = LlamaCompletionChunkChoice(
+      index: 0,
+      delta: LlamaCompletionChunkDelta(content: 'é'),
+      logprobs: [
+        LlamaGeneratedTokenLogprobs(
+          sampled: LlamaTokenLogprob(
+            token: 3,
+            bytes: const [0xC3],
+            logprob: -0.25,
+          ),
+          top: [
+            LlamaTokenLogprob(token: 4, bytes: const [0x61], logprob: -2),
+          ],
+        ),
+      ],
+    );
+
+    final json = choice.toJson();
+    final content = (json['logprobs'] as Map<String, dynamic>)['content'];
+    expect(content, [
+      {
+        'token': '�',
+        'id': 3,
+        'logprob': -0.25,
+        'bytes': [0xC3],
+        'top_logprobs': [
+          {
+            'token': 'a',
+            'id': 4,
+            'logprob': -2.0,
+            'bytes': [0x61],
+          },
+        ],
+      },
+    ]);
+    final decoded = LlamaCompletionChunkChoice.fromJson(json).logprobs!.single;
+    expect(decoded.sampled.token, 3);
+    expect(decoded.top.single.bytes, [0x61]);
+  });
+
+  test('LlamaCompletionChunkChoice omits logprobs when it has none', () {
+    final choice = LlamaCompletionChunkChoice(
+      index: 0,
+      delta: LlamaCompletionChunkDelta(content: 'a'),
+    );
+
+    expect(choice.toJson().containsKey('logprobs'), isFalse);
+    expect(
+      LlamaCompletionChunkChoice.fromJson(choice.toJson()).logprobs,
+      isNull,
+    );
   });
 }

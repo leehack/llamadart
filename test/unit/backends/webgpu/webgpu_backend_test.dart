@@ -9718,6 +9718,26 @@ void main() {
         expect(fake().completionCalls, 0);
       });
 
+      test('rejects token log-probabilities on WebGPU', () async {
+        await loadModel();
+        expect(
+          () => backend.generate(
+            1,
+            'Hello',
+            const GenerationParams(topLogprobs: 0),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('WebGPU'), contains('topLogprobs')),
+            ),
+          ),
+        );
+        expect((await backend.generationCapabilities()).tokenLogprobs, isFalse);
+        expect(fake().completionCalls, 0);
+      });
+
       test('rejects ignoreEos', () async {
         await loadModel();
         expect(

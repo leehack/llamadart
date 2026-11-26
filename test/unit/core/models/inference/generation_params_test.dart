@@ -67,6 +67,12 @@ void main() {
     expect(copied.mirostat, 2);
     expect(copied.mirostatTau, 4);
     expect(copied.mirostatEta, 0.2);
+    expect(copied.topLogprobs, isNull);
+    final scored = copied.copyWith(topLogprobs: 5);
+    expect(scored.topLogprobs, 5);
+    expect(scored.copyWith(seed: 1).topLogprobs, 5);
+    expect(scored.copyWith(topLogprobs: 0).topLogprobs, 0);
+    expect(scored.copyWith(clearTopLogprobs: true).topLogprobs, isNull);
     expect(updated.ignoreEos, isTrue);
     expect(const GenerationParams().ignoreEos, isFalse);
     expect(updated.copyWith(temp: 1).ignoreEos, isTrue);
@@ -124,6 +130,7 @@ void main() {
     expect(params.mirostat, 0);
     expect(params.mirostatTau, 5.0);
     expect(params.mirostatEta, 0.1);
+    expect(params.topLogprobs, isNull);
     expect(params.speculativeDecoding, isFalse);
     expect(params.speculativeDecodingConfig, isNull);
     expect(params.isSpeculativeDecodingEnabled, isFalse);

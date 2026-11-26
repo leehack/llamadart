@@ -122,6 +122,11 @@ Laya's `system_one` format (https://huggingface.co/convaiinnovations/laya):
   one token, and renormalize the candidate probabilities, which are a softmax
   over the whole vocabulary. Keep the variable input last in the prompt so
   `reusePromptPrefix` (on by default) skips the cached instructions.
+- To read the probabilities of a generated answer instead, set
+  `GenerationParams(topLogprobs: n)` on native llama.cpp (check
+  `supportsTokenLogprobs`): each generated token reports its raw-distribution
+  log-probability and alternatives, and `scoreNextToken` stays the cheaper
+  choice for one slot.
 
 ## Training a custom head
 

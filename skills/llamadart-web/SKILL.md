@@ -217,6 +217,9 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
 - Both WebGPU and LiteRT-LM Web reject non-default `frequencyPenalty`,
   `penaltyLastN`, `logitBias`, `typicalP`, `topNSigma`, XTC, dynamic
   temperature and Mirostat settings with `LlamaUnsupportedException`.
+- WebGPU and LiteRT-LM Web reject `GenerationParams.topLogprobs` with
+  `LlamaUnsupportedException`; `supportsTokenLogprobs` is false. Use
+  `scoreNextToken` on WebGPU to read next-token probabilities.
 - For LiteRT-LM MTP, use WebGPU with `@litert-lm/core` 0.20.0+ and a
   drafter-bearing bundle (standard Gemma 4 E2B; Artisan `-gpu` and `-web`
   bundles have no drafter). Set `loadMtp: true` on load, then check

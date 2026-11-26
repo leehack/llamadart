@@ -85,6 +85,22 @@ Map<String, dynamic> buildChatRequestSchemas({required String modelId}) {
             'maximum': 10000,
           },
         },
+        'logprobs': <String, dynamic>{
+          'type': 'boolean',
+          'default': false,
+          'description':
+              'Return the log-probability of each generated token from the '
+              'raw model distribution, before sampling settings. Native '
+              'llama.cpp only; not with speculative decoding.',
+        },
+        'top_logprobs': <String, dynamic>{
+          'type': 'integer',
+          'minimum': 0,
+          'maximum': 20,
+          'description':
+              'Alternatives to report per token, from the raw distribution. '
+              'Requires `logprobs = true`; 0 reports the sampled token only.',
+        },
         'seed': <String, dynamic>{'type': 'integer'},
         'n': <String, dynamic>{
           'type': 'integer',

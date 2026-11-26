@@ -15,6 +15,7 @@ import 'generation_cancellation.dart';
 import 'generation_task.dart';
 import 'json_schema_chat_request.dart';
 import 'load_check_report.dart';
+import 'token_logprobs.dart';
 import '../template/response_format.dart';
 import '../exceptions.dart';
 import '../models/config/compute_device.dart';
@@ -327,6 +328,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       supportsStreamBatching: generation.streamBatching,
       supportsIgnoreEos: generation.ignoreEos,
       samplerControls: Set.unmodifiable(generation.samplerControls),
+      supportsTokenLogprobs: generation.tokenLogprobs,
       speculativeDecodingStrategies: Set.unmodifiable(
         generation.speculativeDecodingStrategies,
       ),
@@ -2037,6 +2039,9 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
         LlamaGenerationUsage? generationUsage;
         void recordUsage(LlamaGenerationUsage usage) => generationUsage = usage;
         List<LlamaCompletionChunkToolCall>? runtimeToolCalls;
+        final logprobs = plan.generationParams.topLogprobs == null
+            ? null
+            : TokenLogprobCollector();
 
         final tokenStream = plan.usesNativeChatGeneration
             ? _generateNativeChat(
@@ -2064,6 +2069,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
                 includePromptInPenalties: plan.includesPromptInPenalties,
                 onLimit: recordLimit,
                 onUsage: recordUsage,
+                logprobs: logprobs,
                 request: request,
               );
 
@@ -2080,7 +2086,10 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
           cancelled: request.isCancelled,
           usage: () => generationUsage,
           runtimeToolCalls: () => runtimeToolCalls,
-        ).map((chunk) {
+        ).map((parsed) {
+          final chunk = logprobs == null
+              ? parsed
+              : _withTokenLogprobs(parsed, logprobs.drain());
           final limit = generationLimit;
           if (limit != null &&
               chunk.choices.isNotEmpty &&
@@ -2431,6 +2440,9 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
             params: params,
             parts: parts,
           );
+    final logprobs = params.topLogprobs == null
+        ? null
+        : TokenLogprobCollector(retain: true);
     late final Stream<String> generation;
     generation = _generationCancellation.request((request) {
       BackendGenerationLimit? limit;
@@ -2447,6 +2459,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
           params: params,
           parts: parts,
           onLimit: recordLimit,
+          logprobs: logprobs,
           request: request,
         );
       }
@@ -2458,6 +2471,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
           parts: parts,
           onLimit: recordLimit,
           onUsage: (reported) => usage = reported,
+          logprobs: logprobs,
           request: request,
         ),
         observers: observers,
@@ -2472,6 +2486,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
         cancelResult: () => const LlamaOperationResult(cancelled: true),
       );
     });
+    if (logprobs != null) _rawTokenLogprobs[generation] = logprobs.released;
     return generation;
   }
 
@@ -2518,6 +2533,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     bool includePromptInPenalties = false,
     void Function(BackendGenerationLimit limit)? onLimit,
     void Function(LlamaGenerationUsage usage)? onUsage,
+    TokenLogprobCollector? logprobs,
     required GenerationRequest request,
   }) async* {
     _ensureReady();
@@ -2533,6 +2549,10 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       final samplerControls = requestedSamplerControls(resolvedParams);
       if (samplerControls.isNotEmpty) {
         await _checkSamplerControls(samplerControls, requestEpoch);
+        if (request.isCancelled()) return;
+      }
+      if (resolvedParams.topLogprobs != null) {
+        await _checkTokenLogprobs(resolvedParams, requestEpoch);
         if (request.isCancelled()) return;
       }
       if (excludePromptFromPenalties) {
@@ -2577,13 +2597,23 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
                 parts: parts,
               );
 
+        if (logprobs != null) {
+          if (candidate is! BackendTokenLogprobsReporting) {
+            throw LlamaUnsupportedException(
+              'The loaded runtime no longer reports token log-probabilities.',
+            );
+          }
+          logprobs.bind(candidate as BackendTokenLogprobsReporting, stream);
+        }
         await for (final token in _cancellableText(
           stream,
           request,
           'Generation',
+          onBytes: logprobs?.onBytes,
         )) {
           yield token;
         }
+        logprobs?.finish();
         _reportGenerationOutcome(stream, onLimit, onUsage);
       } catch (error, stackTrace) {
         // Wrap raw backend failures so callers catching LlamaException (the
@@ -2632,6 +2662,14 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       if (samplerControls.isNotEmpty) {
         await _checkSamplerControls(samplerControls, requestEpoch);
         if (request.isCancelled()) return;
+      }
+      if (resolvedParams.topLogprobs != null) {
+        await _checkTokenLogprobs(resolvedParams, requestEpoch);
+        if (request.isCancelled()) return;
+        throw LlamaUnsupportedException(
+          '${await _backendNameOf(backend)} generates chat natively and '
+          'does not report GenerationParams.topLogprobs.',
+        );
       }
       _ensureReady();
 
@@ -2752,10 +2790,11 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   Stream<String> _cancellableText(
     Stream<List<int>> tokens,
     GenerationRequest request,
-    String operation,
-  ) {
+    String operation, {
+    List<int> Function(List<int> bytes)? onBytes,
+  }) {
     final text = StreamController<String>(sync: true);
-    final subscription = tokens
+    final subscription = (onBytes == null ? tokens : tokens.map(onBytes))
         .transform(const Utf8Decoder(allowMalformed: true))
         .listen(text.add, onError: text.addError, onDone: text.close);
     // Hand out the cancel future of [tokens] once. The stop below returns it;
@@ -3565,6 +3604,30 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
         .generationCapabilities();
   }
 
+  LlamaCompletionChunk _withTokenLogprobs(
+    LlamaCompletionChunk chunk,
+    List<LlamaGeneratedTokenLogprobs> logprobs,
+  ) {
+    if (logprobs.isEmpty || chunk.choices.isEmpty) return chunk;
+    final choice = chunk.choices.first;
+    return LlamaCompletionChunk(
+      id: chunk.id,
+      object: chunk.object,
+      created: chunk.created,
+      model: chunk.model,
+      choices: [
+        LlamaCompletionChunkChoice(
+          index: choice.index,
+          delta: choice.delta,
+          finishReason: choice.finishReason,
+          logprobs: logprobs,
+        ),
+        ...chunk.choices.skip(1),
+      ],
+      usage: chunk.usage,
+    );
+  }
+
   GenerationParams _snapshotLogitBias(GenerationParams params) =>
       params.logitBias.isEmpty
       ? params
@@ -3581,15 +3644,47 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     }
     final missing = requested.difference(supported);
     if (missing.isEmpty) return;
-    String backendName;
-    try {
-      backendName = await candidate.getBackendName();
-    } catch (_) {
-      backendName = candidate.runtimeType.toString();
-    }
+    final backendName = await _backendNameOf(candidate);
     throw LlamaUnsupportedException(
       '$backendName does not support GenerationParams sampler controls: '
       '${missing.map((control) => control.name).join(', ')}.',
+    );
+  }
+
+  Future<String> _backendNameOf(LlamaBackend candidate) async {
+    try {
+      return await candidate.getBackendName();
+    } catch (_) {
+      return candidate.runtimeType.toString();
+    }
+  }
+
+  /// Rejects an out-of-range [GenerationParams.topLogprobs], or one the
+  /// loaded runtime does not report, before the request reaches the backend.
+  Future<void> _checkTokenLogprobs(
+    GenerationParams params,
+    int requestEpoch,
+  ) async {
+    final top = params.topLogprobs;
+    if (top == null) return;
+    if (top < 0 || top > GenerationParams.maxTopLogprobs) {
+      throw LlamaArgumentException(
+        'GenerationParams.topLogprobs must be between 0 and '
+        '${GenerationParams.maxTopLogprobs}.',
+        name: 'topLogprobs',
+        invalidValue: top,
+      );
+    }
+    final candidate = backend;
+    final supported = (await _generationCapabilities()).tokenLogprobs;
+    if (_modelEpoch != requestEpoch) {
+      throw LlamaStateException('The model changed during generation setup.');
+    }
+    if (supported && candidate is BackendTokenLogprobsReporting) return;
+    throw LlamaUnsupportedException(
+      '${await _backendNameOf(candidate)} does not support '
+      'GenerationParams.topLogprobs. Token log-probabilities are available '
+      'on native llama.cpp.',
     );
   }
 
@@ -4372,12 +4467,27 @@ final Expando<BackendGenerationLimit> _completionGenerationLimits =
 final Expando<BackendGenerationLimit> _rawGenerationLimits =
     Expando<BackendGenerationLimit>();
 
+final Expando<List<LlamaGeneratedTokenLogprobs>> _rawTokenLogprobs =
+    Expando<List<LlamaGeneratedTokenLogprobs>>();
+
 /// The runtime-reported limit of a completed [LlamaEngine.generate] stream.
 ///
 /// Inspect the original stream after it closes. Null means no reliable limit
 /// was reported; cancellation and errors never publish a limit here.
 BackendGenerationLimit? rawGenerationLimit(Stream<String> generation) =>
     _rawGenerationLimits[generation];
+
+/// The token log-probabilities of a [LlamaEngine.generate] stream that
+/// set `GenerationParams.topLogprobs`, or null for any other stream.
+///
+/// Read the original stream's list while it runs: it grows as bytes arrive,
+/// in generation order, and holds every generated token once the stream is
+/// done. A token appears no later than the text event that completes it,
+/// and can appear before the event that completes a character it holds part
+/// of.
+List<LlamaGeneratedTokenLogprobs>? rawTokenLogprobs(
+  Stream<String> generation,
+) => _rawTokenLogprobs[generation];
 
 /// The token limit behind [chunk]'s `length` finish reason, when the backend
 /// reported one to [LlamaEngine.create].

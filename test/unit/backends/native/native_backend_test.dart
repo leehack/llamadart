@@ -31,8 +31,8 @@ import 'package:llamadart/src/core/models/config/lora_config.dart';
 import 'package:llamadart/src/core/models/download/model_download_manager.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/generation_usage.dart';
-import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
+import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/inference/state_identity.dart';
 import 'package:llamadart/src/core/models/model_format.dart';
 import 'package:llamadart/src/core/models/model_load_options.dart';
@@ -1370,6 +1370,41 @@ void main() {
     }
   });
 
+  test(
+    'forwards token log-probabilities from a reporting delegate only',
+    () async {
+      final llama = _TokenLogprobsFakeBackend(handle: 11);
+      final backend = NativeAutoBackend(
+        llamaCppFactory: () => llama,
+        liteRtLmFactory: () => _FakeBackend(handle: 22),
+      );
+      final generation = Stream<List<int>>.empty();
+      final entry = LlamaGeneratedTokenLogprobs(
+        sampled: LlamaTokenLogprob(token: 1, bytes: const [97], logprob: -1),
+        top: const [],
+      );
+      llama.entries[generation] = [entry];
+
+      try {
+        expect(backend.takeTokenLogprobs(generation), isEmpty);
+
+        await backend.modelLoad('/models/model.gguf', const ModelParams());
+        expect(backend.takeTokenLogprobs(generation), [entry]);
+        expect(backend.takeTokenLogprobs(generation), isEmpty);
+        expect(backend.takeTokenLogprobs(Stream<List<int>>.empty()), isEmpty);
+
+        llama.entries[generation] = [entry];
+        await backend.modelLoad(
+          '/models/gemma-4-E2B-it.litertlm',
+          const ModelParams(),
+        );
+        expect(backend.takeTokenLogprobs(generation), isEmpty);
+      } finally {
+        await backend.dispose();
+      }
+    },
+  );
+
   test('reports the runtime of the selected delegate', () async {
     final backend = NativeAutoBackend(
       llamaCppFactory: () =>
@@ -2372,6 +2407,19 @@ class _UsageReportingFakeBackend extends _FakeBackend
   @override
   LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation) =>
       usages[generation];
+}
+
+class _TokenLogprobsFakeBackend extends _FakeBackend
+    implements BackendTokenLogprobsReporting {
+  _TokenLogprobsFakeBackend({required super.handle});
+
+  final Map<Stream<List<int>>, List<LlamaGeneratedTokenLogprobs>> entries =
+      <Stream<List<int>>, List<LlamaGeneratedTokenLogprobs>>{};
+
+  @override
+  List<LlamaGeneratedTokenLogprobs> takeTokenLogprobs(
+    Stream<List<int>> generation,
+  ) => entries.remove(generation) ?? const [];
 }
 
 class _LimitReportingFakeBackend extends _FakeBackend

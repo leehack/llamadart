@@ -52,6 +52,7 @@ import 'runtime_admission.dart';
 import 'safetensors.dart';
 import 'stop_sequence_buffer.dart';
 import 'token_batch.dart';
+import 'token_logprob_recorder.dart';
 import 'bindings.dart';
 import 'llama_cpp_raw_bindings.dart' as raw_bindings;
 import 'moe_expert_placement.dart';
@@ -3930,6 +3931,7 @@ class LlamaCppService {
         SamplerControl.dynamicTemperature,
         SamplerControl.mirostat,
       },
+      tokenLogprobs: true,
       speculativeDecodingStrategies:
           _requiresQwen35VulkanRestriction(modelHandle)
           ? const <SpeculativeDecodingStrategy>{}
@@ -5806,6 +5808,10 @@ class LlamaCppService {
   /// Calls [onLimit] before the stream closes when a token limit ended the
   /// generation.
   ///
+  /// With [GenerationParams.topLogprobs] set, calls [onTokenLogprobs] with the
+  /// entries of the tokens whose bytes the next stream event carries, before
+  /// that event.
+  ///
   /// The caller wrote [prompt]: a media placeholder in it stands for a part,
   /// and parts without one go before the prompt.
   Stream<List<int>> generate(
@@ -5816,6 +5822,7 @@ class LlamaCppService {
     List<LlamaContentPart>? parts,
     bool countPromptTokensInPenalties = false,
     void Function(BackendGenerationLimit limit)? onLimit,
+    void Function(List<LlamaGeneratedTokenLogprobs> logprobs)? onTokenLogprobs,
   }) => _generate(
     contextHandle,
     prompt,
@@ -5824,6 +5831,7 @@ class LlamaCppService {
     parts: parts,
     countPromptTokensInPenalties: countPromptTokensInPenalties,
     onLimit: onLimit,
+    onTokenLogprobs: onTokenLogprobs,
   );
 
   /// Generates like [generate] from a [prompt] that a chat template rendered
@@ -5838,6 +5846,7 @@ class LlamaCppService {
     List<LlamaContentPart>? parts,
     bool countPromptTokensInPenalties = false,
     void Function(BackendGenerationLimit limit)? onLimit,
+    void Function(List<LlamaGeneratedTokenLogprobs> logprobs)? onTokenLogprobs,
   }) => _generate(
     contextHandle,
     prompt,
@@ -5847,6 +5856,7 @@ class LlamaCppService {
     countPromptTokensInPenalties: countPromptTokensInPenalties,
     chatMediaMarker: mediaMarker,
     onLimit: onLimit,
+    onTokenLogprobs: onTokenLogprobs,
   );
 
   Stream<List<int>> _generate(
@@ -5858,6 +5868,7 @@ class LlamaCppService {
     bool countPromptTokensInPenalties = false,
     String? chatMediaMarker,
     void Function(BackendGenerationLimit limit)? onLimit,
+    void Function(List<LlamaGeneratedTokenLogprobs> logprobs)? onTokenLogprobs,
   }) async* {
     var ctx = _contexts[contextHandle];
     if (ctx == null) throw Exception("Invalid context handle");
@@ -5878,6 +5889,7 @@ class LlamaCppService {
     Pointer<llama_sampler> sampler = nullptr;
     Pointer<llama_dart_speculative> speculativeSession = nullptr;
     _SpeculativeApi? speculativeApi;
+    TokenLogprobRecorder? logprobRecorder;
 
     try {
       final modelHandle = _contextToModel[contextHandle]!;
@@ -5933,6 +5945,16 @@ class LlamaCppService {
       _validateSamplerValues(params);
       _validateSamplerControls(params, model.vocabSize, suppressedTokens);
       _validateSamplingShape(params, suppressedTokens);
+      final topLogprobs = params.topLogprobs;
+      if (topLogprobs != null &&
+          (topLogprobs < 0 || topLogprobs > GenerationParams.maxTopLogprobs)) {
+        throw LlamaArgumentException(
+          'GenerationParams.topLogprobs must be between 0 and '
+          '${GenerationParams.maxTopLogprobs}.',
+          name: 'topLogprobs',
+          invalidValue: topLogprobs,
+        );
+      }
       final thinkingBudgetConfig = _resolveLlamaCppThinkingBudgetConfig(
         params,
         hasMediaParts: hasMediaParts,
@@ -5941,6 +5963,13 @@ class LlamaCppService {
         params,
         hasMediaParts: hasMediaParts,
       );
+      if (topLogprobs != null && speculativeConfig != null) {
+        throw LlamaUnsupportedException(
+          'GenerationParams.topLogprobs cannot be combined with speculative '
+          'decoding: llama.cpp accepts draft tokens in one native call that '
+          'leaves no per-token logits to read. Disable speculative decoding.',
+        );
+      }
       _validateMtpModelLoad(
         speculativeConfig,
         _modelLoadParams[modelHandle] ?? const ModelParams(),
@@ -5971,6 +6000,14 @@ class LlamaCppService {
       final batch = _batches[contextHandle]!.batch;
       tokensPtr = malloc<Int32>(nCtx);
       pieceBuf = malloc<Uint8>(256);
+      if (topLogprobs != null && onTokenLogprobs != null) {
+        logprobRecorder = TokenLogprobRecorder(
+          calls: _calls,
+          vocab: vocab,
+          vocabSize: model.vocabSize,
+          topK: topLogprobs,
+        );
+      }
 
       if (speculativeConfig != null) {
         speculativeApi = _resolveSpeculativeApi();
@@ -6135,9 +6172,12 @@ class LlamaCppService {
           preservedTokenIds,
           effectiveStopSequences,
           onLimit,
+          logprobRecorder,
+          onTokenLogprobs,
         );
       }
     } finally {
+      logprobRecorder?.dispose();
       if (speculativeSession != nullptr) {
         IsolateShutdownReleases.current.release(speculativeSession);
         speculativeApi?.free(speculativeSession);
@@ -6232,15 +6272,7 @@ class LlamaCppService {
       }
       final logits = logitsPtr.asTypedList(vocabSize);
 
-      var maxLogit = double.negativeInfinity;
-      for (var i = 0; i < vocabSize; i++) {
-        if (logits[i] > maxLogit) maxLogit = logits[i];
-      }
-      var sum = 0.0;
-      for (var i = 0; i < vocabSize; i++) {
-        sum += math.exp(logits[i] - maxLogit);
-      }
-      final logSum = maxLogit + math.log(sum);
+      final logSum = logSumExp(logits);
 
       LlamaTokenLogprob scored(int token) {
         var n = _calls.tokenToPiece(
@@ -6273,57 +6305,13 @@ class LlamaCppService {
 
       return LlamaNextTokenScores(
         candidates: [for (final token in candidates) scored(token)],
-        top: [for (final token in _topTokens(logits, topK)) scored(token)],
+        top: [for (final token in topLogitTokens(logits, topK)) scored(token)],
         promptTokens: promptTokens,
       );
     } finally {
       malloc.free(tokensPtr);
       malloc.free(pieceBuf);
     }
-  }
-
-  /// Ids of the [k] largest [logits], largest first; ties keep the lower id.
-  static List<int> _topTokens(Float32List logits, int k) {
-    if (k == 0) return const [];
-    final heap = <int>[];
-    bool before(int a, int b) =>
-        logits[a] < logits[b] || (logits[a] == logits[b] && a > b);
-    void siftDown(int i) {
-      while (true) {
-        final left = 2 * i + 1, right = left + 1;
-        var smallest = i;
-        if (left < heap.length && before(heap[left], heap[smallest])) {
-          smallest = left;
-        }
-        if (right < heap.length && before(heap[right], heap[smallest])) {
-          smallest = right;
-        }
-        if (smallest == i) return;
-        final t = heap[i];
-        heap[i] = heap[smallest];
-        heap[smallest] = t;
-        i = smallest;
-      }
-    }
-
-    for (var token = 0; token < logits.length; token++) {
-      if (heap.length < k) {
-        heap.add(token);
-        var i = heap.length - 1;
-        while (i > 0) {
-          final parent = (i - 1) ~/ 2;
-          if (!before(heap[i], heap[parent])) break;
-          final t = heap[i];
-          heap[i] = heap[parent];
-          heap[parent] = t;
-          i = parent;
-        }
-      } else if (before(heap[0], token)) {
-        heap[0] = token;
-        siftDown(0);
-      }
-    }
-    return heap..sort((a, b) => before(a, b) ? 1 : (before(b, a) ? -1 : 0));
   }
 
   /// Generates a single embedding vector for [text].
@@ -7923,6 +7911,8 @@ class LlamaCppService {
     Set<int> preservedTokenIds,
     List<String> stopSequences,
     void Function(BackendGenerationLimit limit)? onLimit,
+    TokenLogprobRecorder? logprobs,
+    void Function(List<LlamaGeneratedTokenLogprobs> logprobs)? onTokenLogprobs,
   ) async* {
     final cancelToken = Pointer<Int8>.fromAddress(cancelTokenAddress);
     int currentPos = startPos;
@@ -7967,12 +7957,21 @@ class LlamaCppService {
 
       if (n > 0) {
         final bytes = pieceBuf.asTypedList(n).toList();
+        logprobs?.queue.add(logprobs.read(ctx.pointer, selectedToken, bytes));
         final visible = stopBuffer.add(bytes);
+        if (logprobs != null) {
+          final released = logprobs.queue.release(visible.length);
+          if (released.isNotEmpty) onTokenLogprobs!(released);
+        }
         if (visible.isNotEmpty) yield visible;
         if (stopBuffer.isStopped) {
           limit = null;
           break;
         }
+      } else {
+        logprobs?.queue.add(
+          logprobs.read(ctx.pointer, selectedToken, const []),
+        );
       }
 
       batch.n_tokens = 1;
@@ -7993,6 +7992,10 @@ class LlamaCppService {
     }
 
     final remaining = stopBuffer.finish();
+    if (logprobs != null) {
+      final released = logprobs.queue.release(remaining.length);
+      if (released.isNotEmpty) onTokenLogprobs!(released);
+    }
     if (remaining.isNotEmpty) yield remaining;
     if (limit != null &&
         (currentPos == 0 ||

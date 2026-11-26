@@ -97,6 +97,7 @@ OpenAiChatCompletionRequest parseChatCompletionRequest(
   final logitBias = _parseLogitBias(json['logit_bias']);
   final seed = readIntField(json['seed'], 'seed');
   final stops = parseStopSequences(json['stop']);
+  final topLogprobs = _readTopLogprobs(json['logprobs'], json['top_logprobs']);
 
   if (thinkingBudgetTokens != null && !enableThinking) {
     throw OpenAiHttpException.invalidRequest(
@@ -147,6 +148,9 @@ OpenAiChatCompletionRequest parseChatCompletionRequest(
   if (stops.isNotEmpty) {
     params = params.copyWith(stopSequences: stops);
   }
+  if (topLogprobs != null) {
+    params = params.copyWith(topLogprobs: topLogprobs);
+  }
 
   return OpenAiChatCompletionRequest(
     model: model,
@@ -158,6 +162,26 @@ OpenAiChatCompletionRequest parseChatCompletionRequest(
     tools: tools,
     toolChoice: toolChoice,
   );
+}
+
+int? _readTopLogprobs(Object? logprobsRaw, Object? topLogprobsRaw) {
+  final enabled = readBoolField(logprobsRaw, 'logprobs') ?? false;
+  final top = readIntField(topLogprobsRaw, 'top_logprobs');
+  if (top != null && !enabled) {
+    throw OpenAiHttpException.invalidRequest(
+      '`top_logprobs` requires `logprobs = true`.',
+      param: 'top_logprobs',
+    );
+  }
+  if (!enabled) return null;
+  if (top != null && (top < 0 || top > GenerationParams.maxTopLogprobs)) {
+    throw OpenAiHttpException.invalidRequest(
+      '`top_logprobs` must be between 0 and '
+      '${GenerationParams.maxTopLogprobs}.',
+      param: 'top_logprobs',
+    );
+  }
+  return top ?? 0;
 }
 
 double? _readPenalty(Object? raw, String name, int limit) {

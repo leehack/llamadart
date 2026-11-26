@@ -203,8 +203,18 @@ modalities and speculative strategies before offering them.
   and Mirostat (`mirostat` 1 or 2, `mirostatTau`, `mirostatEta`). Mirostat
   replaces top-K, top-P and min-P and needs a positive `temp`; invalid values
   throw `LlamaArgumentException`. Dynamic temperature needs `temp` minus
-  `dynatempRange` of at least 0.01 and throws `LlamaUnsupportedException`
-  with a grammar, thinking budget, `ignoreEos` or a banned token.
+  `dynatempRange` of at least 0.01 as a 32-bit float and throws
+  `LlamaUnsupportedException` with a grammar, thinking budget, `ignoreEos`,
+  model-suppressed tokens or a banned token (`-infinity` `logitBias`).
+- Check `(await engine.capabilities).supportsTokenLogprobs` before setting
+  `GenerationParams(topLogprobs: n)` (0 to 20) on native llama.cpp. They are
+  raw-distribution values, before logit bias, penalties, grammar and
+  temperature, so the sampled token can be outside `top`. Read them from
+  `chunk.choices.first.logprobs` (the tokens that arrived since the previous
+  chunk, which can lead the chunk's text), `LlamaCompletion.logprobs`, or
+  `rawTokenLogprobs(stream)` for `generate`. Entry `bytes` concatenate to the
+  streamed bytes, so decode them whole rather than per token. Speculative
+  decoding, WebGPU and LiteRT-LM throw `LlamaUnsupportedException`.
 - Native llama.cpp throws `LlamaArgumentException` before decoding for a
   non-finite `temp`, `topP`, `minP`, `penalty` or `presencePenalty`, a `penalty`
   outside 0.001-100, a `presencePenalty` outside -100-100, or a positive `temp`

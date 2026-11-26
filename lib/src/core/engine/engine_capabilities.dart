@@ -161,6 +161,13 @@ class LlamaEngineCapabilities implements EngineCapabilities {
   /// Requests for controls outside this set throw `LlamaUnsupportedException`.
   final Set<SamplerControl> samplerControls;
 
+  /// Whether the loaded runtime reports [GenerationParams.topLogprobs].
+  ///
+  /// A request with `topLogprobs` set throws `LlamaUnsupportedException`
+  /// when this is false, and also for speculative decoding on native
+  /// llama.cpp.
+  final bool supportsTokenLogprobs;
+
   /// The strategies that [GenerationParams.speculativeDecodingConfig] can use.
   ///
   /// [SpeculativeDecodingStrategy.backendDefault] also stands for the
@@ -211,6 +218,7 @@ class LlamaEngineCapabilities implements EngineCapabilities {
     this.supportsStreamBatching = false,
     this.supportsIgnoreEos = false,
     this.samplerControls = const {},
+    this.supportsTokenLogprobs = false,
     this.speculativeDecodingStrategies = const <SpeculativeDecodingStrategy>{},
     this.toolResultMedia = const <LlamaToolResultMedia>{},
   });

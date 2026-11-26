@@ -8910,6 +8910,21 @@ void main() {
         ),
       );
 
+      await expectLater(
+        service.generate(
+          contextHandle,
+          'hello',
+          const GenerationParams(topLogprobs: 0),
+        ),
+        emitsError(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('LiteRT-LM'), contains('topLogprobs')),
+          ),
+        ),
+      );
+
       for (final (option, params) in const [
         ('frequencyPenalty', GenerationParams(frequencyPenalty: 1)),
         ('penaltyLastN', GenerationParams(penaltyLastN: 0)),

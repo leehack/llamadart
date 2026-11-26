@@ -83,6 +83,7 @@ export 'src/backends/backend.dart'
         BackendTextToSpeechProgress,
         BackendTextToSpeechRequest,
         BackendTextToSpeechResult,
+        BackendTokenLogprobsReporting,
         BackendToolResultMedia,
         StateLoadResult;
 export 'src/core/engine/engine.dart' show LlamaEngineBackendHooks;

@@ -1022,7 +1022,7 @@ class GenerationParams {
   /// amount around its value with the candidates' entropy.
   ///
   /// The default, 0.0, keeps [temp] fixed. [temp] minus this range must be at
-  /// least 0.01, and it cannot be combined with a grammar (including one from
+  /// least 0.01 as a 32-bit float, and it cannot be combined with a grammar (including one from
   /// tools or a response format), a [thinkingBudget], [ignoreEos],
   /// model-suppressed tokens or a [logitBias] of [double.negativeInfinity]:
   /// llama.cpp can then select a masked token.
@@ -1162,6 +1162,26 @@ class GenerationParams {
   /// overhead. Higher values reduce overhead but emit larger chunks.
   final int streamBatchByteThreshold;
 
+  /// Requests per-token log-probabilities on native llama.cpp: `null` (the
+  /// default) reports none, 0 reports the sampled token, and N from 1 to 20
+  /// also reports the N most probable alternatives at each position.
+  ///
+  /// `LlamaEngine.create` returns them as `LlamaCompletionChunkChoice.logprobs`
+  /// and `LlamaCompletion.logprobs`, and `rawTokenLogprobs` returns them for
+  /// `LlamaEngine.generate`. They come from a softmax over the model's raw
+  /// logits for each position, before logit bias, penalties, grammar and
+  /// temperature, as `llama-server` reports by default. A token that a stop
+  /// sequence removes entirely is not reported. Turning them on costs a pass
+  /// over the vocabulary logits per token, in Dart.
+  ///
+  /// Check `LlamaEngineCapabilities.supportsTokenLogprobs`. Speculative
+  /// decoding, WebGPU and LiteRT-LM throw `LlamaUnsupportedException`;
+  /// post-sampling probabilities are not available.
+  final int? topLogprobs;
+
+  /// The largest [topLogprobs] a runtime accepts.
+  static const int maxTopLogprobs = 20;
+
   /// Creates generation parameters with default values.
   const GenerationParams({
     this.maxTokens = 4096,
@@ -1197,6 +1217,7 @@ class GenerationParams {
     this.reusePromptPrefix = defaultReusePromptPrefix,
     this.streamBatchTokenThreshold = defaultStreamBatchTokenThreshold,
     this.streamBatchByteThreshold = defaultStreamBatchByteThreshold,
+    this.topLogprobs,
   });
 
   /// Whether speculative decoding is requested by either public API shape.
@@ -1250,6 +1271,8 @@ class GenerationParams {
     bool? reusePromptPrefix,
     int? streamBatchTokenThreshold,
     int? streamBatchByteThreshold,
+    int? topLogprobs,
+    bool clearTopLogprobs = false,
   }) {
     return GenerationParams(
       maxTokens: maxTokens ?? this.maxTokens,
@@ -1291,6 +1314,7 @@ class GenerationParams {
           streamBatchTokenThreshold ?? this.streamBatchTokenThreshold,
       streamBatchByteThreshold:
           streamBatchByteThreshold ?? this.streamBatchByteThreshold,
+      topLogprobs: clearTopLogprobs ? null : (topLogprobs ?? this.topLogprobs),
     );
   }
 }

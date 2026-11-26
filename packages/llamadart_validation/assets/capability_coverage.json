@@ -469,6 +469,17 @@
     },
     {
       "surfaces": [
+        "capability:LlamaEngineCapabilities.supportsTokenLogprobs",
+        "matrix:topLogprobs"
+      ],
+      "exemption": {
+        "id": "native-token-logprobs",
+        "reason": "No validation pack records per-token log-probabilities. Synthetic GGUF VM tests check raw-distribution values against scoreNextToken, split UTF-8 bytes, stop trimming, batch boundaries and cancellation; a local-only test compares the same prompts with llama-server n_probs; VM and Chrome tests check unavailable runtimes. The pack follow-up adds model-backed reproducibility.",
+        "issue": "https://github.com/leehack/llamadart/issues/2317"
+      }
+    },
+    {
+      "surfaces": [
         "matrix:Web model/projector browser cache and post-abort reload"
       ],
       "exemption": {
