@@ -920,6 +920,8 @@ class GenerationParams {
   /// Temperature for sampling (higher = more creative/random, lower = more deterministic).
   /// Range is typically 0.0 to 2.0. Native LiteRT-LM CPU/GPU and LiteRT-LM Web
   /// treat zero as greedy decoding and use one candidate regardless of [topK].
+  /// Native llama.cpp requires a finite value: at most 0 is greedy, otherwise
+  /// 0.000001 to 1000000.
   final double temp;
 
   /// Top-K sampling: only sample from the top K most likely tokens.
@@ -940,6 +942,7 @@ class GenerationParams {
   ///
   /// Native LiteRT-LM counts only the tokens of the current send, leaves the
   /// default value unapplied and rejects values below 1.0.
+  /// Native llama.cpp requires a finite value from 0.001 to 100.
   final double penalty;
 
   /// Additive penalty applied once to tokens that appear in the sampler's
@@ -949,7 +952,8 @@ class GenerationParams {
   /// logits using llama.cpp's repeat-penalty sampler. Native llama.cpp supports
   /// this option; native LiteRT-LM applies it to the tokens of the current
   /// send only. Backends without an equivalent sampler reject nonzero values
-  /// instead of silently ignoring them.
+  /// instead of silently ignoring them. Native llama.cpp requires a finite
+  /// value from -100 to 100.
   final double presencePenalty;
 
   /// Additive penalty per occurrence of a token in the recent history.
