@@ -1,6 +1,7 @@
-## Unreleased
+## 3.13.0 - 2026-11-26
 
 - Forward image `MediaPart` values in Genkit tool results to the next model turn on native llama.cpp vision models with a qualified template, and reject audio and unsupported runtimes with `UNIMPLEMENTED`.
+- Support llamadart 0.22.x alongside 0.21.x.
 
 ## 3.12.0 - 2026-11-25
 
