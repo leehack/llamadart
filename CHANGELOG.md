@@ -1,6 +1,12 @@
 Releases before 0.10.0 are in the
 [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).
 
+## 0.21.1
+
+- Keep the default WebGPU bridge assets at `v0.1.94` (unchanged from 0.21.0).
+
+Runtime baseline: native llama.cpp `v1.0.0-4` and Web use upstream `v1.0.0@b1b770d90d94cad9e9ea5b993bdbc383a522fb28`; native LiteRT-LM uses `v0.20.0` and stable-diffusion uses `v0.4.0-1`. Web LiteRT-LM uses `@litert-lm/core@0.20.0`. Manifest SHA-256: `24d62c212338dda646a3b815d5883557a01b09997dee4f5b84245c5ab64fa5f6`.
+
 ## 0.21.0
 
 - Add `GenerationParams.ignoreEos` to keep native llama.cpp generating past end-of-generation tokens where `supportsIgnoreEos` is true. Grammars, WebGPU and LiteRT-LM reject this option.
