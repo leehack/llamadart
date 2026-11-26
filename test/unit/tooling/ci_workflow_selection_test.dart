@@ -1858,6 +1858,34 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     },
   );
 
+  test('release tools and bridge fetcher select their CI consumers', () async {
+    const vm = {'analyze', 'test-linux-coverage'};
+    const host = {...vm, 'test-other-os'};
+    const bridge = {
+      ...host,
+      'test-web',
+      'web-chat-contract',
+      'example-packages',
+    };
+    for (final (path, jobs, macos, windows) in [
+      ('tool/release/collect_pr_changelog.dart', vm, false, false),
+      ('tool/release/verify_release_candidate.sh', host, true, false),
+      ('tool/release/companion_package_contents.dart', host, true, true),
+      ('scripts/fetch_webgpu_bridge_assets.sh', bridge, true, true),
+    ]) {
+      final plan = await selected([path]);
+      expect(
+        (plan['jobs'] as Map).entries
+            .where((entry) => entry.value == true)
+            .map((entry) => entry.key),
+        unorderedEquals(jobs),
+        reason: path,
+      );
+      expect(plan['macos-native'], macos, reason: path);
+      expect(plan['windows-native'], windows, reason: path);
+    }
+  });
+
   test(
     'Markdown reader helper changes select the guard without full coverage',
     () async {

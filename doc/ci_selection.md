@@ -18,9 +18,11 @@ PR. A path filter must not prevent a required workflow from reporting.
 | `codecov.yml` | Linux VM tests. Coverage calculation and Codecov upload run after merge. | None |
 | `.gitattributes` | Full fallback. Git attributes can change checkout bytes across platforms, including hash-checked fixtures. | Full fallback targets |
 | Listed local tools, native Python test fixtures and PR head-update evidence schema | Root static checks and Markdown Tests | None |
-| Listed tooling inputs read by Linux VM suites, including most LiteRT-LM template sources | Root static checks and Linux VM tests | None |
-| Listed shell scripts exercised by POSIX root suites | Root static checks, Linux VM tests and macOS native shards | None |
-| Listed tooling inputs read by host VM suites, including `tool/litert_lm_templates/gemma4.jinja` | Root static checks, Linux VM tests and macOS and Windows native shards | None |
+| Listed tooling inputs read by Linux VM suites, including most LiteRT-LM template sources and the release changelog collector | Root static checks and Linux VM tests | None |
+| Listed shell scripts exercised by POSIX root suites, including the release candidate verifier and Genkit release helpers | Root static checks, Linux VM tests and macOS native shards | None |
+| Listed tooling inputs read by host VM suites, including `tool/litert_lm_templates/gemma4.jinja` and the core and companion release checks | Root static checks, Linux VM tests and macOS and Windows native shards. The Genkit staging script also runs Genkit. | None |
+| Bridge tag checker | Root static checks, Linux VM tests, Chrome and macOS and Windows native shards | None |
+| Bridge asset fetch script | Bridge tag checker lanes, Web Chat Contract and Example Package Tests | All targets. The existing PR deferrals still apply. |
 | Genkit or Model Store package | Affected package checks and root Linux VM tests | None |
 | Studio core or UI package (`web/`, `windows/`, `linux/` packaging vs shared/macOS) | Studio core and Flutter UI format, analysis and VM tests; `studio-macos` for non-exempt inputs; Web files also run version and bridge-pin checks | None |
 | One companion package | Root static checks, affected package's Flutter/SwiftPM/publish checks, Apple cache check, root Linux coverage and full macOS/Windows VM checks, Studio + `studio-macos`, Web Chat consumer | Android, Web, iOS inputs |
@@ -56,11 +58,12 @@ archive check and Pana, and run the Dependabot package inventory test. Docker
 builds use local scripts.
 
 The tool rules in `select_jobs.py` list exact paths. New tools and fixtures
-default to the full fallback until their consumers are traced. Workflow and
-bundle entrypoints, the helpers they execute, and release-prep inputs keep
-their existing selection. This includes the production Web smoke's Python
-imports, the native sync allowlist, changelog resolutions and the release tag
-grammar fixture. Validation tooling keeps its bundle-aware rule. Check
+default to the full fallback until their consumers are traced. The production
+Web smoke's Python imports, the native sync allowlist, the changelog cutover
+and resolutions, and the release tag grammar fixture retain full selection.
+Validation tooling keeps its bundle-aware rule. Every validation bundle
+reads the bridge asset fetch script to record the pin in provenance, and the
+Web build runs it. Check
 indirect imports, script calls, fixture readers and host shard membership
 before adding a path. Markdown Tests already runs the PR head-update schema
 test, and Analyze runs the Python native-sync suites that read their fixtures.
@@ -80,7 +83,7 @@ under `example/` and `tool/`. Classify additions explicitly in the test.
 Unknown paths still trigger the full fallback, including Markdown in a new
 example directory. The tests check every tracked file in the example rules,
 check that literal file references from tracked sources retain the readers'
-jobs, and pin the exact membership of the four narrow tooling groups.
+jobs, and pin the narrow tooling groups and release and bridge reader inventory.
 Web Chat Contract installs no system packages, so an Ubuntu mirror outage cannot fail the required job.
 The private harness also checks APK integrity.
 

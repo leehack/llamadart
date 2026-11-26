@@ -93,8 +93,7 @@ BASIC_APP_ROOT_HOST_VM = (
     'example/basic_app/test/image_generation_smoke.yaml',
 )
 
-# Use exact paths so new tools and fixtures default to full CI. Workflow and
-# bundle entrypoints and their dependencies stay out of these sets.
+# Use exact paths so new tools and fixtures default to full CI.
 TOOLS_STATIC = {
     'scripts/android_runtime_smoke.sh',
     'tool/gen_litert_lm_templates.dart',
@@ -131,10 +130,16 @@ TOOLS_LINUX_VM = {
     'tool/litert_lm_templates/gemma3n.jinja',
     'tool/litert_lm_templates/qwen25.jinja',
     'tool/litert_lm_templates/qwen3.jinja',
+    'tool/release/collect_pr_changelog.dart',
+    'tool/release/nonpublishing_auth_probe.py',
+    'tool/release/patch_branch.dart',
+    'tool/release/reopen_unreleased_changelog.dart',
     'tool/testing/run_llama_cpp_chat_tests.sh',
 }
 # The host suites that execute these shell scripts skip those tests on Windows.
 TOOLS_MACOS_VM = {
+    'tool/release/genkit_release_helpers.sh',
+    'tool/release/verify_release_candidate.sh',
     'tool/testing/build_llama_cpp_runtime_gbnf_validator.sh',
     'tool/testing/run_template_parity_suites.sh',
     'tool/testing/without_app_nap.sh',
@@ -146,6 +151,14 @@ TOOLS_ALL_HOST_VM = {
     'tool/native/fixtures/litert_lm_schema2_owner_release.json',
     'tool/native/fixtures/litert_lm_v018_samplers_Package.swift',
     'tool/native/fixtures/litert_lm_v019_apple_inventory_projection.json',
+    'tool/release/check_core_archive.py',
+    'tool/release/companion_package_contents.dart',
+    'tool/release/companion_pub_preflight.dart',
+    'tool/release/pr_changelog.dart',
+    'tool/release/pub_content_limits.dart',
+    'tool/release/pub_dev_api.dart',
+    'tool/release/stage_companion_package.dart',
+    'tool/release/stage_genkit_package.py',
     'tool/testing/litert_text_history_web_e2e.py',
     'tool/testing/llama_cpp_speculative_benchmark.dart',
     'tool/testing/playwright_chat_app_microphone_lifecycle.py',
@@ -154,6 +167,10 @@ TOOLS_ALL_HOST_VM = {
     'tool/testing/test_matrix.dart',
     'tool/testing/verify_image_e2e_evidence.dart',
     'tool/testing/verify_speech_stream_qualification.dart',
+}
+BRIDGE_PIN_INPUTS = {
+    'scripts/fetch_webgpu_bridge_assets.sh',
+    'tool/testing/check_webgpu_bridge_tag.dart',
 }
 
 def inventory(raw):
@@ -266,6 +283,17 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
             jobs.update(('analyze', 'test-linux-coverage'))
             macos_native = True
             windows_native = True
+            if path == 'tool/release/stage_genkit_package.py':
+                jobs.add('genkit')
+        elif path in BRIDGE_PIN_INPUTS:
+            jobs.update(('analyze', 'test-linux-coverage', 'test-web'))
+            macos_native = True
+            windows_native = True
+            if path == 'scripts/fetch_webgpu_bridge_assets.sh':
+                jobs.update(('web-chat-contract', 'example-packages'))
+                # Every bundle records the fetch script's default bridge tag.
+                desktops.update(DESKTOPS)
+                apps.update(APPS)
         elif any(path.startswith('packages/' + name + '/') for name in COMPANIONS):
             name = path.split('/')[1]
             companions.add(name)
