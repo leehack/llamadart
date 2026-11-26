@@ -119,13 +119,17 @@ feature. For which runtime supports which feature, see the
   not collected to check for them, so the older problem is untested rather than
   confirmed resolved. Use `ComputeDevice.cpu` to avoid the GPU path. A Flutter
   Windows app has not been run with it.
-- Image generation can return noise, with no error or warning, on a Vulkan
-  device whose subgroup size is below 8
-  ([#992](https://github.com/leehack/llamadart/issues/992)). Reproduced on
-  stable-diffusion-native `v0.4.0-1` with Mesa lavapipe forced to subgroup
-  size 2 and 4 (noise) and 8 (correct); CPU is correct. The failing operation
-  is not identified, and no physical GPU has been checked. Set
-  `ImageModelParams(device: ComputeDevice.cpu)` to avoid the Vulkan path.
+- Image generation returns noise, with no error or warning, on Mesa lavapipe
+  Vulkan with a subgroup size below 8
+  ([#992](https://github.com/leehack/llamadart/issues/992)). ggml's IM2COL
+  shader gives wrong results there: lavapipe silently ignores conditional
+  pushes past 80 nesting levels, and the shader unrolls `512 / subgroup size`
+  early-exit iterations. Reproduced on stable-diffusion-native `v0.4.0-1` with
+  lavapipe forced to subgroup size 2 and 4 (noise) and 8 (correct); CPU is
+  correct. ggml-vulkan never selects lavapipe automatically, so only forcing a
+  CPU-type device with `GGML_VK_VISIBLE_DEVICES` reaches it. No physical GPU is
+  known to be affected. Set `ImageModelParams(device: ComputeDevice.cpu)` to
+  avoid the Vulkan path.
 - Windows llama.cpp contexts count against the Windows system commit limit (RAM
   plus pagefile), and `gpuMemoryFit` budgets only device memory. With a small
   fixed-size pagefile, very large contexts (such as 172k+ tokens) can fail at
