@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:llamadart/llamadart.dart';
 
 import '../../domain/openai_tool_call_record.dart';
+import 'openai_chunk_mapper.dart';
 
 /// Accumulates streaming chunks into a single non-stream OpenAI response.
 class OpenAiChatCompletionAccumulator {
@@ -10,6 +11,8 @@ class OpenAiChatCompletionAccumulator {
   final StringBuffer _reasoning = StringBuffer();
   final Map<int, _ToolCallAccumulator> _toolCallsByIndex =
       <int, _ToolCallAccumulator>{};
+
+  List<LlamaGeneratedTokenLogprobs>? _logprobs;
 
   String _finishReason = 'stop';
 
@@ -41,6 +44,11 @@ class OpenAiChatCompletionAccumulator {
 
         accumulator.add(call);
       }
+    }
+
+    final logprobs = choice.logprobs;
+    if (logprobs != null) {
+      (_logprobs ??= <LlamaGeneratedTokenLogprobs>[]).addAll(logprobs);
     }
 
     if (choice.finishReason != null) {
@@ -95,6 +103,7 @@ class OpenAiChatCompletionAccumulator {
           'index': 0,
           'message': message,
           'finish_reason': hasToolCalls ? 'tool_calls' : _finishReason,
+          if (_logprobs != null) 'logprobs': toOpenAiLogprobs(_logprobs!),
         },
       ],
       'usage': {

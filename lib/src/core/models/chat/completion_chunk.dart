@@ -1,4 +1,5 @@
 import '../inference/generation_usage.dart';
+import '../inference/next_token_scores.dart';
 
 /// A tool call in a completion chunk, shaped like OpenAI's streaming
 /// `ToolCall`.
@@ -191,21 +192,44 @@ class LlamaCompletionChunkChoice {
   /// The reason the model stopped generating tokens.
   final String? finishReason;
 
+  /// The log-probabilities of the tokens whose bytes arrived since the
+  /// previous chunk, when `GenerationParams.topLogprobs` is set; otherwise
+  /// null.
+  ///
+  /// The tokens are those the runtime sampled, so a chunk's [delta] can lag
+  /// them: a token that holds part of a multi-byte character, a stop
+  /// sequence prefix, reasoning or tool-call markup that the parser has not
+  /// emitted yet. Entries the parser never emits as text arrive with the
+  /// final chunk. [toJson] writes them as an OpenAI `logprobs.content` list.
+  final List<LlamaGeneratedTokenLogprobs>? logprobs;
+
   /// Creates a new [LlamaCompletionChunkChoice].
   LlamaCompletionChunkChoice({
     required this.index,
     required this.delta,
     this.finishReason,
+    this.logprobs,
   });
 
   /// Creates a [LlamaCompletionChunkChoice] from a JSON map.
   factory LlamaCompletionChunkChoice.fromJson(Map<String, dynamic> json) {
+    final logprobs =
+        (json['logprobs'] as Map<String, dynamic>?)?['content']
+            as List<dynamic>?;
     return LlamaCompletionChunkChoice(
       index: json['index'] as int,
       delta: LlamaCompletionChunkDelta.fromJson(
         json['delta'] as Map<String, dynamic>,
       ),
       finishReason: json['finish_reason'] as String?,
+      logprobs: logprobs == null
+          ? null
+          : [
+              for (final entry in logprobs)
+                LlamaGeneratedTokenLogprobs.fromJson(
+                  entry as Map<String, dynamic>,
+                ),
+            ],
     );
   }
 
@@ -215,6 +239,10 @@ class LlamaCompletionChunkChoice {
       'index': index,
       'delta': delta.toJson(),
       if (finishReason != null) 'finish_reason': finishReason,
+      if (logprobs != null)
+        'logprobs': {
+          'content': [for (final entry in logprobs!) entry.toJson()],
+        },
     };
   }
 

@@ -96,6 +96,24 @@ objects. It knows nothing about other native calls:
   evaluation, a long batch) makes teardown free nothing, and ggml-metal
   aborts as before.
 
+### Logit reads
+
+`scoreNextToken` and token log-probabilities (`GenerationParams.topLogprobs`)
+call `llama_get_logits_ith` directly and walk the returned output buffer in
+Dart, so the read is an unguarded call on a tracked context. It is not routed
+through `LlamaCppObjectCalls`, because no `llama_dart_` function reads the
+logits and a wrapper that does would be a `llamadart-native` change. Two
+properties keep it inside the settle window above: it runs immediately after
+a guarded call that ended on a synchronized graph (the prompt decode, or
+the `tokenToPiece` call that follows the sample of the token it reads), so
+`llama_get_logits_ith` only returns the output pointer, and the pass over the logits takes about 0.5 ms at a
+152,000-token vocabulary, once per generated token, before the next guarded
+decode begins. Teardown frees nothing until 250 ms after the end of that
+guarded call. A read that overlaps an exit would need the isolate to stall
+for that long between the two calls. The read is skipped when the request
+sets no `topLogprobs`, and the speculative loop never reads logits: a request
+that combines both throws `LlamaUnsupportedException`.
+
 ## An exit during the last free
 
 `llama_dart_exit_free` takes an object out of the registry before it has

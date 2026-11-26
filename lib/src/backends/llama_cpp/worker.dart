@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import '../../core/exceptions.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/inference/generation_usage.dart';
+import '../../core/models/inference/next_token_scores.dart';
 import '../backend.dart';
 import '../native_token_stream_batcher.dart';
 import 'llama_cpp_service.dart';
@@ -371,6 +372,19 @@ void runLlamaWorkerForTesting(
                 final stopwatch = Stopwatch()..start();
                 Duration? timeToFirstToken;
                 BackendGenerationLimit? limit;
+                final pendingLogprobs = <LlamaGeneratedTokenLogprobs>[];
+                void recordLogprobs(
+                  List<LlamaGeneratedTokenLogprobs> logprobs,
+                ) => pendingLogprobs.addAll(logprobs);
+                List<LlamaGeneratedTokenLogprobs>? takeLogprobs() {
+                  if (message.params.topLogprobs == null) return null;
+                  final taken = List<LlamaGeneratedTokenLogprobs>.of(
+                    pendingLogprobs,
+                  );
+                  pendingLogprobs.clear();
+                  return taken;
+                }
+
                 final chatMediaMarker = message.chatMediaMarker;
                 final stream = chatMediaMarker == null
                     ? service.generate(
@@ -382,6 +396,7 @@ void runLlamaWorkerForTesting(
                         countPromptTokensInPenalties:
                             message.countPromptTokensInPenalties,
                         onLimit: (reached) => limit = reached,
+                        onTokenLogprobs: recordLogprobs,
                       )
                     : service.generateChatPrompt(
                         message.contextHandle,
@@ -393,6 +408,7 @@ void runLlamaWorkerForTesting(
                         countPromptTokensInPenalties:
                             message.countPromptTokensInPenalties,
                         onLimit: (reached) => limit = reached,
+                        onTokenLogprobs: recordLogprobs,
                       );
 
                 final batcher = NativeTokenStreamBatcher(
@@ -406,13 +422,22 @@ void runLlamaWorkerForTesting(
                   }
                   final readyChunks = batcher.add(tokens);
                   for (final chunk in readyChunks) {
-                    message.sendPort.send(TokenResponse(chunk));
+                    message.sendPort.send(
+                      TokenResponse(chunk, logprobs: takeLogprobs()),
+                    );
                   }
                 }
 
                 final finalChunk = batcher.flush();
-                if (finalChunk != null) {
-                  message.sendPort.send(TokenResponse(finalChunk));
+                final finalLogprobs = takeLogprobs();
+                if (finalChunk != null ||
+                    (finalLogprobs != null && finalLogprobs.isNotEmpty)) {
+                  message.sendPort.send(
+                    TokenResponse(
+                      finalChunk ?? const <int>[],
+                      logprobs: finalLogprobs,
+                    ),
+                  );
                 }
 
                 final counts = service.lastGenerationTokenCounts(

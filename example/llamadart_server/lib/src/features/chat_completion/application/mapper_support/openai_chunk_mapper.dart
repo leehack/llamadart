@@ -39,6 +39,7 @@ Map<String, dynamic> toOpenAiChatCompletionChunk(
     delta['reasoning_content'] = reasoning;
   }
 
+  final logprobs = choice.logprobs;
   return {
     'id': chunk.id,
     'object': 'chat.completion.chunk',
@@ -49,10 +50,16 @@ Map<String, dynamic> toOpenAiChatCompletionChunk(
         'index': choice.index,
         'delta': delta,
         'finish_reason': choice.finishReason,
+        if (logprobs != null) 'logprobs': toOpenAiLogprobs(logprobs),
       },
     ],
   };
 }
+
+/// Converts token log-probabilities into an OpenAI `logprobs` object.
+Map<String, dynamic> toOpenAiLogprobs(
+  List<LlamaGeneratedTokenLogprobs> logprobs,
+) => {'content': logprobs.map((entry) => entry.toJson()).toList()};
 
 Map<String, dynamic> _toolCallChunkToJson(LlamaCompletionChunkToolCall call) {
   final function = <String, dynamic>{};

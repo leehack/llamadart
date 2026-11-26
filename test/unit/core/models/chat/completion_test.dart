@@ -5,6 +5,7 @@ import 'package:llamadart/src/core/models/chat/completion.dart';
 import 'package:llamadart/src/core/models/chat/completion_chunk.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/generation_usage.dart';
+import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
 import 'package:test/test.dart';
 
 LlamaCompletionChunk _chunk({
@@ -13,6 +14,7 @@ LlamaCompletionChunk _chunk({
   List<LlamaCompletionChunkToolCall>? toolCalls,
   String? finishReason,
   LlamaGenerationUsage? usage,
+  List<LlamaGeneratedTokenLogprobs>? logprobs,
 }) => LlamaCompletionChunk(
   id: 'c',
   object: 'chat.completion.chunk',
@@ -27,6 +29,7 @@ LlamaCompletionChunk _chunk({
         toolCalls: toolCalls,
       ),
       finishReason: finishReason,
+      logprobs: logprobs,
     ),
   ],
   usage: usage,
@@ -109,6 +112,31 @@ void main() {
       expect(completion.toolCalls, isEmpty);
       expect(completion.finishReason, LlamaFinishReason.length);
       expect(completion.usage, same(usage));
+    });
+
+    test('collect gathers logprobs of every chunk, in order', () async {
+      LlamaGeneratedTokenLogprobs entry(int token) =>
+          LlamaGeneratedTokenLogprobs(
+            sampled: LlamaTokenLogprob(token: token, bytes: [97], logprob: -1),
+            top: const [],
+          );
+      final completion = await Stream.fromIterable([
+        _chunk(content: 'a', logprobs: [entry(1), entry(2)]),
+        emptyChoices,
+        _chunk(content: 'b'),
+        _chunk(finishReason: 'stop', logprobs: [entry(3)]),
+      ]).collect();
+
+      expect(completion.logprobs!.map((e) => e.sampled.token), [1, 2, 3]);
+      expect(() => completion.logprobs!.add(entry(4)), throwsUnsupportedError);
+    });
+
+    test('collect leaves logprobs null when no chunk has them', () async {
+      final completion = await Stream.fromIterable([
+        _chunk(content: 'a'),
+      ]).collect();
+
+      expect(completion.logprobs, isNull);
     });
 
     test('collect merges tool-call fragments by index', () async {

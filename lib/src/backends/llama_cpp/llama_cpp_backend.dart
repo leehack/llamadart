@@ -58,6 +58,7 @@ class NativeLlamaBackend
         BackendGpuMemoryFitReporting,
         BackendGenerationLimitReporting,
         BackendGenerationUsageReporting,
+        BackendTokenLogprobsReporting,
         BackendChatPromptGeneration,
         BackendPromptPenaltyGeneration,
         BackendToolResultMedia,
@@ -95,6 +96,8 @@ class NativeLlamaBackend
       Expando<BackendGenerationLimit>();
   final Expando<LlamaGenerationUsage> _generationUsages =
       Expando<LlamaGenerationUsage>();
+  final Expando<List<LlamaGeneratedTokenLogprobs>> _tokenLogprobs =
+      Expando<List<LlamaGeneratedTokenLogprobs>>();
 
   int? _activeModelHandle;
   bool _isReady = false;
@@ -863,7 +866,11 @@ class NativeLlamaBackend
     rp.listen((msg) {
       if (msg is TokenResponse) {
         if (!controller.isClosed) {
-          controller.add(msg.bytes);
+          final logprobs = msg.logprobs;
+          if (logprobs != null && logprobs.isNotEmpty) {
+            (_tokenLogprobs[stream] ??= []).addAll(logprobs);
+          }
+          if (msg.bytes.isNotEmpty) controller.add(msg.bytes);
         }
       } else if (msg is DoneResponse) {
         final limit = msg.generationLimit;
@@ -903,6 +910,17 @@ class NativeLlamaBackend
   @override
   LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation) =>
       _generationUsages[generation];
+
+  @override
+  List<LlamaGeneratedTokenLogprobs> takeTokenLogprobs(
+    Stream<List<int>> generation,
+  ) {
+    final pending = _tokenLogprobs[generation];
+    if (pending == null || pending.isEmpty) return const [];
+    final taken = List<LlamaGeneratedTokenLogprobs>.of(pending);
+    pending.clear();
+    return taken;
+  }
 
   @override
   Future<List<int>> tokenize(

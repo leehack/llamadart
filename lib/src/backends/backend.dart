@@ -715,6 +715,28 @@ abstract class BackendGenerationUsageReporting {
   LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation);
 }
 
+/// Backend probe for the token log-probabilities of a generation stream.
+///
+/// A backend that implements it reports `tokenLogprobs` in its
+/// [BackendGenerationCapabilities]. The engine reads entries only for
+/// [LlamaBackend.generate] streams; a request with `topLogprobs` on a backend
+/// that generates chat natively throws `LlamaUnsupportedException`.
+abstract class BackendTokenLogprobsReporting {
+  /// Returns the entries of [generation], a stream this backend returned
+  /// from a generation call that set [GenerationParams.topLogprobs], that
+  /// earlier calls did not return, in generation order, and forgets them.
+  ///
+  /// An entry is available no later than the first byte of its token reaches
+  /// [generation]. Entries are the tokens whose bytes the stream carries, in
+  /// order, so the bytes of the entries taken so far, concatenated, start
+  /// with the bytes the stream delivered (a token that a stop sequence
+  /// partly removes keeps its full bytes). Returns an empty list when
+  /// [generation] is unknown or reports none.
+  List<LlamaGeneratedTokenLogprobs> takeTokenLogprobs(
+    Stream<List<int>> generation,
+  );
+}
+
 /// Model family reported by a backend text-to-speech implementation.
 enum BackendTextToSpeechModel {
   /// Qwen3-TTS audio generation through llama.cpp mtmd.
@@ -1090,6 +1112,14 @@ class BackendGenerationCapabilities {
   /// The sampler controls this runtime applies when requested.
   final Set<SamplerControl> samplerControls;
 
+  /// Whether [GenerationParams.topLogprobs] is applied, reported through
+  /// [BackendTokenLogprobsReporting].
+  ///
+  /// Defaults to `false` so a backend that predates this field does not
+  /// claim it. A runtime that applies it can still reject it for a request
+  /// such as one with speculative decoding.
+  final bool tokenLogprobs;
+
   /// Creates a capability snapshot.
   const BackendGenerationCapabilities({
     required this.presencePenalty,
@@ -1100,6 +1130,7 @@ class BackendGenerationCapabilities {
     this.streamBatching = false,
     this.ignoreEos = false,
     this.samplerControls = const {},
+    this.tokenLogprobs = false,
   });
 }
 
@@ -1126,6 +1157,19 @@ void rejectUnsupportedSamplerControls(
     '$backendName does not support GenerationParams sampler controls: '
     '${controls.map((control) => control.name).join(', ')}. '
     'These controls are available on native llama.cpp.',
+  );
+}
+
+/// Rejects [GenerationParams.topLogprobs] on a runtime that does not report
+/// token log-probabilities.
+void rejectUnsupportedTokenLogprobs(
+  GenerationParams params,
+  String backendName,
+) {
+  if (params.topLogprobs == null) return;
+  throw LlamaUnsupportedException(
+    '$backendName does not support GenerationParams.topLogprobs. '
+    'Token log-probabilities are available on native llama.cpp.',
   );
 }
 
