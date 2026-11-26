@@ -2,8 +2,10 @@
 
 This document covers the major breaking upgrade paths.
 
-## Unreleased: llama.cpp on an iOS simulator never uses Metal
+## `0.21.x` -> `0.22.0`: Apple companions and iOS simulator Metal
 
+- Upgrade core and all installed Apple SwiftPM companions together. The
+  `0.22.x` companions require `llamadart: '>=0.22.0 <0.23.0'`.
 - An iOS simulator GPU reports `MTLGPUFamilyApple2`, and llama.cpp's Metal
   kernels need `MTLGPUFamilyApple7`, so they returned incorrect output
   ([#950](https://github.com/leehack/llamadart/issues/950)). `ComputeDevice.gpu`
