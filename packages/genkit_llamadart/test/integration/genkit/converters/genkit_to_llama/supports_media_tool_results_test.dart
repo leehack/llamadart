@@ -111,67 +111,119 @@ void main() {
     expect(converted.content, isEmpty);
   });
 
-  final rejected = <String, List<Object?>>{
-    'remote image without a resolver': [
-      {
-        'media': {
-          'url': 'https://USER:SECRET_SENTINEL@host/PATH?token=TOKEN_SENTINEL',
-          'contentType': 'image/png',
+  const invalid = genkit.StatusCode.invalidArgument;
+  const unimplemented = genkit.StatusCode.unimplemented;
+  final rejected = <String, (genkit.StatusCode, List<Object?>)>{
+    'remote image without a resolver': (
+      invalid,
+      [
+        {
+          'media': {
+            'url':
+                'https://USER:SECRET_SENTINEL@host/PATH?token=TOKEN_SENTINEL',
+            'contentType': 'image/png',
+          },
         },
-      },
-    ],
-    'remote audio': [
-      {
-        'media': {
-          'url': 'https://host/PATH_SENTINEL.wav?token=TOKEN_SENTINEL',
-          'contentType': 'audio/wav',
+      ],
+    ),
+    'remote audio': (
+      unimplemented,
+      [
+        {
+          'media': {
+            'url': 'https://host/PATH_SENTINEL.wav?token=TOKEN_SENTINEL',
+            'contentType': 'audio/wav',
+          },
         },
-      },
-    ],
-    'video': [
-      {
-        'media': {'url': 'data:video/mp4;base64,AQID'},
-      },
-    ],
-    'unknown media type': [
-      {
-        'media': {'url': '/tmp/PATH_SENTINEL.bin'},
-      },
-    ],
-    'invalid data URL': [
-      {
-        'media': {'url': 'data:image/png;base64,%%%SECRET_SENTINEL'},
-      },
-    ],
-    'media beside text in one part': [
-      {
-        'text': 'one',
-        'media': {'url': _png},
-      },
-    ],
-    'resource part': [
-      {
-        'resource': {'uri': 'private://SECRET_SENTINEL'},
-      },
-    ],
-    'media without a URL': [
-      {
-        'media': {'contentType': 'image/png'},
-      },
-    ],
+      ],
+    ),
+    'remote video by extension': (
+      unimplemented,
+      [
+        {
+          'media': {
+            'url': 'https://host/PATH_SENTINEL.mp4?token=TOKEN_SENTINEL',
+          },
+        },
+      ],
+    ),
+    'video data URL': (
+      unimplemented,
+      [
+        {
+          'media': {'url': 'data:video/mp4;base64,AQID'},
+        },
+      ],
+    ),
+    'PDF data URL': (
+      unimplemented,
+      [
+        {
+          'media': {'url': 'data:application/pdf;base64,AQID'},
+        },
+      ],
+    ),
+    'unknown media type': (
+      unimplemented,
+      [
+        {
+          'media': {'url': '/tmp/PATH_SENTINEL.bin'},
+        },
+      ],
+    ),
+    'invalid image data URL': (
+      invalid,
+      [
+        {
+          'media': {'url': 'data:image/png;base64,%%%SECRET_SENTINEL'},
+        },
+      ],
+    ),
+    'media beside text in one part': (
+      unimplemented,
+      [
+        {
+          'text': 'one',
+          'media': {'url': _png},
+        },
+      ],
+    ),
+    'resource part': (
+      unimplemented,
+      [
+        {
+          'resource': {'uri': 'private://SECRET_SENTINEL'},
+        },
+      ],
+    ),
+    'media without a URL': (
+      unimplemented,
+      [
+        {
+          'media': {'contentType': 'image/png'},
+        },
+      ],
+    ),
   };
   for (final entry in rejected.entries) {
-    test('${entry.key} is rejected without echoing the input', () {
+    test('${entry.key} is rejected with its status and no echoed input', () {
       Object? error;
       try {
         _convert([
           {'text': 'first'},
-          ...entry.value,
+          ...entry.value.$2,
         ]);
       } on genkit.GenkitException catch (e) {
         error = e;
       }
-      expect(error, isA<genkit.GenkitException>());
+      expect(
+        error,
+        isA<genkit.GenkitException>().having(
+          (e) => e.status,
+          'status',
+          entry.value.$1,
+        ),
+      );
       expect(error.toString(), isNot(contains('SENTINEL')));
     });
   }

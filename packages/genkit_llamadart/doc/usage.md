@@ -326,9 +326,11 @@ Resolver failures have sanitized messages and no original exception cause.
   Qwen3-VL's; see the
   [example](../example/genkit_llamadart_tool_media_example.dart). A runtime or
   template that cannot carry the media, any audio part (no runtime reports
-  audio tool results yet), and resource, data and video parts fail with
-  `UNIMPLEMENTED` before the next model call rather than becoming text or an
-  extra user turn. Normalize PDFs, video and resources in the application.
+  audio tool results yet), and resource, data, video, PDF and other non-image
+  parts fail with `UNIMPLEMENTED` before the next model call rather than becoming text or an
+  extra user turn. Normalize PDFs, video and resources in the application. Local paths and
+  `file://` URLs a tool returns are read as given, so normalize any path that
+  came from untrusted input before returning it.
 - Tool input schemas and tool-request inputs must be JSON objects. Primitive or
   list root inputs cannot be represented by `llamadart`'s map argument API and
   fail with `INVALID_ARGUMENT`.

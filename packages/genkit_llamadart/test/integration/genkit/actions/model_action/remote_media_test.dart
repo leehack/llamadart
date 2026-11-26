@@ -365,14 +365,29 @@ void main() {
       expect(resolver.calls, hasLength(1));
     });
 
-    test('a non-media MIME type is rejected before resolution', () async {
-      if (!native) return;
-      await expectLater(
-        model(_toolResultRequest('video/mp4')),
-        throwsA(isA<genkit.GenkitException>()),
-      );
-      expect(resolver.calls, isEmpty);
-      expect(factories, 0);
-    });
+    for (final (url, type) in [
+      ('https://media.example/clip', 'video/mp4'),
+      ('https://media.example/voice', 'audio/wav'),
+      ('https://media.example/doc.pdf', 'application/pdf'),
+    ]) {
+      test('remote $type is rejected without resolution', () async {
+        if (!native) return;
+        final request = _toolResultRequest(type);
+        final response = request.messages.single.content.single.toolResponse!;
+        (response.content![1] as Map)['media']['url'] = url;
+        await expectLater(
+          model(request),
+          throwsA(
+            isA<genkit.GenkitException>().having(
+              (e) => e.status,
+              'status',
+              genkit.StatusCode.unimplemented,
+            ),
+          ),
+        );
+        expect(resolver.calls, isEmpty);
+        expect(factories, 0);
+      });
+    }
   });
 }
