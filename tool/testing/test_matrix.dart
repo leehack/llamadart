@@ -1024,6 +1024,24 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'as doc/testing_matrix.md describes.',
   ),
   TestMatrixRow(
+    id: 'web-bos-eos-prompt-tokens',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'pinned-asset BOS and EOS metadata text and chat-template prompt '
+        'tokens equal to the ids an unmodified llama-server returns '
+        '(test/fixtures/bos_eos_prompt_tokens_upstream.json), in direct and '
+        'worker runtimes on CPU Wasm; fails on bridge assets that omit the '
+        'tokenizer BOS/EOS metadata',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'web-bos-eos-prompt-tokens',
+    useWhen:
+        'Web BOS/EOS metadata, chat-template prompt normalization or bridge '
+        'pin changes. Stage build/web_bos_eos_prompt_tokens/config.json as '
+        'doc/testing_matrix.md describes.',
+  ),
+  TestMatrixRow(
     id: 'web-tool-choice-grammar',
     tier: 'targeted',
     mode: 'local-only',

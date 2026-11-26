@@ -6909,6 +6909,53 @@ void main() {
       expect(lastPrompt, 'Hello');
     });
 
+    group('bos_token in a chat template', () {
+      const bosTemplate =
+          '{{ bos_token }}{% for message in messages %}'
+          '<|im_start|>{{ message["role"] }}\n{{ message["content"] }}'
+          '<|im_end|>\n{% endfor %}'
+          '{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}';
+
+      Future<void> createWith(Map<String, String> metadata) async {
+        bridgeRuntimeHints
+          ..['tokenizer.chat_template'] = bosTemplate
+          ..addAll(metadata);
+        final engine = LlamaEngine(backend);
+        await engine.loadModelFromUrl(
+          'https://example.com/model.gguf',
+          modelParams: const ModelParams(),
+        );
+        await engine.create(<LlamaChatMessage>[
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ]).drain<void>();
+      }
+
+      test('is sent when the model adds no BOS itself', () async {
+        await createWith(<String, String>{
+          'tokenizer.ggml.bos_token': '<|startoftext|>',
+          'tokenizer.ggml.add_bos_token': 'false',
+        });
+
+        expect(lastPrompt, startsWith('<|startoftext|><|im_start|>user\nhi'));
+      });
+
+      test('is stripped when the bridge adds BOS itself', () async {
+        await createWith(<String, String>{
+          'tokenizer.ggml.bos_token': '<|startoftext|>',
+          'tokenizer.ggml.add_bos_token': 'true',
+        });
+
+        expect(lastPrompt, startsWith('<|im_start|>user\nhi'));
+      });
+
+      test('falls back to the default token on bridge assets without the '
+          'metadata keys', () async {
+        await createWith(const <String, String>{});
+
+        expect(lastPrompt, startsWith('<|im_start|>user\nhi'));
+      });
+    });
+
     test(
       'engine.create preserves leading chat template control tokens',
       () async {
