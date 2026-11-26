@@ -154,11 +154,7 @@ void main() {
     },
   );
 
-  for (final workflow in [
-    'native_release_digests',
-    'litert_lm_smoke',
-    'validation_bundles',
-  ]) {
+  for (final workflow in ['native_release_digests', 'litert_lm_smoke']) {
     test('$workflow adds patch branches only to PR checks', () {
       final trigger = readWorkflow(workflow)['on'] as Map;
       expect(trigger['pull_request']['branches'], [
@@ -168,6 +164,13 @@ void main() {
       expect(trigger['push']['branches'], ['main']);
     });
   }
+
+  test('validation bundles run for main and patch branch pushes and PRs', () {
+    const branches = ['main', 'release/[0-9]+.[0-9]+.x'];
+    final trigger = readWorkflow('validation_bundles')['on'] as Map;
+    expect(trigger['push'], {'branches': branches});
+    expect(trigger['pull_request']['branches'], branches);
+  });
 
   for (final workflow in [
     'chat_app_hf_pr_preview',
@@ -1630,11 +1633,6 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
         (workflow['on']['pull_request'] as Map).containsKey('paths'),
         isFalse,
       );
-      // Main builds every target its push selects, including the macOS
-      // desktop and Android builds a PR defers when it leaves their inputs.
-      expect(workflow['on']['push'], {
-        'branches': ['main'],
-      });
       expect(
         workflow['concurrency']['cancel-in-progress'],
         r"${{ github.event_name == 'pull_request' }}",
