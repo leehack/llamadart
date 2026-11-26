@@ -200,6 +200,8 @@ analyze and the relevant tests before the final commit.
 - Release branches accept only squash merges. A backport PR copies the
   authored main PR body and adds both `Backport of <PR URL>` and
   `(cherry picked from commit <40-hex main SHA>)` under `## Summary`.
+- A revert PR on `main` keeps `This reverts commit <full SHA>.` as its own body
+  line; patch parity flags backports of the reverted source from it.
 - `main` stays production-ready. The PR body follows
   `.github/pull_request_template.md`; fill every section or mark it N/A with a
   reason.
