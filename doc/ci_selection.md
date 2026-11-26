@@ -279,18 +279,20 @@ runs retain all selected checks, including runs waiting for a runner. Disabling
 run. Push selection continues to use only that event's before/after diff;
 retaining each run preserves the checks selected for every merge (#1646).
 
-Obsolete PR bundle runs cancel. Manual and `main` push bundle runs have unique
-concurrency groups and do not cancel one another. Every push to `main` builds
-the bundle targets its change selects. A pull request defers the macOS desktop
-and Android builds to that push unless it changes their own build inputs
-(`POST_MERGE_TARGETS` and `builds_target` in the selector): the bundle
-workflow or selector, `hook/`, `lib/src/hook/` (native pins), root
+Obsolete PR bundle runs cancel. Manual runs and pushes to `main` or
+`release/M.m.x` have unique concurrency groups and do not cancel one another.
+Every push to `main` or a patch branch builds the bundle targets its change
+selects. A pull request defers the macOS desktop and Android builds to that push
+unless it changes their own build inputs (`POST_MERGE_TARGETS` and
+`builds_target` in the selector): the bundle workflow or selector, `hook/`,
+`lib/src/hook/` (native pins), root
 `pubspec.yaml`/`pubspec.lock`, compiled validation package code or bundle
 tooling (`tool/testing/validation*`), and for Android also chat app sources
 outside its tests and other platforms' folders, and the Apple companions'
 `lib/` and `pubspec.yaml`. Their Dart code still compiles in the PR's Linux
 desktop and Web builds. A deferred target is unselected, so `Validation bundle
-result` expects it skipped. A break in a deferred build first shows on `main`.
+result` expects it skipped. A break in a deferred build first shows on the push
+to `main` or the patch branch after merge.
 
 ## Host OS lanes
 
