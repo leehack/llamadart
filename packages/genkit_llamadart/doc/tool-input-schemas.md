@@ -1,8 +1,9 @@
 # Tool input schemas
 
-The plugin requires llamadart `^0.21.0`. Genkit continues to own handlers,
-interrupts and message history. Tool input and tool-call argument roots must
-be JSON objects; scalar and array roots are unsupported.
+The plugin requires llamadart 0.21.0 or newer within its declared dependency
+range. Genkit continues to own handlers, interrupts and message history. Tool
+input and tool-call argument roots must be JSON objects. Scalar and array roots
+are unsupported.
 
 ## Schema support
 

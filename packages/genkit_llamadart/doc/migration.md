@@ -2,8 +2,9 @@
 
 ## Upgrading to llamadart 0.21
 
-The adapter requires llamadart `^0.21.0`. Flutter iOS and macOS apps must
-use matching `^0.21.0` runtime companions. See
+The adapter requires llamadart 0.21.0 or newer within its declared dependency
+range. Flutter iOS and macOS apps must use runtime companions at the same minor
+version as llamadart. See
 [llamadart's migration guide](https://github.com/leehack/llamadart/blob/main/MIGRATION.md).
 
 ## Upgrading to llamadart 0.20
