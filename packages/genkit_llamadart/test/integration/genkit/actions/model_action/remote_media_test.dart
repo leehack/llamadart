@@ -46,6 +46,31 @@ genkit.ModelRequest _request(String type, {String? url}) => genkit.ModelRequest(
   ],
 );
 
+genkit.ModelRequest _toolResultRequest(String type) => genkit.ModelRequest(
+  messages: [
+    genkit.Message(
+      role: genkit.Role.tool,
+      content: [
+        genkit.ToolResponsePart(
+          toolResponse: genkit.ToolResponse(
+            ref: 'call',
+            name: 'render',
+            content: [
+              {'text': 'caption'},
+              {
+                'media': {
+                  'url': 'https://media.example/asset?token=secret',
+                  'contentType': type,
+                },
+              },
+            ],
+          ),
+        ),
+      ],
+    ),
+  ],
+);
+
 void main() {
   const native = bool.fromEnvironment('dart.library.io');
   late _Resolver resolver;
@@ -279,4 +304,75 @@ void main() {
       expect(runtime.createCallCount, 0);
     },
   );
+
+  group('tool-result media', () {
+    setUp(() {
+      runtime.capabilitySnapshot = const llama.LlamaEngineCapabilities(
+        isSupported: true,
+        supportsVision: true,
+        supportsMultiTurnChat: true,
+        supportsToolCalling: true,
+        toolResultMedia: {llama.LlamaToolResultMedia.image},
+      );
+    });
+
+    test('remote images resolve through the application resolver', () async {
+      if (!native) return;
+      await model(_toolResultRequest('image/png'));
+      final result =
+          runtime.lastMessages!.single.parts.single
+              as llama.LlamaToolResultContent;
+      expect(result.id, 'call');
+      expect(result.result, isNull);
+      expect((result.content[0] as llama.LlamaTextContent).text, 'caption');
+      final image = result.content[1] as llama.LlamaImageContent;
+      expect(image.bytes, [7, 8, 9]);
+      expect(image.url, isNull);
+      expect(resolver.calls, ['image/png']);
+    });
+
+    test('resolver failures are sanitized before model load', () async {
+      if (!native) return;
+      resolver.error = genkit.GenkitException(
+        'secret signed URL',
+        cause: 'secret',
+      );
+      await expectLater(
+        model(_toolResultRequest('image/png')),
+        throwsA(
+          isA<genkit.GenkitException>()
+              .having(
+                (e) => e.toString(),
+                'safe message',
+                isNot(contains('secret')),
+              )
+              .having((e) => e.cause, 'cause', isNull),
+        ),
+      );
+      expect(factories, 0);
+    });
+
+    test('cancellation reaches the resolver', () async {
+      if (!native) return;
+      final active = genkit.CancellationController();
+      await model(_toolResultRequest('image/png'), cancel: active.token);
+      expect(resolver.lastCancel, same(active.token));
+      final cancelled = genkit.CancellationController()..cancel();
+      await expectLater(
+        model(_toolResultRequest('image/png'), cancel: cancelled.token),
+        throwsA(isA<genkit.CancelledException>()),
+      );
+      expect(resolver.calls, hasLength(1));
+    });
+
+    test('a non-media MIME type is rejected before resolution', () async {
+      if (!native) return;
+      await expectLater(
+        model(_toolResultRequest('video/mp4')),
+        throwsA(isA<genkit.GenkitException>()),
+      );
+      expect(resolver.calls, isEmpty);
+      expect(factories, 0);
+    });
+  });
 }

@@ -86,7 +86,7 @@ genkit.Model<LlamaDartGenerationConfig> buildModelAction({
         if (capture.finishReason != null) {
           response.finishReason = mapFinishReason(capture.finishReason);
         }
-        final inputParts = messages.expand((message) => message.parts);
+        final inputParts = messages.expand(inputPartsWithToolResults);
         recordContentUsage(
           response,
           inputCharacters: messages.fold(
