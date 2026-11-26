@@ -461,6 +461,52 @@ void main() {
     });
   }
 
+  for (final (label, companionVersion, valid) in [
+    ('a different minor', '1.1.0', false),
+    ('a downgrade', '1.0.4', false),
+    ('an independent patch increase', '1.0.8', true),
+  ]) {
+    test(
+      'checks companion progression through guard and parity for $label',
+      () async {
+        const coreBefore = '1.0.2';
+        const coreAfter = '1.0.3';
+        const companionBefore = '1.0.5';
+        const companionPath = '../../packages/$_companion';
+        void writeCompanion(String core, String companion) {
+          _writePrepFiles(repo, core, _historicalPrepDocs);
+          _writeCoreFloor(repo, companion, core, '1.1.0');
+          final lock = File('${repo.root.path}/$_chatLock').readAsStringSync();
+          repo.write(
+            _chatLock,
+            lock.replaceFirst(
+              _lockEntry(_companion, companionPath, core),
+              _lockEntry(_companion, companionPath, companion),
+            ),
+          );
+        }
+
+        writeCompanion(coreBefore, companionBefore);
+        repo.anchorPrepBase(coreBefore);
+        repo.checkoutRelease();
+        writeCompanion(coreAfter, companionVersion);
+        final prep = repo.prep(coreAfter, pr: 52);
+        repo.git(['tag', 'v$coreAfter']);
+        final guard = repo.guard(null, head: 'release/prep-$coreAfter');
+        if (valid) {
+          expect(await guard, contains('release prep'));
+          expect(await repo.parity(), contains('$prep prep'));
+        } else {
+          final failure = throwsA(
+            _failure('Companion version $companionVersion'),
+          );
+          await expectLater(guard, failure);
+          await expectLater(repo.parity(), failure);
+        }
+      },
+    );
+  }
+
   for (final (name, lower, upper, extra) in [
     ('prep rejects lowering the companion core floor', '1.0.1', '1.1.0', ''),
     ('prep rejects changing the companion upper bound', '1.0.3', '1.2.0', ''),
