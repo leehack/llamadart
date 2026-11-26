@@ -15,7 +15,9 @@ Use `--dart-define=LLAMADART_GGUF_MODEL_URL=<immutable-model-url>` and
 `LLAMADART_GGUF_BACKEND` accepts `auto`, `cpu`, `metal`, or `vulkan`.
 Set `LLAMADART_GGUF_SEMANTIC=true` for an instruction-tuned model to check math,
 capital-city answers, cancellation, and reuse. Explicit GPU runs assert the
-selected backend and positive GPU layer count. The default tiny-model test checks
+selected backend and positive GPU layer count, except under
+`LLAMADART_IOS_SIMULATOR=true`, which asserts the CPU with 0 GPU layers for
+every backend, since llama.cpp never runs on an iOS simulator GPU. The default tiny-model test checks
 loading and basic output only; it does not establish semantic or GPU qualification.
 Preserve the Firebase matrix ID, test XML, device logs, model checksum, and actual
 backend diagnostics with the PR's platform evidence.
