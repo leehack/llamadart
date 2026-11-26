@@ -471,11 +471,14 @@ const params = GenerationParams(
 Important fields:
 
 - `maxTokens`: generation length cap.
-- `temp`: randomness.
+- `temp`: randomness. Native llama.cpp requires a finite value: at most 0
+  selects greedy decoding, otherwise 0.000001 to 1000000.
 - `topK`, `topP`, `minP`: token filtering controls. WebGPU applies a
   non-zero `minP` only with bridge assets whose `getCompletionCapabilities()`
-  reports `minP` and otherwise rejects it; LiteRT-LM rejects it.
-- `penalty`: repeat penalty.
+  reports `minP` and otherwise rejects it; LiteRT-LM rejects it. Native
+  llama.cpp requires finite `topP` and `minP`.
+- `penalty`: repeat penalty. Native llama.cpp requires a finite value from
+  0.001 to 100.
 - `frequencyPenalty`: additive penalty per recent occurrence of a token.
   Native llama.cpp accepts finite values from -100 to 100. The default is 0.
 - `penaltyLastN`: recent-token window for repeat, frequency and presence
@@ -522,7 +525,8 @@ Important fields:
   top-P, min-P, XTC, then temperature. Invalid values throw
   `LlamaArgumentException` before decoding. Every value is checked as the
   32-bit float llama.cpp receives, so one that rounds to 0 or infinity throws.
-- `presencePenalty`: llama.cpp presence penalty; `0.0` preserves the
+- `presencePenalty`: llama.cpp presence penalty (finite, -100 to 100 on native
+  llama.cpp); `0.0` preserves the
   existing behavior. WebGPU applies it only with bridge assets whose
   `getCompletionCapabilities()` reports `presencePenalty`. Other WebGPU assets
   and LiteRT-LM web reject non-zero values rather than silently ignoring them.
@@ -574,6 +578,11 @@ Important fields:
   non-empty grammar, including tool-call grammars (any `ToolChoice` but
   `none`) and `responseFormat` grammars, throws `LlamaUnsupportedException`.
   WebGPU and LiteRT-LM reject it.
+
+Native llama.cpp checks these values before decoding and throws
+`LlamaArgumentException` for a non-finite or out-of-range value. Overflowing
+float32 logits (for example `penalty: 1e35` with a `logitBias` of -10000, or a
+denormal `temp`) otherwise abort the process or silently violate a grammar.
 
 After a model loads, `engine.capabilities` reports which of these options the
 runtime applies. `LlamaEngine` rejects requested controls absent from

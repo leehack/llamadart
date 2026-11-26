@@ -5595,13 +5595,13 @@ class LlamaCppService {
     }
     if (dynatempRange > 0) {
       final temp32 = _float32(params.temp);
+      // A lowest temperature of at least the floor bounds the range by temp
+      // (at most 1e6), so temp plus range cannot overflow float32.
       final lowest = _float32(temp32 - dynatempRange32);
-      if (!(lowest >= _minDynamicTemperature) ||
-          !_float32(temp32 + dynatempRange32).isFinite) {
+      if (!(lowest >= _minDynamicTemperature)) {
         throw LlamaArgumentException(
           'GenerationParams.temp minus dynatempRange must be at least '
-          '$_minDynamicTemperature, and their sum must fit in a 32-bit '
-          'float.',
+          '$_minDynamicTemperature.',
           name: 'dynatempRange',
           invalidValue: dynatempRange,
         );
@@ -5645,6 +5645,49 @@ class LlamaCppService {
         'would be ignored.',
         name: 'mirostat',
         invalidValue: mirostat,
+      );
+    }
+  }
+
+  // Float32 logit math overflows to -inf, which aborts a grammar-constrained
+  // decode. Logit biases reach +-10000, so these bounds keep penalty scaling
+  // and temperature division finite with margin.
+  void _validateSamplerValues(GenerationParams params) {
+    void requireFinite(String name, double value) {
+      if (!value.isFinite) {
+        throw LlamaArgumentException(
+          'GenerationParams.$name must be finite.',
+          name: name,
+          invalidValue: value,
+        );
+      }
+    }
+
+    requireFinite('topP', params.topP);
+    requireFinite('minP', params.minP);
+    final penalty = params.penalty;
+    if (!penalty.isFinite || penalty < 0.001 || penalty > 100) {
+      throw LlamaArgumentException(
+        'GenerationParams.penalty must be finite and between 0.001 and 100.',
+        name: 'penalty',
+        invalidValue: penalty,
+      );
+    }
+    final presence = params.presencePenalty;
+    if (!presence.isFinite || presence < -100 || presence > 100) {
+      throw LlamaArgumentException(
+        'GenerationParams.presencePenalty must be finite and between -100 and 100.',
+        name: 'presencePenalty',
+        invalidValue: presence,
+      );
+    }
+    final temp = params.temp;
+    if (!temp.isFinite || (temp > 0 && (temp < 1e-6 || temp > 1e6))) {
+      throw LlamaArgumentException(
+        'GenerationParams.temp must be finite and either at most 0 (greedy) '
+        'or between 0.000001 and 1000000.',
+        name: 'temp',
+        invalidValue: temp,
       );
     }
   }
@@ -5887,6 +5930,7 @@ class LlamaCppService {
               ..._calls.endOfGenerationTokens(model.pointer),
             })
           : model.suppressedTokens;
+      _validateSamplerValues(params);
       _validateSamplerControls(params, model.vocabSize, suppressedTokens);
       _validateSamplingShape(params, suppressedTokens);
       final thinkingBudgetConfig = _resolveLlamaCppThinkingBudgetConfig(

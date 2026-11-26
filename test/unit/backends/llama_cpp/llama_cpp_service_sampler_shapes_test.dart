@@ -766,11 +766,6 @@ void main() {
         const GenerationParams(temp: 0.5, dynatempRange: 0.495),
       ),
       (
-        'dynatempRange and temp whose sum overflows float32',
-        'dynatempRange',
-        const GenerationParams(temp: 3e38, dynatempRange: 1e38),
-      ),
-      (
         'dynatempRange whose float32 lowest temperature is under the floor',
         'dynatempRange',
         const GenerationParams(temp: 1, dynatempRange: 0.99),
