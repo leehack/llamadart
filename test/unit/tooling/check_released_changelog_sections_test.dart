@@ -938,11 +938,13 @@ void main() {
         "- Keep ${path == _root ? 'the ' : ''}default WebGPU bridge assets.\n"
         '- Tagged café note.  \n\n';
 
-    String createPatch(String version) => repo.commit({
-      'pubspec.yaml': 'name: llamadart\nversion: $version\n',
-      _root: '# Releases\n\n${section(version, _root)}$minor',
-      _docs: '${section(version, _docs)}$minor$archived',
-    });
+    String createPatch(String version, {String? pubspecVersion}) =>
+        repo.commit({
+          'pubspec.yaml':
+              'name: llamadart\nversion: ${pubspecVersion ?? version}\n',
+          _root: '# Releases\n\n${section(version, _root)}$minor',
+          _docs: '${section(version, _docs)}$minor$archived',
+        });
 
     late String secondPatch;
     setUp(() {
@@ -990,6 +992,64 @@ void main() {
       repo.git(['tag', '-a', 'v1.0.2', secondPatch, '-m', 'Late patch']);
       expect(await repo.check(initial, prep: true), isNotEmpty);
       expect(await repo.check(candidate(), prep: true), isEmpty);
+    });
+
+    List<PublishedPatch> imports() => readPublishedPatchSections(
+      repo.root,
+      version: '1.1.0',
+      previousVersion: '1.0.0',
+      through: repo.base,
+    );
+
+    test('rejects a patch tag whose section matches and pubspec differs', () {
+      repo.git(['switch', 'release/1.0.x']);
+      repo.git([
+        'tag',
+        'v1.0.4',
+        createPatch('1.0.4', pubspecVersion: '1.0.5'),
+      ]);
+
+      expect(
+        imports,
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            'Core tag v1.0.4 disagrees with its root pubspec.',
+          ),
+        ),
+      );
+    });
+
+    test('rejects patch imports when the minor tag is missing', () {
+      repo.git(['tag', '-d', 'v1.0.0']);
+
+      expect(
+        imports,
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('v1.0.0'),
+          ),
+        ),
+      );
+    });
+
+    test('rejects a patch tag forked from main after the minor', () {
+      repo.git(['switch', '--detach', repo.base]);
+      repo.git(['tag', 'v1.0.4', createPatch('1.0.4')]);
+
+      expect(
+        imports,
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('v1.0.4'), contains('v1.0.0')),
+          ),
+        ),
+      );
     });
 
     for (final path in [_root, _docs]) {
