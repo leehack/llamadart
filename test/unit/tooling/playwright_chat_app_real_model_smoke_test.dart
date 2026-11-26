@@ -141,6 +141,7 @@ const _fakeSafariDriver = r'''#!/usr/bin/env python3
 import json
 import os
 import re
+import socketserver
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -218,7 +219,14 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-HTTPServer(('127.0.0.1', int(sys.argv[sys.argv.index('-p') + 1])), Handler).serve_forever()
+class LoopbackHTTPServer(HTTPServer):
+    def server_bind(self):
+        # The loopback fixture needs no hostname lookup before listening.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
+LoopbackHTTPServer(('127.0.0.1', int(sys.argv[sys.argv.index('-p') + 1])), Handler).serve_forever()
 ''';
 
 // Runs the smoke helper with safari_webdriver pointed at the fake driver.
@@ -610,6 +618,26 @@ void main() {
               : <Map<String, dynamic>>[],
         );
       }
+
+      test('starts without waiting for hostname resolution', () async {
+        File(p.join(tempDir.path, 'sitecustomize.py')).writeAsStringSync(r'''
+import socket
+import time
+
+def slow_getfqdn(name=''):
+    time.sleep(15)
+    return name
+
+socket.getfqdn = slow_getfqdn
+''');
+
+        final stopwatch = Stopwatch()..start();
+        final run = await runSafari(visibility: 'visible', frames: 60);
+        stopwatch.stop();
+
+        expect(run.result.exitCode, 0, reason: '${run.result.stderr}');
+        expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
+      });
 
       test('loads, sends the prompt and reports the LiteRT-LM reply', () async {
         final run = await runSafari(visibility: 'visible', frames: 60);
