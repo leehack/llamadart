@@ -215,7 +215,8 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   `maxTokens`, `temp`, `topK`, `topP`, `seed` and `stopSequences`. It has no
   embeddings, tokenizer, LoRA, state or usage. Use GGUF for anything more.
 - Both WebGPU and LiteRT-LM Web reject non-default `frequencyPenalty`,
-  `penaltyLastN`, and `logitBias` with `LlamaUnsupportedException`.
+  `penaltyLastN`, `logitBias`, `typicalP`, `topNSigma`, XTC, dynamic
+  temperature and Mirostat settings with `LlamaUnsupportedException`.
 - For LiteRT-LM MTP, use WebGPU with `@litert-lm/core` 0.20.0+ and a
   drafter-bearing bundle (standard Gemma 4 E2B; Artisan `-gpu` and `-web`
   bundles have no drafter). Set `loadMtp: true` on load, then check

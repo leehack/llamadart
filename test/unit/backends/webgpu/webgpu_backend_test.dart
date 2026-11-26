@@ -9692,6 +9692,15 @@ void main() {
           ('frequencyPenalty', GenerationParams(frequencyPenalty: 1)),
           ('penaltyLastN', GenerationParams(penaltyLastN: 0)),
           ('logitBias', GenerationParams(logitBias: {3: 1})),
+          ('typicalP', GenerationParams(typicalP: 0.5)),
+          ('topNSigma', GenerationParams(topNSigma: 1)),
+          ('xtc', GenerationParams(xtcProbability: 0.5)),
+          ('xtc', GenerationParams(xtcThreshold: 0.2)),
+          ('dynamicTemperature', GenerationParams(dynatempRange: 0.5)),
+          ('dynamicTemperature', GenerationParams(dynatempExponent: 2)),
+          ('mirostat', GenerationParams(mirostat: 1)),
+          ('mirostat', GenerationParams(mirostatTau: 4)),
+          ('mirostat', GenerationParams(mirostatEta: 0.2)),
         ];
         Matcher namedUnsupported(String option) =>
             isA<LlamaUnsupportedException>().having(

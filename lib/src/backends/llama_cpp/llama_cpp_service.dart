@@ -3904,6 +3904,11 @@ class LlamaCppService {
         SamplerControl.frequencyPenalty,
         SamplerControl.penaltyLastN,
         SamplerControl.logitBias,
+        SamplerControl.typicalP,
+        SamplerControl.topNSigma,
+        SamplerControl.xtc,
+        SamplerControl.dynamicTemperature,
+        SamplerControl.mirostat,
       },
       speculativeDecodingStrategies:
           _requiresQwen35VulkanRestriction(modelHandle)
@@ -5456,6 +5461,142 @@ class LlamaCppService {
     };
   }
 
+  void _validateSamplingShape(GenerationParams params) {
+    final typicalP = params.typicalP;
+    if (!(typicalP > 0 && typicalP <= 1)) {
+      throw LlamaArgumentException(
+        'GenerationParams.typicalP must be greater than 0 and at most 1.',
+        name: 'typicalP',
+        invalidValue: typicalP,
+      );
+    }
+    final topNSigma = params.topNSigma;
+    if (topNSigma != -1 && !(topNSigma > 0 && topNSigma.isFinite)) {
+      throw LlamaArgumentException(
+        'GenerationParams.topNSigma must be -1 to disable it, or positive '
+        'and finite.',
+        name: 'topNSigma',
+        invalidValue: topNSigma,
+      );
+    }
+    final xtcProbability = params.xtcProbability;
+    if (!(xtcProbability >= 0 && xtcProbability <= 1)) {
+      throw LlamaArgumentException(
+        'GenerationParams.xtcProbability must be between 0 and 1.',
+        name: 'xtcProbability',
+        invalidValue: xtcProbability,
+      );
+    }
+    final xtcThreshold = params.xtcThreshold;
+    if (!(xtcThreshold > 0 && xtcThreshold <= 0.5)) {
+      throw LlamaArgumentException(
+        'GenerationParams.xtcThreshold must be greater than 0 and at most '
+        '0.5; llama.cpp turns XTC off above 0.5.',
+        name: 'xtcThreshold',
+        invalidValue: xtcThreshold,
+      );
+    }
+    final dynatempRange = params.dynatempRange;
+    if (!(dynatempRange >= 0 && dynatempRange.isFinite)) {
+      throw LlamaArgumentException(
+        'GenerationParams.dynatempRange must be finite and at least 0.',
+        name: 'dynatempRange',
+        invalidValue: dynatempRange,
+      );
+    }
+    final dynatempExponent = params.dynatempExponent;
+    if (!(dynatempExponent > 0 && dynatempExponent.isFinite)) {
+      throw LlamaArgumentException(
+        'GenerationParams.dynatempExponent must be positive and finite.',
+        name: 'dynatempExponent',
+        invalidValue: dynatempExponent,
+      );
+    }
+    final mirostat = params.mirostat;
+    if (mirostat < 0 || mirostat > 2) {
+      throw LlamaArgumentException(
+        'GenerationParams.mirostat must be 0, 1 or 2.',
+        name: 'mirostat',
+        invalidValue: mirostat,
+      );
+    }
+    final mirostatTau = params.mirostatTau;
+    if (!(mirostatTau > 0 && mirostatTau.isFinite)) {
+      throw LlamaArgumentException(
+        'GenerationParams.mirostatTau must be positive and finite.',
+        name: 'mirostatTau',
+        invalidValue: mirostatTau,
+      );
+    }
+    final mirostatEta = params.mirostatEta;
+    if (!(mirostatEta > 0 && mirostatEta.isFinite)) {
+      throw LlamaArgumentException(
+        'GenerationParams.mirostatEta must be positive and finite.',
+        name: 'mirostatEta',
+        invalidValue: mirostatEta,
+      );
+    }
+
+    const defaults = GenerationParams();
+    if (xtcProbability == 0 && xtcThreshold != defaults.xtcThreshold) {
+      throw LlamaArgumentException(
+        'GenerationParams.xtcThreshold has no effect while xtcProbability '
+        'is 0.',
+        name: 'xtcThreshold',
+        invalidValue: xtcThreshold,
+      );
+    }
+    if (dynatempRange == 0 && dynatempExponent != defaults.dynatempExponent) {
+      throw LlamaArgumentException(
+        'GenerationParams.dynatempExponent has no effect while dynatempRange '
+        'is 0.',
+        name: 'dynatempExponent',
+        invalidValue: dynatempExponent,
+      );
+    }
+    if (dynatempRange > 0 && !(params.temp > 0)) {
+      throw LlamaArgumentException(
+        'GenerationParams.dynatempRange requires a positive temp.',
+        name: 'dynatempRange',
+        invalidValue: dynatempRange,
+      );
+    }
+    if (mirostat == 0) {
+      if (mirostatTau != defaults.mirostatTau ||
+          mirostatEta != defaults.mirostatEta) {
+        throw LlamaArgumentException(
+          'GenerationParams.mirostatTau and mirostatEta have no effect '
+          'while mirostat is 0.',
+          name: 'mirostat',
+          invalidValue: mirostat,
+        );
+      }
+      return;
+    }
+    if (!(params.temp > 0)) {
+      throw LlamaArgumentException(
+        'GenerationParams.mirostat requires a positive temp.',
+        name: 'mirostat',
+        invalidValue: mirostat,
+      );
+    }
+    final replaced = <String>[
+      if (typicalP != defaults.typicalP) 'typicalP',
+      if (topNSigma != defaults.topNSigma) 'topNSigma',
+      if (xtcProbability != defaults.xtcProbability) 'xtcProbability',
+      if (dynatempRange != defaults.dynatempRange) 'dynatempRange',
+    ];
+    if (replaced.isNotEmpty) {
+      throw LlamaArgumentException(
+        'GenerationParams.mirostat replaces the sampler chain after the '
+        'grammar with temperature and Mirostat, so ${replaced.join(', ')} '
+        'would be ignored.',
+        name: 'mirostat',
+        invalidValue: mirostat,
+      );
+    }
+  }
+
   void _validateSamplerControls(
     GenerationParams params,
     int vocabSize,
@@ -5695,6 +5836,7 @@ class LlamaCppService {
             })
           : model.suppressedTokens;
       _validateSamplerControls(params, model.vocabSize, suppressedTokens);
+      _validateSamplingShape(params);
       final thinkingBudgetConfig = _resolveLlamaCppThinkingBudgetConfig(
         params,
         hasMediaParts: hasMediaParts,
@@ -7560,21 +7702,76 @@ class LlamaCppService {
       llama_sampler_chain_add(sampler, grammarSampler);
     }
 
-    llama_sampler_chain_add(sampler, llama_sampler_init_top_k(params.topK));
-    llama_sampler_chain_add(sampler, llama_sampler_init_top_p(params.topP, 1));
-    if (params.minP > 0) {
+    final seed = params.seed ?? DateTime.now().millisecondsSinceEpoch;
+    if (params.mirostat != 0) {
+      llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temp));
       llama_sampler_chain_add(
         sampler,
-        llama_sampler_init_min_p(params.minP, 1),
+        params.mirostat == 1
+            ? llama_sampler_init_mirostat(
+                vocabSize,
+                seed,
+                params.mirostatTau,
+                params.mirostatEta,
+                100,
+              )
+            : llama_sampler_init_mirostat_v2(
+                seed,
+                params.mirostatTau,
+                params.mirostatEta,
+              ),
       );
-    }
-    llama_sampler_chain_add(sampler, llama_sampler_init_temp(params.temp));
-
-    if (params.temp <= 0) {
-      llama_sampler_chain_add(sampler, llama_sampler_init_greedy());
     } else {
-      final seed = params.seed ?? DateTime.now().millisecondsSinceEpoch;
-      llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
+      if (params.topNSigma > 0) {
+        llama_sampler_chain_add(
+          sampler,
+          llama_sampler_init_top_n_sigma(params.topNSigma),
+        );
+      }
+      llama_sampler_chain_add(sampler, llama_sampler_init_top_k(params.topK));
+      if (params.typicalP < 1) {
+        llama_sampler_chain_add(
+          sampler,
+          llama_sampler_init_typical(params.typicalP, 1),
+        );
+      }
+      llama_sampler_chain_add(
+        sampler,
+        llama_sampler_init_top_p(params.topP, 1),
+      );
+      if (params.minP > 0) {
+        llama_sampler_chain_add(
+          sampler,
+          llama_sampler_init_min_p(params.minP, 1),
+        );
+      }
+      if (params.xtcProbability > 0) {
+        llama_sampler_chain_add(
+          sampler,
+          llama_sampler_init_xtc(
+            params.xtcProbability,
+            params.xtcThreshold,
+            1,
+            seed,
+          ),
+        );
+      }
+      llama_sampler_chain_add(
+        sampler,
+        params.dynatempRange > 0
+            ? llama_sampler_init_temp_ext(
+                params.temp,
+                params.dynatempRange,
+                params.dynatempExponent,
+              )
+            : llama_sampler_init_temp(params.temp),
+      );
+
+      if (params.temp <= 0) {
+        llama_sampler_chain_add(sampler, llama_sampler_init_greedy());
+      } else {
+        llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
+      }
     }
 
     if (countPromptTokensInPenalties &&

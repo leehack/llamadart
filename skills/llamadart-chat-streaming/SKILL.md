@@ -198,6 +198,11 @@ modalities and speculative strategies before offering them.
   `frequencyPenalty`, `penaltyLastN`, or `logitBias`. Native llama.cpp
   supports these controls. The penalty window defaults to 64; use -1 for the
   full context or 0 to disable repeat, frequency and presence penalties.
+  The same set covers `typicalP`, `topNSigma`, XTC (`xtcProbability`,
+  `xtcThreshold`), dynamic temperature (`dynatempRange`, `dynatempExponent`)
+  and Mirostat (`mirostat` 1 or 2, `mirostatTau`, `mirostatEta`). Mirostat
+  replaces top-K, top-P and min-P and needs a positive `temp`; invalid values
+  throw `LlamaArgumentException`.
 - `GenerationParams(ignoreEos: true)` keeps generating past end-of-generation
   tokens, until `maxTokens`, the context limit, a stop sequence (including the
   chat template's own stop strings) or cancellation. Only native llama.cpp
