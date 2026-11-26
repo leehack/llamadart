@@ -1440,17 +1440,15 @@ class MainMacosLaneTest(unittest.TestCase):
         self.assertFalse(ci.companion_job_selected(main))
         self.assertFalse(main['studio-macos'])
         self.assertTrue(release['macos-native'])
-        self.assertIn('macos-15', release['desktops'])
+        self.assertEqual(release['desktops'], list(ci.DESKTOPS))
+        self.assertEqual(release['apps'], list(ci.APPS))
         self.assertTrue(ci.companion_job_selected(release))
         for bundle in (False, True):
-            expected = ci.expected_jobs(main, bundle=bundle)
-            needs = {job: {'result': 'success' if selected else 'skipped'}
-                     for job, selected in expected.items()}
-            needs['changes'] = {'result': 'success'}
+            needs = successful_needs(main, bundle=bundle)
             self.assertEqual(ci.aggregate(main, needs, bundle=bundle), [])
             if not bundle:
-                self.assertFalse(expected['companion-packages'])
-                self.assertFalse(expected['studio-macos'])
+                self.assertEqual(needs['companion-packages']['result'], 'skipped')
+                self.assertEqual(needs['studio-macos']['result'], 'skipped')
 
     def test_cumulative_macos_selection_replays_both_pushes_through_a_merge(self):
         path = 'packages/llamadart_studio/lib/transient.dart'
