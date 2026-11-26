@@ -130,6 +130,14 @@ configuration. The standard `chat-litert-cpu`, `chat-litert-gpu` and
 GPU scenario checks exact public split-token decoding and the `C02.generate`
 fixture as the first request on a fresh engine. Qualification follows the
 executed platform, backend and request sequence.
+
+Use `chat-litert-cpu-unicode` or `chat-litert-gpu-unicode` to add
+`C02.generate` to the usual native validation sequence. Both focused profiles
+lock the corrected bundle. The Flutter QA app discovers them from the package
+assets, and the native bundle builder accepts either ID as `--profile`.
+See [the Unicode runbook](../../doc/cross_platform_validation.md#qwen3-litert-lm-unicode-554)
+for Android staging, iOS signing and the browser result.
+
 The S24 negative control retains its original GPU profile outside the standard
 inventory. See [the S24 staging instructions](native/android_litert/README.md).
 

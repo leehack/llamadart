@@ -251,9 +251,11 @@ class FakeEngine implements ValidationEngine, StructuredValidationEngine {
                 ? '18'
                 : '17'
           : prompt == profile.fixtureText('unicode_generation', 'prompt')
-          ? featureFault == 'unicode'
-                ? 'Montréal �'
-                : profile.fixtureText('unicode_generation', 'expected')
+          ? switch (featureFault) {
+              'unicode' => 'Montréal �',
+              'unicode_suffix' => 'Montréal 👋 Montréal',
+              _ => profile.fixtureText('unicode_generation', 'expected'),
+            }
           : prompt.contains('alpha cedar17 omega')
           ? stopSequences != null && !ignoresStop
                 ? 'alpha '
@@ -645,6 +647,7 @@ void main() {
 
   for (final entry in {
     'unicode': 'C02.generate',
+    'unicode_suffix': 'C02.generate',
     'thinking_config': 'C05.thinking',
     'thinking_leak': 'C05.thinking',
     'thinking_missing': 'C05.thinking',

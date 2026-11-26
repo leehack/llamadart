@@ -19,6 +19,20 @@ Map<String, dynamic> registry() =>
 void main() {
   final root = Directory.current;
 
+  test('both focused LiteRT profiles are registered for exact Unicode', () {
+    final pack = (registry()['packs'] as List).cast<Map>().singleWhere(
+      (entry) => entry['id'] == 'unicode',
+    );
+    expect(pack['cases'], ['C02.unicode', 'C02.generate']);
+    expect(
+      pack['profiles'],
+      unorderedEquals([
+        'assets/profiles/chat-litert-cpu-unicode.json',
+        'assets/profiles/chat-litert-gpu-unicode.json',
+      ]),
+    );
+  });
+
   test('the registry note names the models and backends the native JSON '
       'Schema scenario qualifies', () {
     final row = testMatrixRows.singleWhere(
