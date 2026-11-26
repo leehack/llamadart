@@ -144,16 +144,15 @@ not the maintained suite location.
 
 ### Where to get the built apps
 
-The download location after publication and a successful workflow run will be
-**llamadart → GitHub Actions → Validation Bundles → selected run → Artifacts**.
-The local `.github/workflows/validation_bundles.yml` implementation names desktop
-artifacts `validation-desktop-<runner-os>-<runner-arch>-<commit>` and app artifacts
-`validation-<target>-<commit>`. The bundle manifest records the locked profile.
-Draft [PR #515](https://github.com/leehack/llamadart/pull/515) publishes this
-workflow and runs the tiny CPU build on relevant PR changes. Desktop jobs also
-extract the archive into a temporary directory and verify command startup/profile
-discovery there without inference. Use a successful run's artifact inventory;
-do not infer hosted availability from a local build.
+In **llamadart → GitHub Actions**, open a successful **Validation bundles** run
+and check its **Artifacts**. For the macOS desktop bundle on a `main` push,
+look under **Main macOS CI**. Desktop artifacts use
+`validation-desktop-<runner-os>-<runner-arch>-<commit>` and app artifacts use
+`validation-<target>-<commit>`. The manifest records the locked profile.
+Relevant PR changes run the tiny CPU build. Desktop jobs extract the archive
+into a temporary directory and verify command startup and profile discovery
+without running inference. Check the hosted run's artifact inventory for
+availability.
 
 | Target | Download / runnable output |
 | --- | --- |

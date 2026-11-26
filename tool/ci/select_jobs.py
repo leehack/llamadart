@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
+import urllib.request
 
 COMPANIONS = (
     'llamadart_llama_cpp_flutter', 'llamadart_litert_lm_flutter',
@@ -448,6 +449,27 @@ def select(paths, force_full=False, pull_request=False, host_suites=None):
     }
 
 
+def restrict_macos_plan(plan, *, macos, other):
+    plan = {**plan, 'jobs': {job: selected and other for job, selected in plan['jobs'].items()}}
+    if not macos:
+        plan['companions'] = []
+        for field in ('studio-macos', 'macos-native', 'macos-validation-memory', 'apple-cache'):
+            plan[field] = False
+    if not other:
+        plan['apps'] = []
+        plan['coverage'] = False
+        plan['windows-native'] = False
+    plan['desktops'] = [
+        target for target in plan['desktops'] if (macos if target == 'macos-15' else other)
+    ]
+    plan['test-other-os-matrix'] = [
+        row for row in plan['test-other-os-matrix'] if (macos if row['lane'] == 'macos' else other)
+    ]
+    plan['jobs']['companion-packages'] = bool(plan['companions'])
+    plan['jobs']['test-other-os'] = bool(plan['test-other-os-matrix'])
+    return plan
+
+
 def validate_plan(plan):
     if not isinstance(plan, dict) or plan.get('schema_version') != 1:
         raise ValueError('Unsupported plan schema')
@@ -481,8 +503,15 @@ def validate_plan(plan):
         raise ValueError('Other-OS job disagrees with host selections')
 
 
-def expected_jobs(plan, bundle=False):
+def expected_jobs(plan, bundle=False, main_macos=False):
     """Whether each job the aggregate needs, other than `changes`, is selected."""
+    if main_macos:
+        return {
+            'test-other-os': plan['jobs']['test-other-os'],
+            'companion-packages': companion_job_selected(plan),
+            'studio-macos': plan['studio-macos'],
+            'desktop': bool(plan['desktops']),
+        }
     if bundle:
         return {'desktop': bool(plan['desktops']), 'app': bool(plan['apps'])}
     return {
@@ -511,10 +540,12 @@ def validation_harness_windows_selected(plan):
     return plan['jobs']['validation-harness'] and not plan['windows-native']
 
 
-def aggregate(plan, needs, bundle=False):
+def aggregate(plan, needs, bundle=False, main_macos=False):
     """A selected job must succeed; only intentionally unselected jobs may skip."""
     validate_plan(plan)
-    expected = expected_jobs(plan, bundle)
+    if main_macos and plan != restrict_macos_plan(plan, macos=True, other=False):
+        raise ValueError('Main macOS plan selects non-macOS jobs')
+    expected = expected_jobs(plan, bundle, main_macos)
     errors = []
     if needs.get('changes', {}).get('result') != 'success':
         errors.append('change selection did not succeed')
@@ -554,6 +585,63 @@ def event_paths(event_name, event):
         base = subprocess.check_output(['git', 'merge-base', base, head], text=True).strip()
     raw = subprocess.check_output(['git', 'diff', '--name-status', '-z', '-M', base, head, '--'])
     return inventory(raw)
+
+
+def last_successful_main_macos_head():
+    repository = os.environ['GITHUB_REPOSITORY']
+    run_id = int(os.environ['GITHUB_RUN_ID'])
+    if not re.fullmatch(r'[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+', repository):
+        raise ValueError('Invalid repository')
+    url = (f'https://api.github.com/repos/{repository}/actions/workflows/main_macos.yml/runs'
+           '?branch=main&status=success&per_page=2')
+    request = urllib.request.Request(url)
+    request.add_unredirected_header('Authorization', 'Bearer ' + os.environ['GITHUB_TOKEN'])
+    with urllib.request.urlopen(request, timeout=10) as response:
+        runs = json.load(response)['workflow_runs']
+    for run in runs:
+        if (run['head_branch'] == 'main' and run['id'] != run_id
+                and run['status'] == 'completed' and run['conclusion'] == 'success'):
+            return run['head_sha']
+    raise ValueError('No previous successful macOS run on main')
+
+
+def cumulative_macos_paths(base, head):
+    if not isinstance(base, str) or not re.fullmatch(r'[0-9a-f]{40}', base) or int(base, 16) == 0:
+        raise ValueError('Invalid successful-run revision')
+    if base == head:
+        return []
+    revision_range = f'{base}..{head}'
+    history = subprocess.check_output(
+        ['git', 'rev-list', '--first-parent', revision_range], text=True, timeout=30,
+    ).splitlines()
+    if not history:
+        raise ValueError('Successful-run revision is ahead of this run')
+    first_parent = subprocess.check_output(
+        ['git', 'rev-parse', history[-1] + '^1'], text=True, timeout=30,
+    ).strip()
+    if first_parent != base:
+        raise ValueError('Successful-run revision is outside main first-parent history')
+    # An endpoint diff loses inputs restored by an intervening push.
+    raw = subprocess.check_output([
+        'git', 'log', '--first-parent', '--diff-merges=first-parent', '--format=',
+        '--name-status', '-z', '-M', revision_range, '--',
+    ], timeout=30)
+    return sorted(set(inventory(raw)))
+
+
+def select_main_macos():
+    head = os.environ['GITHUB_SHA']
+    if head != subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip():
+        raise ValueError('Checkout revision differs from the workflow SHA')
+    try:
+        base = last_successful_main_macos_head()
+        paths = cumulative_macos_paths(base, head)
+    except (KeyError, ValueError, TypeError, OSError, subprocess.SubprocessError) as error:
+        print(f'Main macOS full fallback: {type(error).__name__}', file=sys.stderr)
+        return restrict_macos_plan(select([], force_full=True), macos=True, other=False)
+    plan = restrict_macos_plan(select(paths), macos=bool(paths), other=False)
+    plan['reasons'] = [f'Main macOS range: {base}..{head}', *(plan['reasons'] if paths else [])]
+    return plan
 
 
 def probe_candidates(paths):
@@ -601,16 +689,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('select', 'aggregate', 'preflight'))
     parser.add_argument('--bundle', action='store_true')
+    parser.add_argument('--main-macos', action='store_true')
     args = parser.parse_args()
+    event_name = os.environ.get('GITHUB_EVENT_NAME')
+    main_ref = os.environ.get('GITHUB_REF') == 'refs/heads/main'
+    if args.main_macos and (args.bundle or args.command == 'preflight' or not main_ref
+                           or event_name not in ('push', 'schedule', 'workflow_dispatch')):
+        parser.error('--main-macos is only for the main-branch macOS workflow')
     if args.command == 'aggregate':
         try:
-            errors = aggregate(json.loads(os.environ['PLAN']), json.loads(os.environ['NEEDS']), args.bundle)
+            errors = aggregate(json.loads(os.environ['PLAN']), json.loads(os.environ['NEEDS']),
+                               bundle=args.bundle, main_macos=args.main_macos)
         except (KeyError, ValueError, TypeError) as error:
             errors = [f'Invalid aggregate input: {error}']
         for error in errors:
             print(error, file=sys.stderr)
         return int(bool(errors))
-    pull_request = os.environ.get('GITHUB_EVENT_NAME') == 'pull_request'
+    pull_request = event_name == 'pull_request'
     if args.command == 'preflight':
         try:
             event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
@@ -621,19 +716,24 @@ def main():
         with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
             out.write(f'needs-dart={str(needs_dart).lower()}\n')
         return 0
-    try:
-        event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
-        paths = event_paths(os.environ['GITHUB_EVENT_NAME'], event)
-        host_suites = None
-        probe_reason = None
-        if needs_dart_probe(paths, pull_request=pull_request):
-            host_suites, probe_reason = run_host_suite_probe(probe_candidates(paths))
-        plan = select(paths, pull_request=pull_request, host_suites=host_suites)
-        if probe_reason:
-            plan['reasons'].append(probe_reason)
-    except (KeyError, ValueError, TypeError, OSError, subprocess.SubprocessError) as error:
-        plan = select([], force_full=True, pull_request=pull_request)
-        plan['reasons'] = ['Full fallback: ' + type(error).__name__]
+    if args.main_macos:
+        plan = select_main_macos()
+    else:
+        try:
+            event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+            paths = event_paths(os.environ['GITHUB_EVENT_NAME'], event)
+            host_suites = None
+            probe_reason = None
+            if needs_dart_probe(paths, pull_request=pull_request):
+                host_suites, probe_reason = run_host_suite_probe(probe_candidates(paths))
+            plan = select(paths, pull_request=pull_request, host_suites=host_suites)
+            if probe_reason:
+                plan['reasons'].append(probe_reason)
+        except (KeyError, ValueError, TypeError, OSError, subprocess.SubprocessError) as error:
+            plan = select([], force_full=True, pull_request=pull_request)
+            plan['reasons'] = ['Full fallback: ' + type(error).__name__]
+        if event_name == 'push' and main_ref:
+            plan = restrict_macos_plan(plan, macos=False, other=True)
     encoded = json.dumps(plan, separators=(',', ':'))
     print(json.dumps(plan, indent=2))
     with open(os.environ['GITHUB_OUTPUT'], 'a') as out:

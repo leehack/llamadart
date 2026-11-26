@@ -1,0 +1,289 @@
+name: Main macOS CI
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 */2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-macos
+  cancel-in-progress: false
+
+jobs:
+  changes:
+    name: Select cumulative macOS checks
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      plan: ${{ steps.select.outputs.plan }}
+      companions: ${{ steps.select.outputs.companions }}
+      companion-job: ${{ steps.select.outputs.companion-job }}
+      studio-macos: ${{ steps.select.outputs.studio-macos }}
+      macos-validation-memory: ${{ steps.select.outputs.macos-validation-memory }}
+      apple-cache: ${{ steps.select.outputs.apple-cache }}
+      test-other-os: ${{ steps.select.outputs.test-other-os }}
+      test-other-os-matrix: ${{ steps.select.outputs.test-other-os-matrix }}
+      desktops: ${{ steps.select.outputs.desktops }}
+      desktops-enabled: ${{ steps.select.outputs.desktops-enabled }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: select
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 tool/ci/select_jobs.py select --main-macos
+
+  studio-macos:
+    needs: changes
+    if: needs.changes.outputs.studio-macos == 'true'
+    name: Main macOS Studio lifecycle and accessibility
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Read Studio Flutter pin
+        id: pin
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          import re
+          from pathlib import Path
+
+          pin = Path('packages/llamadart_studio/.flutter-version')
+          try:
+              version = pin.read_text(encoding='utf-8').strip()
+          except (OSError, UnicodeError):
+              raise SystemExit(f'Cannot read Flutter version from {pin}')
+          if not re.fullmatch(r'(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2}', version):
+              raise SystemExit(f'Expected a stable Flutter version (major.minor.patch) in {pin}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'version={version}\n')
+          PYTHON
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.pin.outputs.version }}
+          channel: stable
+          cache: true
+      - name: Exercise the native Flutter accessibility and lifecycle bridge
+        working-directory: packages/llamadart_studio
+        run: |
+          flutter pub get
+          TMPDIR="$(mktemp -d)" flutter test test/macos_app_delegate_test.dart test/macos_static_semantics_test.dart test/macos_navigation_semantics_test.dart
+
+  companion-packages:
+    needs: changes
+    if: needs.changes.outputs.companion-job == 'true'
+    name: Main macOS Companion Packages
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+
+      - name: Check llamadart_llama_cpp_flutter
+        if: ${{ !cancelled() && contains(fromJSON(needs.changes.outputs.companions), 'packages/llamadart_llama_cpp_flutter') }}
+        uses: ./.github/actions/companion-package
+        with:
+          package: packages/llamadart_llama_cpp_flutter
+
+      - name: Check llamadart_litert_lm_flutter
+        if: ${{ !cancelled() && contains(fromJSON(needs.changes.outputs.companions), 'packages/llamadart_litert_lm_flutter') }}
+        uses: ./.github/actions/companion-package
+        with:
+          package: packages/llamadart_litert_lm_flutter
+
+      - name: Check llamadart_stable_diffusion_flutter
+        if: ${{ !cancelled() && contains(fromJSON(needs.changes.outputs.companions), 'packages/llamadart_stable_diffusion_flutter') }}
+        uses: ./.github/actions/companion-package
+        with:
+          package: packages/llamadart_stable_diffusion_flutter
+
+      - name: Test validation process memory
+        if: ${{ !cancelled() && needs.changes.outputs.macos-validation-memory == 'true' }}
+        working-directory: packages/llamadart_validation
+        run: |
+          dart pub get
+          dart test test/process_memory_test.dart
+
+      - name: Install root dependencies for the Apple companion cache check
+        if: ${{ !cancelled() && needs.changes.outputs.apple-cache == 'true' }}
+        run: flutter pub get
+
+      - name: Verify Flutter Apple companion cache transitions
+        if: ${{ !cancelled() && needs.changes.outputs.apple-cache == 'true' }}
+        run: dart test -p vm --run-skipped test/integration/apple_companion_flutter_cache_test.dart
+
+  test-other-os:
+    needs: changes
+    if: needs.changes.outputs.test-other-os == 'true'
+    name: Main macOS Test Native (${{ matrix.lane }}, ${{ matrix.shard }}/${{ matrix.shards }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.changes.outputs.test-other-os-matrix) }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Cache tiny GGUF test model
+        id: tiny-gguf-cache
+        uses: actions/cache@v6
+        with:
+          path: .dart_tool/test_models/stories15M.gguf
+          key: tiny-gguf-stories15M-${{ runner.os }}-v1
+
+      - name: Download tiny GGUF test model
+        if: steps.tiny-gguf-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          mkdir -p .dart_tool/test_models
+          curl_args=(--fail --location --retry 8 --retry-all-errors --retry-delay 10)
+          if [[ -n "${HF_TOKEN:-}" ]]; then
+            curl_args+=(--header "Authorization: Bearer $HF_TOKEN")
+          fi
+          curl "${curl_args[@]}" \
+            "https://huggingface.co/ggml-org/tiny-llamas/resolve/main/stories15M.gguf" \
+            --output .dart_tool/test_models/stories15M.gguf
+
+      - name: Isolate system temp with a LiteRT-LM cache canary
+        id: litert_canary_seed
+        shell: bash
+        run: bash tool/ci/litert_lm_temp_canary.sh seed
+
+      - name: Select shard test files
+        id: shard
+        run: dart tool/ci/test_shards.dart ${{ matrix.lane }} ${{ matrix.shard }} ${{ matrix.shards }}
+
+      - name: Run native tests
+        env:
+          GGML_METAL_DEVICES: "0"
+          LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
+        run: dart test -p vm -j 1 --exclude-tags local-only --file-reporter=json:.dart_tool/test_events.jsonl ${{ steps.shard.outputs.files }}
+
+      - name: Check the LiteRT-LM cache canary
+        if: ${{ !cancelled() && steps.litert_canary_seed.outcome == 'success' }}
+        shell: bash
+        run: bash tool/ci/litert_lm_temp_canary.sh check
+
+      - name: Summarize test timing
+        if: ${{ !cancelled() && hashFiles('.dart_tool/test_events.jsonl') != '' }}
+        run: dart tool/ci/native_test_timing.dart .dart_tool/test_events.jsonl .dart_tool/test_timing.json
+
+      - name: Upload test timing
+        if: ${{ !cancelled() && hashFiles('.dart_tool/test_timing.json') != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-timing-${{ matrix.lane }}-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: .dart_tool/test_timing.json
+          if-no-files-found: error
+          retention-days: 14
+
+  desktop:
+    needs: changes
+    if: needs.changes.outputs.desktops-enabled == 'true'
+    name: Main macOS Desktop ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.changes.outputs.desktops) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: dart pub get
+      - run: dart run tool/testing/validation.dart build --target desktop --profile tiny-gguf-cpu --out .dart_tool/validation/bundle
+      - name: Preserve executable permissions in transport
+        run: tar -czf .dart_tool/validation/bundle.tar.gz -C .dart_tool/validation bundle
+      - name: Verify extracted desktop command and profiles
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import subprocess
+          import tarfile
+          import tempfile
+
+          archive = Path('.dart_tool/validation/bundle.tar.gz').resolve()
+          with tempfile.TemporaryDirectory(prefix='llamadart-portable-') as scratch:
+              with tarfile.open(archive) as package:
+                  package.extractall(scratch, filter='data')
+              extension = '.exe' if os.name == 'nt' else ''
+              command = Path(scratch) / 'bundle/bin' / ('llamadart-validate' + extension)
+              subprocess.run([str(command), '--help'], cwd=scratch, check=True, timeout=30)
+              profiles = subprocess.run([str(command), '--list'], cwd=scratch, check=True,
+                                        capture_output=True, text=True, timeout=30).stdout.splitlines()
+              if 'tiny-gguf-cpu' not in profiles:
+                  raise RuntimeError('Extracted command did not discover bundled profiles')
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: validation-desktop-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          path: .dart_tool/validation/bundle.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+
+  result:
+    name: Main macOS result
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [changes, studio-macos, companion-packages, test-other-os, desktop]
+    steps:
+      - name: Require the main branch
+        run: test "$GITHUB_REF" = refs/heads/main
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify every selected macOS job succeeded
+        env:
+          PLAN: ${{ needs.changes.outputs.plan }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 tool/ci/select_jobs.py aggregate --main-macos

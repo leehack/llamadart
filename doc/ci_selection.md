@@ -2,7 +2,8 @@
 
 `tool/ci/select_jobs.py` selects the core CI jobs and portable bundle targets
 from a complete Git diff. Both workflows still report a final status for every
-PR. A path filter must not prevent a required workflow from reporting.
+PR. A path filter must not prevent a required workflow from reporting. Pushes
+to `main` route macOS checks to [Main macOS CI](#main-macos-ci).
 
 ## Selection boundary
 
@@ -206,9 +207,9 @@ queries `dart tool/ci/test_shards.dart hosts-json` (which uses the same
 transitive consumption by host suites). Missing SDK, missing/unreadable files,
 or malformed/partial output conservatively admit Mac tests.
 
-Pushes to `main` keep incremental path selection (no main-push full-Mac
-overlay): release workflows and main coverage gates already cover `main`, and
-avoiding a full-Mac overlay keeps macOS runner demand low.
+On `main`, the dedicated macOS workflow selects from the cumulative range
+since its last successful run. The ordinary push workflows keep incremental
+selection for Linux, Windows, Web and app bundles.
 
 Triage for cancelled macOS jobs: inspect runner assignment, steps and
 `gh api repos/leehack/llamadart/check-runs/<job-id>/annotations` to separate
@@ -295,13 +296,15 @@ Obsolete PR CI runs cancel within the same PR. Every non-PR CI run uses its
 own run ID as its concurrency group, so consecutive main pushes and manual
 runs retain all selected checks, including runs waiting for a runner. Disabling
 `cancel-in-progress` alone on a shared group would still replace its pending
-run. Push selection continues to use only that event's before/after diff;
-retaining each run preserves the checks selected for every merge (#1646).
+run. Ordinary push CI uses that event's before/after diff. Retaining
+each run preserves the checks selected for each merge (#1646). The separate
+macOS workflow accounts for intervening merges through its cumulative range.
 
 Obsolete PR bundle runs cancel. Manual and `main` push bundle runs have unique
-concurrency groups and do not cancel one another. Every push to `main` builds
-the bundle targets its change selects. A pull request defers Windows and macOS
-desktop builds and the Android build to that push unless it changes their build
+concurrency groups and do not cancel one another. On a `main` push, Main macOS
+CI builds the selected macOS desktop bundle. The bundle workflow builds the
+remaining selected targets. A pull request defers Windows and macOS desktop
+builds and the Android build until after merge unless it changes their build
 inputs. The selector keeps these builds on PRs that change the bundle workflow,
 the selector, `hook/`, `lib/src/hook/` (native pins), root
 `pubspec.yaml`/`pubspec.lock`, compiled validation package code or bundle
@@ -313,6 +316,34 @@ desktop and Web builds. A deferred target is absent from the matrix.
 `Validation bundle result` still requires every selected matrix to pass, even
 when `Desktop windows-2022` is absent. A break in a deferred build first shows on
 `main`.
+
+## Main macOS CI
+
+Every `main` push event queues `main_macos.yml`. When a run starts, it
+uses the last successful run of that workflow on `main` as its baseline and
+checks the commit that triggered the new run. It unions the changed paths
+from each first-parent commit in between, including both sides of renames
+and paths restored by later pushes. The selection step uses the workflow
+token to read Actions run history. If the run list or Git history cannot
+establish a usable baseline, the lane selects all macOS checks. A failed
+or cancelled run cannot become the baseline.
+
+The lane runs the selected native shards, Studio lifecycle and accessibility
+tests on `macos-15`, Companion Packages on `macos-latest` (including the Apple
+cache and process memory checks), and the portable desktop bundle on
+`macos-15`. `Main macOS result` checks all selected jobs. The concurrency group
+lets the active run finish and keeps one waiting run. A newer queued run can
+replace the waiting run. Selection starts from the last successful baseline,
+so changes from an intervening replaced run stay in the cumulative range.
+
+The two-hour schedule is a best-effort backstop. GitHub can delay or drop a
+scheduled run. Dispatch the workflow on `main` to recover after missed events,
+including pushes that GitHub does not turn into workflow runs.
+
+The ordinary `main` push workflows use their own push diff for the remaining
+jobs. Chat deployment waits for the core non-macOS result and its Web Chat
+artifact. PRs, ordinary manual runs, and release-branch pushes still use
+their existing macOS selection and check names.
 
 ## Host OS lanes
 
