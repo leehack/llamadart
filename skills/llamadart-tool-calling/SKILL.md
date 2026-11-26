@@ -262,6 +262,9 @@ description: >-
 - `GenerationParams(ignoreEos: true)` with tools throws
   `LlamaUnsupportedException` for any `ToolChoice` but `none`: the tool-call
   grammar cannot be combined with it.
+- Native llama.cpp accepts finite `logitBias` values with tool-call grammars.
+  A negative-infinity bias bans a token and throws `LlamaUnsupportedException`
+  with a non-empty grammar or a thinking budget.
 - Runtime limits: LiteRT-LM has no grammar enforcement, LiteRT-LM on web
   forwards tools only through `LlamaBackend.withTextHistory()`
   (`ToolChoice.required`, `parallelToolCalls` and tool-result `content`

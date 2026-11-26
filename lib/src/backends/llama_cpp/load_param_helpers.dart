@@ -24,26 +24,27 @@ ggml_type ggmlTypeFor(KvCacheType type) {
   return ggml_type.fromValue(llama_cpp_values.ggmlTypeValueFor(type));
 }
 
-/// Creates a llama.cpp logit-bias sampler that suppresses [tokens].
+/// Creates a llama.cpp sampler that adds the given biases to token logits.
 ///
 /// The native sampler copies the bias entries before this function releases
-/// its temporary allocation. Returns `nullptr` when [tokens] is empty.
-Pointer<llama_sampler> createSuppressTokensSampler(
+/// its temporary allocation. Returns `nullptr` when [tokenBiases] is empty.
+Pointer<llama_sampler> createLogitBiasSampler(
   int vocabSize,
-  List<int> tokens,
+  Map<int, double> tokenBiases,
 ) {
-  if (tokens.isEmpty) {
+  if (tokenBiases.isEmpty) {
     return nullptr;
   }
 
-  final biases = calloc<llama_logit_bias>(tokens.length);
+  final biases = calloc<llama_logit_bias>(tokenBiases.length);
   try {
-    for (int i = 0; i < tokens.length; i++) {
-      biases[i]
-        ..token = tokens[i]
-        ..bias = double.negativeInfinity;
+    var index = 0;
+    for (final MapEntry(:key, :value) in tokenBiases.entries) {
+      biases[index++]
+        ..token = key
+        ..bias = value;
     }
-    return llama_sampler_init_logit_bias(vocabSize, tokens.length, biases);
+    return llama_sampler_init_logit_bias(vocabSize, tokenBiases.length, biases);
   } finally {
     calloc.free(biases);
   }

@@ -84,6 +84,17 @@ OpenAiChatCompletionRequest parseChatCompletionRequest(
   );
   final temperature = readDoubleField(json['temperature'], 'temperature');
   final topP = readDoubleField(json['top_p'], 'top_p');
+  final frequencyPenalty = _readPenalty(
+    json['frequency_penalty'],
+    'frequency_penalty',
+    100,
+  );
+  final presencePenalty = _readPenalty(
+    json['presence_penalty'],
+    'presence_penalty',
+    2,
+  );
+  final logitBias = _parseLogitBias(json['logit_bias']);
   final seed = readIntField(json['seed'], 'seed');
   final stops = parseStopSequences(json['stop']);
 
@@ -125,6 +136,11 @@ OpenAiChatCompletionRequest parseChatCompletionRequest(
   if (topP != null) {
     params = params.copyWith(topP: topP);
   }
+  params = params.copyWith(
+    frequencyPenalty: frequencyPenalty,
+    presencePenalty: presencePenalty,
+    logitBias: logitBias,
+  );
   if (seed != null) {
     params = params.copyWith(seed: seed);
   }
@@ -142,4 +158,44 @@ OpenAiChatCompletionRequest parseChatCompletionRequest(
     tools: tools,
     toolChoice: toolChoice,
   );
+}
+
+double? _readPenalty(Object? raw, String name, int limit) {
+  final value = readDoubleField(raw, name);
+  if (value != null && (!value.isFinite || value < -limit || value > limit)) {
+    throw OpenAiHttpException.invalidRequest(
+      '`$name` must be between -$limit and $limit.',
+      param: name,
+    );
+  }
+  return value;
+}
+
+Map<int, double>? _parseLogitBias(Object? raw) {
+  if (raw == null) return null;
+  if (raw is! Map) {
+    throw OpenAiHttpException.invalidRequest(
+      '`logit_bias` must be an object keyed by token ID.',
+      param: 'logit_bias',
+    );
+  }
+
+  final biases = <int, double>{};
+  for (final MapEntry(:key, :value) in raw.entries) {
+    final token = key is String ? int.tryParse(key, radix: 10) : null;
+    if (token == null || token < 0 || biases.containsKey(token)) {
+      throw OpenAiHttpException.invalidRequest(
+        '`logit_bias` keys must be distinct non-negative integer token IDs.',
+        param: 'logit_bias',
+      );
+    }
+    if (value is! num || !value.isFinite || value < -10000 || value > 10000) {
+      throw OpenAiHttpException.invalidRequest(
+        '`logit_bias` values must be finite numbers between -10000 and 10000.',
+        param: 'logit_bias',
+      );
+    }
+    biases[token] = value.toDouble();
+  }
+  return biases;
 }

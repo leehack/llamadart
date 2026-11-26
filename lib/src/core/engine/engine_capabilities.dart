@@ -156,6 +156,11 @@ class LlamaEngineCapabilities implements EngineCapabilities {
   /// llama.cpp only.
   final bool supportsIgnoreEos;
 
+  /// Optional sampler controls applied by the loaded runtime.
+  ///
+  /// Requests for controls outside this set throw `LlamaUnsupportedException`.
+  final Set<SamplerControl> samplerControls;
+
   /// The strategies that [GenerationParams.speculativeDecodingConfig] can use.
   ///
   /// [SpeculativeDecodingStrategy.backendDefault] also stands for the
@@ -205,6 +210,7 @@ class LlamaEngineCapabilities implements EngineCapabilities {
     this.supportsThinkingBudget = false,
     this.supportsStreamBatching = false,
     this.supportsIgnoreEos = false,
+    this.samplerControls = const {},
     this.speculativeDecodingStrategies = const <SpeculativeDecodingStrategy>{},
     this.toolResultMedia = const <LlamaToolResultMedia>{},
   });

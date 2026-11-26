@@ -449,6 +449,9 @@ const params = GenerationParams(
   minP: 0.0,
   penalty: 1.1,
   presencePenalty: 0.0,
+  frequencyPenalty: 0.0,
+  penaltyLastN: 64,
+  logitBias: {},
   stopSequences: ['</s>'],
   thinkingBudget: null,
   speculativeDecoding: false,
@@ -464,6 +467,19 @@ Important fields:
   non-zero `minP` only with bridge assets whose `getCompletionCapabilities()`
   reports `minP` and otherwise rejects it; LiteRT-LM rejects it.
 - `penalty`: repeat penalty.
+- `frequencyPenalty`: additive penalty per recent occurrence of a token.
+  Native llama.cpp accepts finite values from -100 to 100. The default is 0.
+- `penaltyLastN`: recent-token window for repeat, frequency and presence
+  penalties on native llama.cpp. The default is 64. Use 0 to disable them
+  or -1 to use the full context. Larger windows are capped at the context size.
+- `logitBias`: map of token IDs in the loaded model's vocabulary to
+  additive biases on native llama.cpp. Finite biases range from -10000 to
+  10000. Negative infinity bans a token. Bans with a non-empty grammar,
+  including one from tools or `responseFormat`, or with a thinking budget
+  throw `LlamaUnsupportedException`. If the bans and runtime suppression
+  leave no token to sample, generation throws `LlamaArgumentException`.
+  Runtime suppression, including `ignoreEos`, takes precedence over a
+  positive bias.
 - `presencePenalty`: llama.cpp presence penalty; `0.0` preserves the
   existing behavior. WebGPU applies it only with bridge assets whose
   `getCompletionCapabilities()` reports `presencePenalty`. Other WebGPU assets
@@ -518,15 +534,16 @@ Important fields:
   WebGPU and LiteRT-LM reject it.
 
 After a model loads, `engine.capabilities` reports which of these options the
-runtime applies. With the built-in backends, a request that sets one it
-reports `false` to a value other than the default throws
-`LlamaUnsupportedException`; `LlamaEngine` does not check these fields
-itself, so a custom backend must reject what it does not apply:
+runtime applies. `LlamaEngine` rejects requested controls absent from
+`samplerControls`, including for custom backends. Custom backends handle
+admission for the remaining options they implement. Built-in runtimes
+reject unsupported non-default options as described below.
 
 | Option | `LlamaEngineCapabilities` field | llama.cpp native | WebGPU | LiteRT-LM native | LiteRT-LM web |
 | --- | --- | --- | --- | --- | --- |
 | `penalty` | `supportsPenalty` | Yes | Yes | Runtime export resolves | No |
 | `presencePenalty` | `supportsPresencePenalty` | Yes | Bridge reports | Runtime export resolves | No |
+| `frequencyPenalty`, `penaltyLastN`, `logitBias` | `samplerControls` | Yes | No | No | No |
 | `minP` | `supportsMinP` | Yes | Bridge reports | No | No |
 | `thinkingBudget` | `supportsThinkingBudget` | Runtime export resolves | Bridge reports | Runtime export resolves and the bundle declares a thinking channel | No |
 | `grammar`, `grammarTriggers`, `preservedTokens` | `supportsGrammar` | Yes | Yes | No | No |
@@ -541,7 +558,8 @@ Native llama.cpp keeps `mtp` in the set because it accepts an external MTP
 strategies require `draftModel`; a missing draft throws `LlamaArgumentException`
 at generation start. Advertising a strategy does not waive these requirements.
 
-Every field is `false`, and the strategy set empty, before a load. Native
+The capability flags are `false` and the sampler and strategy sets are empty
+before a load. Native
 LiteRT-LM reads speculative, image and audio support from the bundle's
 declaration, which only a custom runtime older than LiteRT-LM v0.18.0 can under-report
 ([litert-lm-native#60](https://github.com/leehack/litert-lm-native/issues/60)); a `false` does not

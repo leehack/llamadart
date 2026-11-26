@@ -9687,6 +9687,28 @@ void main() {
         expect(fake().completionOption('minP'), 0.05);
       });
 
+      test('rejects sampler controls on WebGPU', () async {
+        const options = [
+          ('frequencyPenalty', GenerationParams(frequencyPenalty: 1)),
+          ('penaltyLastN', GenerationParams(penaltyLastN: 0)),
+          ('logitBias', GenerationParams(logitBias: {3: 1})),
+        ];
+        Matcher namedUnsupported(String option) =>
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('WebGPU'), contains(option)),
+            );
+        await loadModel();
+        for (final (option, params) in options) {
+          expect(
+            () => backend.generate(1, 'Hello', params),
+            throwsA(namedUnsupported(option)),
+          );
+        }
+        expect(fake().completionCalls, 0);
+      });
+
       test('rejects ignoreEos', () async {
         await loadModel();
         expect(

@@ -8910,6 +8910,23 @@ void main() {
         ),
       );
 
+      for (final (option, params) in const [
+        ('frequencyPenalty', GenerationParams(frequencyPenalty: 1)),
+        ('penaltyLastN', GenerationParams(penaltyLastN: 0)),
+        ('logitBias', GenerationParams(logitBias: {3: 1})),
+      ]) {
+        await expectLater(
+          service.generate(contextHandle, 'hello', params),
+          emitsError(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('LiteRT-LM'), contains(option)),
+            ),
+          ),
+        );
+      }
+
       await expectLater(
         service.generate(
           contextHandle,

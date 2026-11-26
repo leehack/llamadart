@@ -21,6 +21,10 @@ Native llama.cpp can keep generating past end-of-generation tokens with
 for benchmarks that need a fixed token count; it rejects a non-empty grammar,
 and the other runtimes reject it. See [runtime parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters).
 
+Native llama.cpp also supports per-occurrence `frequencyPenalty`, a
+`penaltyLastN` history window and token-level `logitBias`. Check
+`(await engine.capabilities).samplerControls` before using these options.
+
 Choose [direct llamadart, Genkit, or Flutter Edge AI](https://llamadart.leehack.com/docs/integrations/choosing-an-api)
 for your application. Genkit is a
 [separate package](https://github.com/leehack/llamadart/tree/main/packages/genkit_llamadart);

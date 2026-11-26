@@ -102,12 +102,12 @@ subset of Qwen3.6 27B's non-thinking text profile:
 - `min_p = 0.0`
 - `repetition penalty = 1.0`
 
-Request-provided sampling fields (for example `temperature`, `top_p`, `seed`,
-`max_tokens`) override these defaults per call.
-
-Qwen also recommends a presence penalty, but this example's current backend
-does not expose presence-penalty control. Do not substitute repetition penalty
-for it; they have different effects.
+Request-provided sampling fields such as `temperature`, `top_p`, `seed`,
+and `max_tokens` override these defaults per call. Native llama.cpp accepts
+`frequency_penalty` from -100 to 100, `presence_penalty` from -2 to 2, and
+`logit_bias` as an object with token IDs as keys and finite numeric values
+from -10000 to 10000. For example, `"logit_bias": {"123": -5}` lowers
+the logit of token 123 in the loaded model.
 
 ### Default model and thinking mode
 
