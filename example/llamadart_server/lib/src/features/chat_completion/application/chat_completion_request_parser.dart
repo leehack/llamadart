@@ -207,9 +207,13 @@ Map<int, double>? _parseLogitBias(Object? raw) {
   final biases = <int, double>{};
   for (final MapEntry(:key, :value) in raw.entries) {
     final token = key is String ? int.tryParse(key, radix: 10) : null;
-    if (token == null || token < 0 || biases.containsKey(token)) {
+    if (token == null ||
+        token < 0 ||
+        token.toString() != key ||
+        biases.containsKey(token)) {
       throw OpenAiHttpException.invalidRequest(
-        '`logit_bias` keys must be distinct non-negative integer token IDs.',
+        '`logit_bias` keys must be distinct non-negative integer token IDs '
+        'without signs, spaces or leading zeros.',
         param: 'logit_bias',
       );
     }

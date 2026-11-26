@@ -77,7 +77,8 @@ Map<String, dynamic> buildChatRequestSchemas({required String modelId}) {
         'logit_bias': <String, dynamic>{
           'type': 'object',
           'description':
-              'Finite additive biases keyed by non-negative token IDs in the model vocabulary.',
+              'Finite additive biases keyed by canonical non-negative integer token IDs in the model vocabulary. A token ID outside the vocabulary returns 400.',
+          'propertyNames': <String, dynamic>{'pattern': r'^(0|[1-9][0-9]*)$'},
           'additionalProperties': <String, dynamic>{
             'type': 'number',
             'minimum': -10000,

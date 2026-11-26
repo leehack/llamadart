@@ -93,6 +93,13 @@ void main() {
         {'10': false},
         {'word': 4},
         {'10': double.negativeInfinity},
+        {'+5': 1},
+        {' 5': 1},
+        {'5 ': 1},
+        {'05': 1},
+        {'-0': 1},
+        {'5.0': 1},
+        {'99999999999999999999': 1},
       ]) {
         expect(
           () => parseChatCompletionRequest(<String, dynamic>{
