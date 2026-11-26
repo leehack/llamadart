@@ -350,10 +350,21 @@ use.
 - Downloads are foreground Dart HTTP requests. If the OS suspends or kills the
   app, the request can fail; a later session resumes from the `.part` file
   when resume is possible (see [Reference](#reference-resume-locking-and-cache-metadata)).
-- For downloads that must continue in the background, implement
-  `ModelDownloadManager` in the app or a platform package: an Android
-  foreground service or system `DownloadManager` with a notification, or iOS
-  background `URLSession` tasks.
+- For downloads that must continue in the background, run them in a platform
+  executor: an Android foreground service or system `DownloadManager` with a
+  notification, or iOS background `URLSession` tasks. When the executor has
+  finished, hand the file to
+  `DefaultModelDownloadManager.importDownloadedFile(source, filePath, options:
+  ..., expectedBytes: ..., etag: ..., lastModified: ...)`. It verifies the
+  file (regular, non-empty, `expectedBytes`, `ModelLoadOptions.sha256`), moves
+  it into the cache entry under the entry lock, copies it when a rename is not
+  possible, and writes the metadata, so the model then loads from the cache
+  like any download. A rejected file stays where it is. Bearer tokens,
+  headers, resume and retries are ignored and never stored: the executor owns
+  the request. It supports neither `ModelCachePolicy.noCache` nor `cacheOnly`,
+  and throws `LlamaUnsupportedException` on web. Implement
+  `ModelDownloadManager` yourself only when the app must replace the whole
+  download path.
 - To share one copy of a model between apps that can open the same
   directory, see the separate [shared model store](./model-store) package.
 - For device-level sharing, use `userSelected(...)` on Android only after the

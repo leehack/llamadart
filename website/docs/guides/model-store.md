@@ -98,9 +98,12 @@ be created, written or locked, so an app can fall back to its own cache.
 - Downloads run in the foreground, as with `DefaultModelDownloadManager`.
   Background downloads that survive sleep need platform executors: Android
   user-initiated data-transfer jobs or a foreground service, and iOS
-  background `URLSession` tasks handed to the store at relaunch. They are not
-  part of this version ([#1499](https://github.com/leehack/llamadart/issues/1499)). Android's system `DownloadManager` is not an option
-  for authenticated sources because it persists request headers.
+  background `URLSession` tasks handed to the store at relaunch. The store
+  does not include them ([#1499](https://github.com/leehack/llamadart/issues/1499)).
+  Core's `DefaultModelDownloadManager.importDownloadedFile` verifies and moves
+  a finished executor download into a cache entry; the store has no
+  equivalent that records references. Android's system `DownloadManager` is
+  not an option for authenticated sources because it persists request headers.
 - Use a store from one isolate per process. Its lock excludes other
   processes but, on Linux, macOS, Android and iOS, not another isolate of
   the same process, and the store does not detect one: calls from two

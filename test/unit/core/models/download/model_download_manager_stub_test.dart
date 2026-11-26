@@ -17,6 +17,27 @@ void main() {
       );
     });
 
+    test('throws unsupported exception for importDownloadedFile', () async {
+      const manager = DefaultModelDownloadManager();
+
+      await expectLater(
+        manager.importDownloadedFile(
+          ModelSource.url(
+            Uri.parse('https://example.com/model.gguf'),
+            fileName: 'model.gguf',
+          ),
+          '/downloads/model.gguf',
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('importDownloadedFile'),
+          ),
+        ),
+      );
+    });
+
     test('keeps globalCacheDirectory but still throws', () async {
       DefaultModelDownloadManager.globalCacheDirectory = '/app/models';
       addTearDown(
