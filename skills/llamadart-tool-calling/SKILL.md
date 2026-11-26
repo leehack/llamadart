@@ -264,7 +264,9 @@ description: >-
   grammar cannot be combined with it.
 - Native llama.cpp accepts finite `logitBias` values with tool-call grammars.
   A negative-infinity bias bans a token and throws `LlamaUnsupportedException`
-  with a non-empty grammar or a thinking budget.
+  with a non-empty grammar or a thinking budget. A positive `dynatempRange`
+  throws `LlamaUnsupportedException` with tools too, since their grammar
+  masks tokens.
 - Runtime limits: LiteRT-LM has no grammar enforcement, LiteRT-LM on web
   forwards tools only through `LlamaBackend.withTextHistory()`
   (`ToolChoice.required`, `parallelToolCalls` and tool-result `content`

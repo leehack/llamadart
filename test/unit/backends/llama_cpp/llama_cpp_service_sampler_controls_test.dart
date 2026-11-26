@@ -86,6 +86,11 @@ void main() {
       SamplerControl.frequencyPenalty,
       SamplerControl.penaltyLastN,
       SamplerControl.logitBias,
+      SamplerControl.typicalP,
+      SamplerControl.topNSigma,
+      SamplerControl.xtc,
+      SamplerControl.dynamicTemperature,
+      SamplerControl.mirostat,
     });
   });
 

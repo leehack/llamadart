@@ -23,7 +23,10 @@ and the other runtimes reject it. See [runtime parameters](https://llamadart.lee
 
 Native llama.cpp also supports per-occurrence `frequencyPenalty`, a
 `penaltyLastN` history window and token-level `logitBias`. Check
-`(await engine.capabilities).samplerControls` before using these options.
+`(await engine.capabilities).samplerControls` before using these options. It
+also supports `typicalP`, `topNSigma`, XTC (`xtcProbability`,
+`xtcThreshold`), dynamic temperature (`dynatempRange`, `dynatempExponent`)
+and Mirostat (`mirostat`, `mirostatTau`, `mirostatEta`).
 
 Native llama.cpp can report the log-probability of every generated token, with
 the most probable alternatives, on streamed chat completions and raw generation:

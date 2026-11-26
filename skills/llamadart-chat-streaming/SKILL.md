@@ -198,6 +198,14 @@ modalities and speculative strategies before offering them.
   `frequencyPenalty`, `penaltyLastN`, or `logitBias`. Native llama.cpp
   supports these controls. The penalty window defaults to 64; use -1 for the
   full context or 0 to disable repeat, frequency and presence penalties.
+  The same set covers `typicalP`, `topNSigma`, XTC (`xtcProbability`,
+  `xtcThreshold`), dynamic temperature (`dynatempRange`, `dynatempExponent`)
+  and Mirostat (`mirostat` 1 or 2, `mirostatTau`, `mirostatEta`). Mirostat
+  replaces top-K, top-P and min-P and needs a positive `temp`; invalid values
+  throw `LlamaArgumentException`. Dynamic temperature needs `temp` minus
+  `dynatempRange` of at least 0.01 as a 32-bit float and throws
+  `LlamaUnsupportedException` with a grammar, thinking budget, `ignoreEos`,
+  model-suppressed tokens or a banned token (`-infinity` `logitBias`).
 - Check `(await engine.capabilities).supportsTokenLogprobs` before setting
   `GenerationParams(topLogprobs: n)` (0 to 20) on native llama.cpp. They are
   raw-distribution values, before logit bias, penalties, grammar and

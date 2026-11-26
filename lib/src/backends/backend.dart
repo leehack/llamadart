@@ -1143,6 +1143,18 @@ Set<SamplerControl> requestedSamplerControls(GenerationParams params) {
     if (params.penaltyLastN != defaults.penaltyLastN)
       SamplerControl.penaltyLastN,
     if (params.logitBias.isNotEmpty) SamplerControl.logitBias,
+    if (params.typicalP != defaults.typicalP) SamplerControl.typicalP,
+    if (params.topNSigma != defaults.topNSigma) SamplerControl.topNSigma,
+    if (params.xtcProbability != defaults.xtcProbability ||
+        params.xtcThreshold != defaults.xtcThreshold)
+      SamplerControl.xtc,
+    if (params.dynatempRange != defaults.dynatempRange ||
+        params.dynatempExponent != defaults.dynatempExponent)
+      SamplerControl.dynamicTemperature,
+    if (params.mirostat != defaults.mirostat ||
+        params.mirostatTau != defaults.mirostatTau ||
+        params.mirostatEta != defaults.mirostatEta)
+      SamplerControl.mirostat,
   };
 }
 
