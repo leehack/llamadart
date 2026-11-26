@@ -279,6 +279,15 @@ void _requirePrepScope(
         'Release prep may change only the version and raise the core floor within the release line in $path.',
       );
     }
+    final companion = Version.parse(version.next);
+    if (companion.major != next.major ||
+        companion.minor != next.minor ||
+        companion <= Version.parse(version.previous)) {
+      throw FormatException(
+        'Companion version $companion in $path must increase from '
+        '${version.previous} within release/$line.x.',
+      );
+    }
     versions[package] = version;
   }
   for (final path in paths) {
