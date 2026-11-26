@@ -5528,11 +5528,11 @@ class LlamaCppService {
     }
     final dynatempRange = params.dynatempRange;
     final dynatempRange32 = _float32(dynatempRange);
-    if (!(dynatempRange32 >= 0 && dynatempRange32.isFinite) ||
+    if (!(dynatempRange32 >= 0) ||
         (dynatempRange > 0 && dynatempRange32 == 0)) {
       throw LlamaArgumentException(
-        'GenerationParams.dynatempRange must be 0 or a positive, finite '
-        '32-bit float.',
+        'GenerationParams.dynatempRange must be 0 or a positive 32-bit '
+        'float.',
         name: 'dynatempRange',
         invalidValue: dynatempRange,
       );

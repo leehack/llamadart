@@ -376,7 +376,7 @@ void main() {
       final params = _sampled.copyWith(dynatempRange: 0.3);
       final outputs = {
         for (final temp in [0.5, 1.0, 1.5])
-          temp: await generate(params.copyWith(temp: temp)),
+          temp: (await generate(params.copyWith(temp: temp))).join(','),
       };
       expect(outputs.values.toSet(), hasLength(3));
     });
@@ -769,6 +769,11 @@ void main() {
         'dynatempRange and temp whose sum overflows float32',
         'dynatempRange',
         const GenerationParams(temp: 3e38, dynatempRange: 1e38),
+      ),
+      (
+        'dynatempRange whose float32 lowest temperature is under the floor',
+        'dynatempRange',
+        const GenerationParams(temp: 1, dynatempRange: 0.99),
       ),
       (
         'dynatempRange beyond float32',
