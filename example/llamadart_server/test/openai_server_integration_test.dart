@@ -599,6 +599,84 @@ void main() {
       expect(toolEngine.createCalls, isEmpty);
     });
   });
+
+  group('OpenAiApiServer engine errors', () {
+    late _RunningServer server;
+    late http.Client client;
+    late _FailingApiServerEngine engine;
+
+    setUp(() async {
+      engine = _FailingApiServerEngine();
+      server = await _startServer(engine);
+      client = http.Client();
+    });
+
+    tearDown(() async {
+      client.close();
+      await server.close();
+    });
+
+    String body({required bool stream}) => jsonEncode(<String, dynamic>{
+      'model': 'test-model',
+      'stream': stream,
+      'logit_bias': <String, dynamic>{'5000': 1},
+      'messages': <Map<String, dynamic>>[
+        <String, dynamic>{'role': 'user', 'content': 'hello'},
+      ],
+    });
+
+    test('maps LlamaArgumentException to a 400 invalid request', () async {
+      engine.failure = LlamaArgumentException(
+        'GenerationParams.logitBias token ID 5000 must be in [0, 259).',
+        name: 'logitBias',
+        invalidValue: 5000,
+      );
+      final response = await client.post(
+        server.uri('/v1/chat/completions'),
+        headers: <String, String>{'Content-Type': 'application/json'},
+        body: body(stream: false),
+      );
+
+      expect(response.statusCode, 400);
+      final error =
+          (jsonDecode(response.body) as Map<String, dynamic>)['error']
+              as Map<String, dynamic>;
+      expect(error['type'], 'invalid_request_error');
+      expect(error['param'], 'logit_bias');
+      expect(error['message'], contains('token ID 5000'));
+    });
+
+    test('reports LlamaArgumentException as an SSE error event', () async {
+      engine.failure = LlamaArgumentException(
+        'GenerationParams.logitBias token ID 5000 must be in [0, 259).',
+        name: 'logitBias',
+      );
+      final request = http.Request('POST', server.uri('/v1/chat/completions'))
+        ..headers['Content-Type'] = 'application/json'
+        ..body = body(stream: true);
+      final streamed = await client.send(request);
+      final text = await streamed.stream.bytesToString();
+
+      expect(text, contains('"type":"invalid_request_error"'));
+      expect(text, contains('"param":"logit_bias"'));
+      expect(text, contains('data: [DONE]'));
+    });
+
+    test('keeps other Llama exceptions as 500 server errors', () async {
+      engine.failure = LlamaInferenceException('decode failed');
+      final response = await client.post(
+        server.uri('/v1/chat/completions'),
+        headers: <String, String>{'Content-Type': 'application/json'},
+        body: body(stream: false),
+      );
+
+      expect(response.statusCode, 500);
+      final error =
+          (jsonDecode(response.body) as Map<String, dynamic>)['error']
+              as Map<String, dynamic>;
+      expect(error['type'], 'server_error');
+    });
+  });
 }
 
 Future<_RunningServer> _startServer(
@@ -761,6 +839,22 @@ class _BlockingApiServerEngine extends _FakeApiServerEngine {
         ),
       ],
     );
+  }
+}
+
+class _FailingApiServerEngine extends _FakeApiServerEngine {
+  Object? failure;
+
+  @override
+  Stream<LlamaCompletionChunk> create(
+    List<LlamaChatMessage> messages, {
+    GenerationParams params = const GenerationParams(),
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = false,
+  }) async* {
+    throw failure!;
   }
 }
 
