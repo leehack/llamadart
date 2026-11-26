@@ -35,6 +35,19 @@ Backport the patch changelog import (PR3b) before the `0.22.0` prep.
   The Backport and parity checks verify the metadata. Close forward-port
   issues before the next minor prep. Never merge a release branch back into
   `main`.
+- Parity fails a backport whose source `main` later reverted, naming the
+  source, the revert and the backport. Backport the revert after the original
+  backport with `git cherry-pick -x <revert SHA>`, or re-apply the source on
+  `main` exactly. A revert declares `This reverts commit <full SHA>.` or
+  `Reverts leehack/llamadart#<N>`, or is the exact inverse patch; an
+  unresolved `Revert "` commit that shares a path with the source counts too.
+  To keep the backport instead, open a triaged forward-port issue and land one
+  release-branch commit that adds
+  `tool/release/retained_backports/<backport SHA>.json` and carries
+  `Forward-port: <issue URL>`. The file is one line of compact JSON with the
+  keys `backport`, `source`, `revert` (the current revert SHA) and `issue`
+  (the issue number) in that order. A later revert needs a new record. The
+  backport guard rejects a source reverted on `main`.
 - Classify each backport diff. For a high-risk exact backport of an audited
   main commit, run a delta audit covering patch equivalence, dependencies on
   the release branch, and CI at the backport head. An adapted high-risk

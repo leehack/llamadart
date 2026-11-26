@@ -13,6 +13,7 @@ const _repository = 'leehack/llamadart';
 const _mainRef = 'refs/remotes/origin/main';
 const _releasePrefix = 'refs/remotes/origin/release/';
 const _recoveryDirectory = 'tool/release/recoveries';
+const _retainedDirectory = 'tool/release/retained_backports';
 const _usage =
     'Usage: dart tool/release/patch_branch.dart backport-guard --event\n'
     '   or: dart tool/release/patch_branch.dart parity --main REV '
@@ -61,6 +62,8 @@ final _forwardLink = RegExp(
       _repository +
       r'/issues/([1-9][0-9]*)$',
 );
+final _revertedCommit = RegExp(r'^This reverts commit ([a-f0-9]{40})\.$');
+final _revertedPr = RegExp('^Reverts $_repository#([1-9][0-9]*)\$');
 final _recoveryPath = RegExp('^$_recoveryDirectory/([a-f0-9]{40})\\.json\$');
 
 Future<void> main(List<String> args) async {
@@ -176,6 +179,12 @@ Future<String> _guard(_Git git, Object? event, GithubLookup lookup) async {
   final source = metadata.source!;
   final number = metadata.pr!;
   history.requireSource(line, source);
+  if (await history.revertOf(line, source) case final revert?) {
+    throw FormatException(
+      'Main commit $source ${revert.describe}. Backport it only after main '
+      're-applies it exactly.',
+    );
+  }
   final mainCommit = readLandedReleaseCommit(git.directory, source);
   _requirePrNumber(mainCommit.subject, number, source);
   final authored = body as String;
@@ -467,15 +476,17 @@ class _ParityOptions {
 
 class _MainHistory {
   _MainHistory(this.git, String revision) : tip = git.resolve(revision) {
-    positions = {
-      for (final (index, sha) in git.firstParents(tip).indexed) sha: index,
-    };
+    chain = git.firstParents(tip);
+    positions = {for (final (index, sha) in chain.indexed) sha: index};
   }
 
   final _Git git;
   final String tip;
+  late final List<String> chain;
   late final Map<String, int> positions;
   final _minorTags = <String, String>{};
+  final _scans = <String, Future<_Scan>>{};
+  final _reverts = <String, Future<_Revert?>>{};
 
   String minor(String line) => _minorTags.putIfAbsent(line, () {
     final String sha;
@@ -504,6 +515,103 @@ class _MainHistory {
       throw FormatException('$source is already included in v$line.0.');
     }
   }
+
+  Future<_Revert?> revertOf(String line, String source) =>
+      _reverts[source] ??= _findRevert(line, source);
+
+  Future<_Scan> _scan(String line) => _scans[line] ??= () async {
+    final range = '${minor(line)}..$tip';
+    final forward = git.patchIds(range);
+    final inverse = git.patchIds(range, inverse: true);
+    return _Scan(git.messages(range), await forward, await inverse);
+  }();
+
+  Future<_Revert?> _findRevert(String line, String source) async {
+    final scan = await _scan(line);
+    final sourcePatch = scan.patches[source];
+    final carriers = {source};
+    Set<String>? sourcePaths;
+    _Revert? revert;
+    for (final sha in chain.take(positions[source]!).toList().reversed) {
+      final message = scan.messages[sha]!;
+      if (revert != null) {
+        if (_same(scan.patches[sha], sourcePatch) ||
+            _same(scan.inverses[sha], scan.patches[revert.sha])) {
+          carriers.add(sha);
+          revert = null;
+        }
+        continue;
+      }
+      final numbers = {
+        for (final carrier in carriers)
+          ?_prSuffix.firstMatch(scan.messages[carrier]!.subject)?[1],
+      };
+      if (message.commits.any(carriers.contains) ||
+          message.pullRequests.any(numbers.contains) ||
+          carriers.any(
+            (carrier) => _same(scan.inverses[sha], scan.patches[carrier]),
+          )) {
+        revert = _Revert(sha, unresolved: false);
+      } else if (message.revertLike &&
+          !message.commits.any(git.hasCommit) &&
+          !message.pullRequests.any(scan.pullRequests.contains) &&
+          (sourcePaths ??= git.changedPaths(
+            source,
+          )).intersection(git.changedPaths(sha)).isNotEmpty) {
+        revert = _Revert(sha, unresolved: true);
+      }
+    }
+    return revert;
+  }
+}
+
+bool _same(String? left, String? right) => left != null && left == right;
+
+class _Revert {
+  const _Revert(this.sha, {required this.unresolved});
+
+  final String sha;
+  final bool unresolved;
+
+  String get describe => unresolved
+      ? 'shares paths with $sha, an unresolved revert on main'
+      : 'was reverted on main by $sha';
+}
+
+class _Message {
+  _Message(this.subject, String body)
+    : commits = {},
+      pullRequests = {},
+      revertLike =
+          subject.startsWith('Revert "') ||
+          body.contains('This reverts commit ') {
+    for (final line in _lines(body)) {
+      if (_revertedCommit.firstMatch(line)?[1] case final commit?) {
+        commits.add(commit);
+      }
+      if (_revertedPr.firstMatch(line)?[1] case final number?) {
+        pullRequests.add(number);
+      }
+    }
+  }
+
+  final String subject;
+  final Set<String> commits;
+  final Set<String> pullRequests;
+  final bool revertLike;
+}
+
+class _Scan {
+  _Scan(this.messages, this.patches, this.inverses)
+    : pullRequests = {
+        for (final message in messages.values)
+          ?_prSuffix.firstMatch(message.subject)?[1],
+      };
+
+  final Map<String, _Message> messages;
+  final Map<String, String> patches;
+  final Map<String, String> inverses;
+  final Set<String> pullRequests;
 }
 
 Future<String> _parity(
@@ -550,8 +658,17 @@ Future<String> _parity(
     Future<Map<String, String>>? mainPatches;
     final sources = <String, String>{};
     final patchIds = <String, String?>{};
+    final chains = {
+      for (final tip in tips[line]!.entries)
+        tip.key: git.firstParents(tip.value),
+    };
+    final trailerSources = <String, String?>{};
     for (final tip in tips[line]!.entries) {
-      final chain = git.firstParents(tip.value);
+      final chain = chains[tip.key]!;
+      final maximal = !tips[line]!.entries.any(
+        (other) =>
+            other.value != tip.value && chains[other.key]!.contains(tip.value),
+      );
       final boundary = chain.indexOf(start);
       if (boundary < 0) {
         failures.add(
@@ -603,6 +720,18 @@ Future<String> _parity(
               kind = patchIds[sha] == originalId
                   ? 'backport exact'
                   : 'backport adapted';
+              if (maximal) {
+                await _requireActiveSource(
+                  git,
+                  main,
+                  line,
+                  tip.value,
+                  window,
+                  sha,
+                  source,
+                  trailerSources,
+                );
+              }
             } else if (metadata.issue case final String issue) {
               if (options.requireClosed) {
                 await _verifyIssue(lookup, issue, requiredState: 'closed');
@@ -630,6 +759,98 @@ Future<String> _parity(
   if (failures.isNotEmpty) throw FormatException(failures.toSet().join('\n'));
   output.writeln('Patch branch parity verified.');
   return output.toString();
+}
+
+Future<void> _requireActiveSource(
+  _Git git,
+  _MainHistory main,
+  String line,
+  String tip,
+  List<String> window,
+  String backport,
+  String source,
+  Map<String, String?> trailerSources,
+) async {
+  final revert = await main.revertOf(line, source);
+  if (revert == null) return;
+  String? sourceOf(String sha) => trailerSources.putIfAbsent(sha, () {
+    try {
+      return _Metadata.parse(
+        readLandedReleaseCommit(git.directory, sha).rawBody,
+      ).source;
+    } on FormatException {
+      return null;
+    }
+  });
+  final later = window.skip(window.indexOf(backport) + 1);
+  if (later.any((sha) => sourceOf(sha) == revert.sha)) return;
+  if (_retained(git, tip, window, backport, source, revert)) return;
+  throw FormatException(
+    'Backport source $source ${revert.describe}. Backport ${revert.sha} after '
+    '$backport, or retain the backport with a bound Forward-port: record at '
+    '$_retainedDirectory/$backport.json.',
+  );
+}
+
+bool _retained(
+  _Git git,
+  String tip,
+  List<String> window,
+  String backport,
+  String source,
+  _Revert revert,
+) {
+  final path = '$_retainedDirectory/$backport.json';
+  final entry = git.text(['ls-tree', tip, '--', path]);
+  if (entry.isEmpty) return false;
+  if (!entry.startsWith('100644 blob ')) {
+    throw FormatException('$path must be a regular file.');
+  }
+  final record = git.text(['show', '$tip:$path']);
+  final Object? data;
+  try {
+    data = jsonDecode(record);
+  } on FormatException {
+    throw FormatException('$path is not valid JSON.');
+  }
+  if (data case {
+    'backport': final String recordedBackport,
+    'source': final String recordedSource,
+    'revert': final String recordedRevert,
+    'issue': final int issue,
+  }) {
+    if (recordedBackport != backport ||
+        recordedSource != source ||
+        issue <= 0 ||
+        record !=
+            '${jsonEncode({'backport': recordedBackport, 'source': recordedSource, 'revert': recordedRevert, 'issue': issue})}\n') {
+      throw FormatException('$path does not match its backport and source.');
+    }
+    if (recordedRevert != revert.sha) return false;
+    final last = git.lines([
+      'rev-list',
+      '-1',
+      '--first-parent',
+      '--full-history',
+      tip,
+      '--',
+      path,
+    ]);
+    final position = window.indexOf(backport);
+    if (last.length != 1 || window.indexOf(last.single) <= position) {
+      throw FormatException('$path was not recorded after $backport.');
+    }
+    final bound = _Metadata.parse(
+      readLandedReleaseCommit(git.directory, last.single).rawBody,
+    ).issue;
+    if (bound != issue.toString()) {
+      throw FormatException(
+        '$path needs a Forward-port: link to issue #$issue in ${last.single}.',
+      );
+    }
+    return true;
+  }
+  throw FormatException('$path is not a retained backport record.');
 }
 
 Map<String, String> _recoveries(
@@ -805,9 +1026,43 @@ class _Git {
     if (excluding != null) ':(exclude,literal)$excluding',
   ]);
 
+  bool hasCommit(String sha) {
+    try {
+      resolve(sha);
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
+
+  Set<String> changedPaths(String sha) => text([
+    'diff',
+    '--no-renames',
+    '--name-only',
+    '-z',
+    '$sha^',
+    sha,
+    '--',
+  ]).split('\x00').where((path) => path.isNotEmpty).toSet();
+
+  Map<String, _Message> messages(String range) {
+    final fields = text([
+      'log',
+      '--first-parent',
+      '-z',
+      '--format=%H%x00%s%x00%b',
+      range,
+    ]).split('\x00');
+    return {
+      for (var index = 0; index + 2 < fields.length; index += 3)
+        fields[index]: _Message(fields[index + 1], fields[index + 2]),
+    };
+  }
+
   Future<Map<String, String>> patchIds(
     String range, {
     bool firstParent = true,
+    bool inverse = false,
   }) async {
     final log = await Process.start('git', [
       'log',
@@ -823,6 +1078,7 @@ class _Git {
       '--no-renames',
       '--binary',
       '--full-index',
+      if (inverse) ...['-R', '--src-prefix=b/', '--dst-prefix=a/'],
       '-p',
       range,
       '--',

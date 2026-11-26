@@ -33,6 +33,19 @@ another session.
 - [packages/genkit_llamadart] Update the adapter example.
 ''';
 const _forward = 'Forward-port: https://github.com/$_repo/issues/61';
+const _retained = 'tool/release/retained_backports';
+
+String _revertBody(String sha) =>
+    '## Summary\n\nThis reverts commit $sha.\n\n'
+    '## Changelog\n\nN/A: Reverts a regression.\n';
+
+String _record(
+  String backport,
+  String source,
+  String revert, {
+  Object issue = 61,
+}) =>
+    '${jsonEncode({'backport': backport, 'source': source, 'revert': revert, 'issue': issue})}\n';
 
 String _metadata(String sha, {int pr = 51}) =>
     'Backport of https://github.com/$_repo/pull/$pr\n'
@@ -703,6 +716,298 @@ void main() {
     );
   });
 
+  group('reverted backport sources', () {
+    late String source;
+    setUp(() => source = repo.mainFix());
+
+    Future<void> expectFlagged(String backport, String revert) => expectLater(
+      repo.parity(),
+      throwsA(
+        allOf(
+          _failure(backport),
+          _failure('Backport source $source'),
+          _failure(revert),
+        ),
+      ),
+    );
+
+    test('flags a declared revert', () async {
+      final revert = repo.mainRevert(source);
+      repo.checkoutRelease();
+      final backport = repo.backport(source);
+      await expectFlagged(backport, revert);
+      expect(repo.requests, isEmpty);
+    });
+
+    test('flags an undeclared exact inverse', () async {
+      final revert = repo.mainRevert(
+        source,
+        subject: 'Remove the fix (#59)',
+        body: '',
+      );
+      repo.checkoutRelease();
+      await expectFlagged(repo.backport(source), revert);
+    });
+
+    for (final (name, body) in [
+      ('a commit', 'This reverts commit SOURCE.'),
+      ('a pull request', 'Reverts $_repo#51'),
+    ]) {
+      test('flags a drifted revert declared by $name', () async {
+        repo.mainCommit('Edit the fix (#56)', file: 'fix', content: 'more\n');
+        final revert = repo.mainCommit(
+          'Undo the fix (#59)',
+          body: body.replaceAll('SOURCE', source),
+          file: 'fix',
+          content: 'drifted\n',
+        );
+        repo.checkoutRelease();
+        await expectFlagged(repo.backport(source), revert);
+      });
+    }
+
+    test('keeps a backport exact when main reverts another commit', () async {
+      final other = repo.mainCommit('Other change (#57)', file: 'other');
+      repo.mainRevert(other, subject: 'Revert "Other change (#57)" (#58)');
+      repo.mainCommit(
+        'Undo another change (#60)',
+        body: 'Reverts $_repo#57',
+        file: 'other',
+        content: 'again\n',
+      );
+      repo.checkoutRelease();
+      final backport = repo.backport(source);
+      expect(await repo.parity(), contains('$backport backport exact'));
+    });
+
+    test('accepts an exact re-apply and flags a later revert', () async {
+      final first = repo.mainRevert(source);
+      final restore = repo.mainRevert(
+        first,
+        subject: 'Restore the fix (#60)',
+        body: _revertBody(first),
+      );
+      repo.checkoutRelease();
+      final backport = repo.backport(source);
+      expect(await repo.parity(), contains('$backport backport exact'));
+      repo.git(['checkout', '-q', 'main']);
+      final second = repo.mainRevert(
+        restore,
+        subject: 'Revert "Restore the fix (#60)" (#61)',
+      );
+      repo.git(['checkout', '-q', 'release/1.0.x']);
+      repo.retain(backport, _record(backport, source, first));
+      await expectLater(
+        repo.parity(),
+        throwsA(allOf(_failure(backport), _failure(second))),
+      );
+    });
+
+    test('accepts an exact restore of a drifted revert', () async {
+      repo.mainCommit('Edit the fix (#56)', file: 'fix', content: 'more\n');
+      final revert = repo.mainCommit(
+        'Undo the fix (#59)',
+        body: 'This reverts commit $source.',
+        file: 'fix',
+        content: 'drifted\n',
+      );
+      repo.mainRevert(
+        revert,
+        subject: 'Restore the fix (#60)',
+        body: _revertBody(revert),
+      );
+      repo.checkoutRelease();
+      final backport = repo.backport(source);
+      expect(await repo.parity(), contains('$backport backport exact'));
+    });
+
+    test('keeps an adapted re-land flagged', () async {
+      final revert = repo.mainRevert(source);
+      repo.mainCommit(
+        'Re-land the fix (#60)',
+        body: 'This reverts commit $revert.',
+        file: 'fix',
+        content: 'adapted\n',
+      );
+      repo.checkoutRelease();
+      await expectFlagged(repo.backport(source), revert);
+    });
+
+    for (final (name, remediate, passes) in [
+      ('accepts a backport of the revert after the backport', true, true),
+      ('flags a backport of the revert before the backport', false, false),
+    ]) {
+      test(name, () async {
+        final revert = repo.mainRevert(source, subject: 'Revert fix (#59)');
+        repo.checkoutRelease();
+        String undo() => repo.backport(
+          revert,
+          body: _backport(revert, pr: 59, body: _revertBody(source)),
+          file: 'undo',
+        );
+        late String backport;
+        if (remediate) {
+          backport = repo.backport(source);
+          undo();
+        } else {
+          undo();
+          backport = repo.backport(source);
+        }
+        if (passes) {
+          expect(await repo.parity(), contains('$backport backport exact'));
+          expect(repo.requests, isEmpty);
+        } else {
+          await expectFlagged(backport, revert);
+        }
+      });
+    }
+
+    test('accepts a bound retained backport record', () async {
+      final revert = repo.mainRevert(source);
+      repo.checkoutRelease();
+      final backport = repo.backport(source);
+      final record = repo.retain(backport, _record(backport, source, revert));
+      final output = await repo.parity();
+      expect(output, contains('$backport backport exact'));
+      expect(output, contains('$record forward-port #61'));
+      expect(repo.requests, isEmpty);
+      await expectLater(
+        repo.parity(closed: true),
+        throwsA(_failure('issue #61 is open')),
+      );
+      repo.issue = {'number': 61, 'state': 'closed'};
+      expect(await repo.parity(closed: true), contains(backport));
+    });
+
+    for (final (name, record, diagnostic) in [
+      (
+        'another backport',
+        (String b, String r) => _record(r, source, r),
+        'does not match',
+      ),
+      (
+        'another source',
+        (String b, String r) => _record(b, b, r),
+        'does not match',
+      ),
+      (
+        'another revert',
+        (String b, String r) => _record(b, source, b),
+        'reverted on main',
+      ),
+      (
+        'another issue',
+        (String b, String r) => _record(b, source, r, issue: 62),
+        'Forward-port',
+      ),
+      (
+        'a zero issue',
+        (String b, String r) => _record(b, source, r, issue: 0),
+        'does not match',
+      ),
+      (
+        'a string issue',
+        (String b, String r) => _record(b, source, r, issue: '61'),
+        'not a retained',
+      ),
+      (
+        'no trailing newline',
+        (String b, String r) => _record(b, source, r).trim(),
+        'does not match',
+      ),
+      (
+        'reordered keys',
+        (String b, String r) =>
+            '{"source":"$source","backport":"$b","revert":"$r","issue":61}\n',
+        'does not match',
+      ),
+      ('invalid JSON', (String b, String r) => 'not json\n', 'not valid JSON'),
+    ]) {
+      test('rejects a retained record with $name', () async {
+        final revert = repo.mainRevert(source);
+        repo.checkoutRelease();
+        final backport = repo.backport(source);
+        repo.retain(backport, record(backport, revert));
+        await expectLater(
+          repo.parity(),
+          throwsA(allOf(_failure(backport), _failure(diagnostic))),
+        );
+      });
+    }
+
+    test('rejects a record whose commit is not bound to its issue', () async {
+      final revert = repo.mainRevert(source);
+      repo.checkoutRelease();
+      final backport = repo.backport(source);
+      repo.retain(
+        backport,
+        _record(backport, source, revert),
+        body: 'Forward-port: https://github.com/$_repo/issues/62',
+      );
+      await expectLater(
+        repo.parity(),
+        throwsA(allOf(_failure(backport), _failure('issue #61'))),
+      );
+    });
+
+    for (final (name, subject, path, passes) in [
+      ('shares a path', 'Revert "Unknown change (#70)"', 'fix', false),
+      ('shares no path', 'Revert "Unknown change (#70)"', 'other', true),
+    ]) {
+      test('an unresolved revert that $name', () async {
+        final revert = repo.mainCommit(
+          subject,
+          body: 'This reverts commit ${'0' * 40}.',
+          file: path,
+          content: 'unknown\n',
+        );
+        repo.checkoutRelease();
+        final backport = repo.backport(source);
+        if (passes) {
+          expect(await repo.parity(), contains('$backport backport exact'));
+        } else {
+          await expectFlagged(backport, revert);
+        }
+      });
+    }
+
+    test('all-lines parity checks only the maximal tip', () async {
+      final revert = repo.mainRevert(source, subject: 'Revert fix (#59)');
+      repo.checkoutRelease();
+      final backport = repo.backport(source);
+      repo.prep('1.0.1', pr: 52);
+      repo.git(['tag', 'v1.0.1']);
+      repo.git(['update-ref', _release, 'HEAD']);
+      final failure = allOf(
+        _failure('release/1.0.x: $backport'),
+        _failure(revert),
+      );
+      await expectLater(repo.parity(all: true), throwsA(failure));
+      repo.backport(
+        revert,
+        body: _backport(revert, pr: 59, body: _revertBody(source)),
+        file: 'undo',
+      );
+      repo.git(['update-ref', _release, 'HEAD']);
+      expect(await repo.parity(all: true), contains('$backport backport'));
+    });
+
+    test('the backport guard follows the main revert state', () async {
+      final revert = repo.mainRevert(source);
+      await expectLater(
+        repo.guard(_backport(source)),
+        throwsA(allOf(_failure(source), _failure(revert))),
+      );
+      repo.mainRevert(
+        revert,
+        subject: 'Restore the fix (#60)',
+        body: _revertBody(revert),
+      );
+      expect(await repo.guard(_backport(source)), contains('verified'));
+      expect(repo.requests, ['repos/$_repo/pulls/51']);
+    });
+  });
+
   test('a false cherry-pick trailer cannot fall back to patch-id', () async {
     final sha = repo.mainFix();
     repo.checkoutRelease();
@@ -1017,6 +1322,40 @@ class _Repository {
     git(['update-ref', _main, sha]);
     return sha;
   }
+
+  String commitStaged(String subject, String body) {
+    git(['commit', '-qm', '$subject\n\n$body']);
+    return git(['rev-parse', 'HEAD']);
+  }
+
+  String mainCommit(
+    String subject, {
+    String body = '',
+    required String file,
+    String content = 'change\n',
+  }) {
+    final sha = commit(subject, body: body, file: file, content: content);
+    git(['update-ref', _main, sha]);
+    return sha;
+  }
+
+  String mainRevert(String sha, {String? subject, String? body}) {
+    git(['revert', '--no-commit', sha]);
+    final revert = commitStaged(
+      subject ?? 'Revert "Fix a regression (#51)" (#59)',
+      body ?? _revertBody(sha),
+    );
+    git(['update-ref', _main, revert]);
+    return revert;
+  }
+
+  String retain(String backport, String record, {String body = _forward}) =>
+      commit(
+        'Retain the backport',
+        body: body,
+        file: '$_retained/$backport.json',
+        content: record,
+      );
 
   void anchorPrepBase(String version) {
     line = version.substring(0, version.lastIndexOf('.'));
