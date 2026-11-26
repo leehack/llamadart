@@ -185,9 +185,10 @@ On the Web, the bridge also reports the effective
 `tokenizer.ggml.add_bos_token` (`"true"` or `"false"`). When it is `"true"`,
 llamadart removes the leading BOS text a template rendered, because the bridge
 adds BOS itself. When it is `"false"`, a BOS rendered by the template is sent
-as written. Older assets report none of the three keys: templates
-render the default BOS and EOS text (such as `<s>` and `</s>`), and the
-leading BOS is removed as if `add_bos_token` were `"true"`.
+as written. Older assets omit `bos_token` and `eos_token`, so templates render
+the default text (such as `<s>` and `</s>`), and report `add_bos_token` only when
+the GGUF stores it; an absent value is treated as `"true"`. Assets `v0.1.95+`
+always report all three.
 
 ### LiteRT-LM template registry
 

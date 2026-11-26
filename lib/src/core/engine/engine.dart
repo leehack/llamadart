@@ -3393,7 +3393,8 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   /// template (including its default ids for a vocabulary that sets none),
   /// empty when the id is negative or has no piece text. On the Web,
   /// `tokenizer.ggml.add_bos_token` (`"true"` or `"false"`) is the effective
-  /// add-BOS setting; older assets report none of these keys.
+  /// add-BOS setting. Older assets omit the BOS and EOS keys and report
+  /// `add_bos_token` only when the GGUF stores it.
   ///
   /// On native LiteRT-LM, `tokenizer.chat_template` is the template the
   /// runtime renders for text-only chats: the bundle's embedded template, or

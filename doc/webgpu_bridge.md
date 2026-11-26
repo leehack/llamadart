@@ -271,8 +271,9 @@ physical playback, intelligibility or speaker-reference fidelity.
   such token) and the effective `tokenizer.ggml.add_bos_token` (`"true"` or
   `"false"`). Chat templates render the model's own BOS and EOS text, and
   llamadart strips a leading BOS only when the bridge adds one. Older assets
-  omit the keys, so templates render the default `<s>` and `</s>` and the strip
-  is unconditional
+  omit `bos_token` and `eos_token`, so templates render the default `<s>` and
+  `</s>`, and carry `add_bos_token` only when the GGUF stores it; an absent
+  value is treated as `"true"`
   ([#1989](https://github.com/leehack/llamadart/issues/1989)).
 - `v0.1.94+`: JS-backed staging releases exclusively owned stream buffers
   after copying them. Memory64 WasmFS downloads reserve capacity when the

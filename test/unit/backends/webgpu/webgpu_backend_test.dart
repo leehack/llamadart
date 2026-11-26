@@ -6939,7 +6939,7 @@ void main() {
         expect(lastPrompt, startsWith('<|startoftext|><|im_start|>user\nhi'));
       });
 
-      test('is stripped once when the bridge adds BOS itself', () async {
+      test('is stripped when the bridge adds BOS itself', () async {
         await createWith(<String, String>{
           'tokenizer.ggml.bos_token': '<|startoftext|>',
           'tokenizer.ggml.add_bos_token': 'true',
