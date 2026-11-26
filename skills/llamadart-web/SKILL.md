@@ -216,7 +216,8 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   embeddings, tokenizer, LoRA, state or usage. Use GGUF for anything more.
 - Both WebGPU and LiteRT-LM Web reject non-default `frequencyPenalty`,
   `penaltyLastN`, `logitBias`, `typicalP`, `topNSigma`, XTC, dynamic
-  temperature and Mirostat settings with `LlamaUnsupportedException`.
+  temperature, Mirostat and DRY (`dryMultiplier`) settings with
+  `LlamaUnsupportedException`.
 - WebGPU and LiteRT-LM Web reject `GenerationParams.topLogprobs` with
   `LlamaUnsupportedException`; `supportsTokenLogprobs` is false. Use
   `scoreNextToken` on WebGPU to read next-token probabilities.

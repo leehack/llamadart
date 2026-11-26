@@ -266,7 +266,7 @@ description: >-
   A negative-infinity bias bans a token and throws `LlamaUnsupportedException`
   with a non-empty grammar or a thinking budget. A positive `dynatempRange`
   throws `LlamaUnsupportedException` with tools too, since their grammar
-  masks tokens.
+  masks tokens, as does a positive `dryMultiplier`.
 - Runtime limits: LiteRT-LM has no grammar enforcement, LiteRT-LM on web
   forwards tools only through `LlamaBackend.withTextHistory()`
   (`ToolChoice.required`, `parallelToolCalls` and tool-result `content`

@@ -1,7 +1,55 @@
 import 'package:llamadart/src/backends/backend.dart';
+import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('requestedSamplerControls dry', () {
+    test('reports DRY only while dryMultiplier is nonzero', () {
+      expect(requestedSamplerControls(const GenerationParams()), isEmpty);
+      expect(
+        requestedSamplerControls(const GenerationParams(dryMultiplier: 0.8)),
+        {SamplerControl.dry},
+      );
+      expect(
+        requestedSamplerControls(const GenerationParams(dryMultiplier: -1)),
+        {SamplerControl.dry},
+      );
+      expect(
+        requestedSamplerControls(
+          const GenerationParams(dryMultiplier: double.nan),
+        ),
+        {SamplerControl.dry},
+      );
+    });
+
+    test('ignores tuning values left behind by disabling DRY', () {
+      const on = GenerationParams(
+        dryMultiplier: 0.8,
+        dryBase: 2,
+        dryAllowedLength: 4,
+        dryPenaltyLastN: 128,
+        drySequenceBreakers: ['.'],
+      );
+      final off = on.copyWith(dryMultiplier: 0);
+      expect(requestedSamplerControls(off), isEmpty);
+      expect(
+        () => rejectUnsupportedSamplerControls(off, 'WebGPU'),
+        returnsNormally,
+      );
+      expect(
+        () => rejectUnsupportedSamplerControls(on, 'WebGPU'),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('WebGPU'), contains('dry')),
+          ),
+        ),
+      );
+    });
+  });
+
   group('BackendPerfContextData', () {
     test('computes speculative acceptance rate when counts are available', () {
       const perf = BackendPerfContextData(

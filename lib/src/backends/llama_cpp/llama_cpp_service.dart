@@ -124,6 +124,20 @@ const String _dynamicTemperatureWithMasking =
     'llama.cpp can then select a masked token. Use a fixed temp or remove '
     'them.';
 
+const String _dryWithMasking =
+    'GenerationParams.dryMultiplier cannot be combined with a grammar '
+    '(including one from tools or responseFormat) or a thinking budget: the '
+    'penalty can leave no valid candidate. Remove them or set dryMultiplier '
+    'to 0.';
+
+// llama.cpp's own limits for DRY sequence breakers: it truncates a longer
+// one, which can cut a multi-byte character, and ignores any beyond the cap.
+const int _maxDryBreakers = 64;
+const int _maxDryBreakerBytes = 40;
+
+// llama.cpp reads these as 32-bit signed integers.
+const int _maxInt32 = 0x7fffffff;
+
 // With a lowest temperature below this, logits divided by a near-zero dynamic
 // temperature can overflow float32 and turn the probabilities into NaN.
 const double _minDynamicTemperature = 0.01;
@@ -3957,6 +3971,7 @@ class LlamaCppService {
         SamplerControl.xtc,
         SamplerControl.dynamicTemperature,
         SamplerControl.mirostat,
+        SamplerControl.dry,
       },
       tokenLogprobs: true,
       speculativeDecodingStrategies:
@@ -5678,6 +5693,82 @@ class LlamaCppService {
     }
   }
 
+  void _validateDrySampler(GenerationParams params) {
+    final multiplier = params.dryMultiplier;
+    if (multiplier == 0) return;
+
+    final multiplier32 = _float32(multiplier);
+    if (!(multiplier32 > 0 && multiplier32 <= 100)) {
+      throw LlamaArgumentException(
+        'GenerationParams.dryMultiplier must be 0 to disable DRY, or a '
+        'positive 32-bit float of at most 100.',
+        name: 'dryMultiplier',
+        invalidValue: multiplier,
+      );
+    }
+    final base32 = _float32(params.dryBase);
+    if (!(base32 >= 1 && base32 <= 100)) {
+      throw LlamaArgumentException(
+        'GenerationParams.dryBase must be a 32-bit float from 1 to 100.',
+        name: 'dryBase',
+        invalidValue: params.dryBase,
+      );
+    }
+    final allowed = params.dryAllowedLength;
+    if (allowed < 0) {
+      throw LlamaArgumentException(
+        'GenerationParams.dryAllowedLength must be 0 or greater.',
+        name: 'dryAllowedLength',
+        invalidValue: allowed,
+      );
+    }
+    final lastN = params.dryPenaltyLastN;
+    if (lastN < 1 || lastN > _maxInt32) {
+      throw LlamaArgumentException(
+        'GenerationParams.dryPenaltyLastN must be between 1 and $_maxInt32; '
+        'set dryMultiplier to 0 to disable DRY.',
+        name: 'dryPenaltyLastN',
+        invalidValue: lastN,
+      );
+    }
+    if (allowed >= lastN) {
+      throw LlamaArgumentException(
+        'GenerationParams.dryAllowedLength must be smaller than '
+        'dryPenaltyLastN, or DRY never applies.',
+        name: 'dryAllowedLength',
+        invalidValue: allowed,
+      );
+    }
+    final breakers = params.drySequenceBreakers;
+    if (breakers.toSet().length > _maxDryBreakers) {
+      throw LlamaArgumentException(
+        'GenerationParams.drySequenceBreakers must hold at most '
+        '$_maxDryBreakers distinct strings.',
+        name: 'drySequenceBreakers',
+        invalidValue: breakers.length,
+      );
+    }
+    for (final breaker in breakers) {
+      final bytes = utf8.encode(breaker);
+      if (bytes.isEmpty ||
+          bytes.length > _maxDryBreakerBytes ||
+          bytes.contains(0) ||
+          utf8.decode(bytes) != breaker) {
+        throw LlamaArgumentException(
+          'GenerationParams.drySequenceBreakers entries must be valid, '
+          'non-empty strings of at most $_maxDryBreakerBytes UTF-8 bytes '
+          'without NUL characters.',
+          name: 'drySequenceBreakers',
+          invalidValue: breaker,
+        );
+      }
+    }
+    if ((params.grammar?.isNotEmpty ?? false) ||
+        params.thinkingBudget != null) {
+      throw LlamaUnsupportedException(_dryWithMasking);
+    }
+  }
+
   // Float32 logit math overflows to -inf, which aborts a grammar-constrained
   // decode. Logit biases reach +-10000, so these bounds keep penalty scaling
   // and temperature division finite with margin.
@@ -5975,6 +6066,7 @@ class LlamaCppService {
       _validateSamplerValues(params);
       _validateSamplerControls(params, model.vocabSize, suppressedTokens);
       _validateSamplingShape(params, suppressedTokens);
+      _validateDrySampler(params);
       final topLogprobs = params.topLogprobs;
       if (topLogprobs != null &&
           (topLogprobs < 0 || topLogprobs > GenerationParams.maxTopLogprobs)) {
@@ -7672,6 +7764,38 @@ class LlamaCppService {
     llama_sampler_free(chain);
   }
 
+  Pointer<llama_sampler> _initDrySampler(
+    GenerationParams params,
+    Pointer<llama_vocab> vocab,
+    int nCtx,
+  ) {
+    final breakers = params.drySequenceBreakers;
+    final breakerPtrs = <Pointer<Utf8>>[];
+    final breakerArray = calloc<Pointer<Char>>(math.max(breakers.length, 1));
+    try {
+      for (final breaker in breakers) {
+        final ptr = breaker.toNativeUtf8();
+        breakerPtrs.add(ptr);
+        breakerArray[breakerPtrs.length - 1] = ptr.cast();
+      }
+      // The constructor copies the breakers into its own state.
+      return llama_sampler_init_dry(
+        vocab,
+        params.dryMultiplier,
+        params.dryBase,
+        params.dryAllowedLength,
+        math.min(params.dryPenaltyLastN, nCtx),
+        breakerArray,
+        breakers.length,
+      );
+    } finally {
+      for (final ptr in breakerPtrs) {
+        malloc.free(ptr);
+      }
+      calloc.free(breakerArray);
+    }
+  }
+
   /// Helper: Initializes the sampler chain.
   Pointer<llama_sampler> _initializeSampler(
     GenerationParams params,
@@ -7814,6 +7938,17 @@ class LlamaCppService {
       llama_sampler_chain_add(sampler, budgetSampler);
     } else if (grammarSampler != nullptr) {
       llama_sampler_chain_add(sampler, grammarSampler);
+    }
+
+    if (params.dryMultiplier != 0) {
+      final drySampler = _initDrySampler(params, vocab, nCtx);
+      if (drySampler == nullptr) {
+        _freeSamplerChain(sampler);
+        throw LlamaInferenceException(
+          'llama.cpp failed to initialize GenerationParams.dryMultiplier.',
+        );
+      }
+      llama_sampler_chain_add(sampler, drySampler);
     }
 
     final seed = params.seed ?? DateTime.now().millisecondsSinceEpoch;

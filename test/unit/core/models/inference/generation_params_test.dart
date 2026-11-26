@@ -23,6 +23,11 @@ void main() {
       mirostat: 2,
       mirostatTau: 4,
       mirostatEta: 0.2,
+      dryMultiplier: 0.8,
+      dryBase: 2,
+      dryAllowedLength: 3,
+      dryPenaltyLastN: 128,
+      drySequenceBreakers: const ['.', '!'],
       ignoreEos: true,
       grammarRoot: 'main',
       grammarLazy: true,
@@ -67,6 +72,15 @@ void main() {
     expect(copied.mirostat, 2);
     expect(copied.mirostatTau, 4);
     expect(copied.mirostatEta, 0.2);
+    expect(copied.dryMultiplier, 0.8);
+    expect(copied.dryBase, 2);
+    expect(copied.dryAllowedLength, 3);
+    expect(copied.dryPenaltyLastN, 128);
+    expect(copied.drySequenceBreakers, const ['.', '!']);
+    expect(
+      copied.copyWith(drySequenceBreakers: const []).drySequenceBreakers,
+      isEmpty,
+    );
     expect(copied.topLogprobs, isNull);
     final scored = copied.copyWith(topLogprobs: 5);
     expect(scored.topLogprobs, 5);
@@ -130,6 +144,15 @@ void main() {
     expect(params.mirostat, 0);
     expect(params.mirostatTau, 5.0);
     expect(params.mirostatEta, 0.1);
+    expect(params.dryMultiplier, 0.0);
+    expect(params.dryBase, 1.75);
+    expect(params.dryAllowedLength, 2);
+    expect(params.dryPenaltyLastN, 64);
+    expect(
+      params.drySequenceBreakers,
+      GenerationParams.defaultDrySequenceBreakers,
+    );
+    expect(GenerationParams.defaultDrySequenceBreakers, ['\n', ':', '"', '*']);
     expect(params.topLogprobs, isNull);
     expect(params.speculativeDecoding, isFalse);
     expect(params.speculativeDecodingConfig, isNull);

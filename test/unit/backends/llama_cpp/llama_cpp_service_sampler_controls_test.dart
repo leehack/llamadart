@@ -91,6 +91,7 @@ void main() {
       SamplerControl.xtc,
       SamplerControl.dynamicTemperature,
       SamplerControl.mirostat,
+      SamplerControl.dry,
     });
   });
 

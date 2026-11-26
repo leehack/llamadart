@@ -464,6 +464,11 @@ const params = GenerationParams(
   mirostat: 0,
   mirostatTau: 5.0,
   mirostatEta: 0.1,
+  dryMultiplier: 0.0,
+  dryBase: 1.75,
+  dryAllowedLength: 2,
+  dryPenaltyLastN: 64,
+  drySequenceBreakers: GenerationParams.defaultDrySequenceBreakers,
   topLogprobs: null,
   stopSequences: ['</s>'],
   thinkingBudget: null,
@@ -533,6 +538,29 @@ Important fields:
   top-P, min-P, XTC, then temperature. Invalid values throw
   `LlamaArgumentException` before decoding. Every value is checked as the
   32-bit float llama.cpp receives, so one that rounds to 0 or infinity throws.
+- `dryMultiplier`, `dryBase`, `dryAllowedLength`, `dryPenaltyLastN` and
+  `drySequenceBreakers`: the "Don't Repeat Yourself" (DRY) repetition penalty
+  on native llama.cpp. A `dryMultiplier` above 0 (at most 100; `llama-server`
+  suggests 0.8) turns it on. A token that would extend a sequence already
+  seen in the last `dryPenaltyLastN` tokens (1 or more, default 64, capped at
+  the context size; the prompt counts) beyond `dryAllowedLength` tokens (0 or
+  more, default 2, below `dryPenaltyLastN`) loses `dryMultiplier * dryBase ^
+  (length - dryAllowedLength)` from its logit, with `dryBase` from 1 to 100
+  (default 1.75). The penalty saturates near the largest 32-bit float, which
+  bans the token. A sequence breaker restarts the count: text on either side
+  of one is not a repeat, and a token that is a breaker by itself is never
+  penalized. `drySequenceBreakers` defaults to newline, `:`, `"` and `*`
+  (`GenerationParams.defaultDrySequenceBreakers`); an empty list uses none,
+  and a list holds at most 64 distinct non-empty strings of at most 40 UTF-8
+  bytes without NUL characters. DRY runs right after the penalties, before
+  top-n-sigma and the other samplers, and also with Mirostat. While
+  `dryMultiplier` is 0 the other DRY fields are ignored and not validated, so
+  `copyWith(dryMultiplier: 0)` turns DRY off. Invalid values throw
+  `LlamaArgumentException` before decoding, and a non-empty grammar
+  (including one from tools or `responseFormat`) or a thinking budget throws
+  `LlamaUnsupportedException`, because the penalty can leave no valid
+  candidate. Sampler setup scans the vocabulary for the breakers, so each
+  request that enables DRY pays for it.
 - `presencePenalty`: llama.cpp presence penalty (finite, -100 to 100 on native
   llama.cpp); `0.0` preserves the
   existing behavior. WebGPU applies it only with bridge assets whose
@@ -602,7 +630,7 @@ reject unsupported non-default options as described below.
 | --- | --- | --- | --- | --- | --- |
 | `penalty` | `supportsPenalty` | Yes | Yes | Runtime export resolves | No |
 | `presencePenalty` | `supportsPresencePenalty` | Yes | Bridge reports | Runtime export resolves | No |
-| `frequencyPenalty`, `penaltyLastN`, `logitBias`, `typicalP`, `topNSigma`, XTC, dynamic temperature, `mirostat` | `samplerControls` | Yes | No | No | No |
+| `frequencyPenalty`, `penaltyLastN`, `logitBias`, `typicalP`, `topNSigma`, XTC, dynamic temperature, `mirostat`, DRY | `samplerControls` | Yes | No | No | No |
 | `topLogprobs` | `supportsTokenLogprobs` | Yes, without speculative decoding | No | No | No |
 | `minP` | `supportsMinP` | Yes | Bridge reports | No | No |
 | `thinkingBudget` | `supportsThinkingBudget` | Runtime export resolves | Bridge reports | Runtime export resolves and the bundle declares a thinking channel | No |
