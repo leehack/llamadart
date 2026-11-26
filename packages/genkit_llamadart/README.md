@@ -18,7 +18,8 @@ embedding model. See [runtime support](https://github.com/leehack/llamadart/blob
 
 ## Install
 
-Requires Dart 3.12 or newer, Genkit 1.x and llamadart 0.21.0 or newer in the 0.21.x series.
+Requires Dart 3.12 or newer, Genkit 1.x and llamadart 0.21.0 or newer within the
+adapter's declared dependency range.
 
 ```bash
 dart pub add genkit genkit_llamadart
@@ -27,7 +28,8 @@ dart pub add genkit genkit_llamadart
 For Flutter apps, use `flutter pub add` instead. Follow the
 [llamadart installation guide](https://llamadart.leehack.com/) for runtime and
 platform setup. Apple apps using Swift Package Manager need the runtime
-companion matching their model family:
+companion for their model family at the same minor version as llamadart. For
+llamadart 0.21.x, use these commands.
 
 ```bash
 flutter pub add 'llamadart_llama_cpp_flutter:^0.21.0'
