@@ -76,7 +76,7 @@ void main() {
   void attach({
     required bool vision,
     required bool audio,
-    bool video = false,
+    bool? video = false,
     Abi? abi,
   }) {
     dir = Directory.systemTemp.createTempSync('llamadart_media_encoder_');
@@ -177,6 +177,30 @@ void main() {
         );
       });
     }
+  });
+
+  test('a runtime without the video probe is reported as version skew, not '
+      'a projector without a vision encoder', () async {
+    attach(vision: true, audio: false, video: null);
+
+    await expectLater(
+      send([LlamaVideoContent(path: '/tmp/clip.mp4')]),
+      throwsA(
+        isA<LlamaUnsupportedException>()
+            .having(
+              (e) => e.message,
+              'symbol',
+              contains('mtmd_helper_get_capabilities'),
+            )
+            .having((e) => e.message, 'version', contains('v0.8.0'))
+            .having(
+              (e) => e.message,
+              'not blamed on the projector',
+              isNot(contains('no vision encoder')),
+            ),
+      ),
+    );
+    expect(fake.videoProbeModels, isEmpty);
   });
 
   test('probes video capability with the projector model', () async {

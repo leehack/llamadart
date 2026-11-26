@@ -168,28 +168,67 @@ void main() {
     );
   });
 
+  Future<DynamicLibrary> compileFixture({
+    List<String> defines = const [],
+  }) async {
+    final fixture = path.join(moduleDirectory, fileName);
+    final compile = await Process.run(Platform.isWindows ? 'clang' : 'cc', [
+      if (Platform.isWindows) '-fuse-ld=lld',
+      Platform.isMacOS ? '-dynamiclib' : '-shared',
+      if (!Platform.isWindows) '-fPIC',
+      for (final define in defines) '-D$define',
+      'test/fixtures/mtmd_video_capabilities.c',
+      '-o',
+      fixture,
+    ]);
+    expect(compile.exitCode, 0, reason: '${compile.stdout}\n${compile.stderr}');
+    final library = DynamicLibrary.open(fixture);
+    addTearDown(library.close);
+    setDirectory(moduleDirectory);
+    expect(resolve(open: (_) => library), isNotNull);
+    return library;
+  }
+
+  // Seeds opaque pointers without calling the primary code asset or giving it
+  // ownership of the fixture's sentinel addresses.
+  ({
+    int projectorHandle,
+    Pointer<llama_model> model,
+    Pointer<mtmd_context> projector,
+  })
+  seedSplitMtmd() {
+    const modelHandle = 1;
+    const projectorHandle = 2;
+    final model = Pointer<llama_model>.fromAddress(0x1000);
+    final projector = Pointer<mtmd_context>.fromAddress(0x2000);
+    final wrapper =
+        owner.declarations[private('_LlamaModelWrapper')] as ClassMirror;
+    final mirror = reflect(service);
+    (mirror.getField(private('_models')).reflectee
+        as Map)[modelHandle] = wrapper
+        .newInstance(
+          Symbol.empty,
+          [model, LlamaCppObjectCalls.upstream],
+          {#vocabSize: 0, #suppressedTokens: const <int>[]},
+        )
+        .reflectee;
+    (mirror.getField(private('_modelToMtmd')).reflectee as Map)[modelHandle] =
+        projectorHandle;
+    (mirror.getField(private('_mtmdContexts')).reflectee
+            as Map)[projectorHandle] =
+        projector;
+    mirror.setField(private('_mtmdPrimarySymbolsUnavailable'), true);
+    return (
+      projectorHandle: projectorHandle,
+      model: model,
+      projector: projector,
+    );
+  }
+
   test(
     'split mtmd returns the by-value video flag for the model and projector',
     () async {
-      final fixture = path.join(moduleDirectory, fileName);
-      final compile = await Process.run(Platform.isWindows ? 'clang' : 'cc', [
-        if (Platform.isWindows) '-fuse-ld=lld',
-        Platform.isMacOS ? '-dynamiclib' : '-shared',
-        if (!Platform.isWindows) '-fPIC',
-        'test/fixtures/mtmd_video_capabilities.c',
-        '-o',
-        fixture,
-      ]);
-      expect(
-        compile.exitCode,
-        0,
-        reason: '${compile.stdout}\n${compile.stderr}',
-      );
-      final library = DynamicLibrary.open(fixture);
-      addTearDown(library.close);
-      setDirectory(moduleDirectory);
-      expect(resolve(open: (_) => library), isNotNull);
-
+      final library = await compileFixture();
       final nativeSetVideoEnabled = library
           .lookupFunction<Void Function(Bool), void Function(bool)>(
             'fixture_set_video_enabled',
@@ -204,37 +243,25 @@ void main() {
             Pointer<mtmd_context> Function(),
             Pointer<mtmd_context> Function()
           >('fixture_last_projector');
-
-      // Seed opaque pointers without calling the primary code asset or
-      // giving it ownership of the fixture's sentinel addresses.
-      const modelHandle = 1;
-      const projectorHandle = 2;
-      final model = Pointer<llama_model>.fromAddress(0x1000);
-      final projector = Pointer<mtmd_context>.fromAddress(0x2000);
-      final wrapper =
-          owner.declarations[private('_LlamaModelWrapper')] as ClassMirror;
-      final mirror = reflect(service);
-      (mirror.getField(private('_models')).reflectee
-          as Map)[modelHandle] = wrapper
-          .newInstance(
-            Symbol.empty,
-            [model, LlamaCppObjectCalls.upstream],
-            {#vocabSize: 0, #suppressedTokens: const <int>[]},
-          )
-          .reflectee;
-      (mirror.getField(private('_modelToMtmd')).reflectee as Map)[modelHandle] =
-          projectorHandle;
-      (mirror.getField(private('_mtmdContexts')).reflectee
-              as Map)[projectorHandle] =
-          projector;
-      mirror.setField(private('_mtmdPrimarySymbolsUnavailable'), true);
+      final seeded = seedSplitMtmd();
 
       for (final enabled in [true, false]) {
         nativeSetVideoEnabled(enabled);
-        expect(service.supportsVideo(projectorHandle), enabled);
-        expect(nativeLastModel(), model);
-        expect(nativeLastProjector(), projector);
+        expect(service.supportsVideo(seeded.projectorHandle), enabled);
+        expect(nativeLastModel(), seeded.model);
+        expect(nativeLastProjector(), seeded.projector);
       }
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
+    'split mtmd without mtmd_helper_get_capabilities reports unknown, not false',
+    () async {
+      await compileFixture(defines: const ['FIXTURE_OMIT_CAPABILITIES']);
+      final seeded = seedSplitMtmd();
+
+      expect(service.supportsVideo(seeded.projectorHandle), isNull);
     },
     timeout: const Timeout(Duration(minutes: 2)),
   );

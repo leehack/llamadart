@@ -29,8 +29,7 @@ class MockLlamaBackend
         BackendMultimodalSupport,
         BackendAvailability,
         BackendRuntimeDiagnostics,
-        BackendGpuMemoryFitReporting,
-        BackendVideoRuntimeSupport {
+        BackendGpuMemoryFitReporting {
   MockLlamaBackend({
     this.backendName = 'Mock',
     this.urlLoadingSupported = false,
@@ -44,8 +43,6 @@ class MockLlamaBackend
     this.modelLoadDelay,
     this.modelLoadFromUrlDelay,
     this.contextFreeDelay,
-    this.nativeVideoRuntimeSupported = false,
-    this.videoProbeError,
   });
 
   Object? modelLoadError;
@@ -84,10 +81,6 @@ class MockLlamaBackend
   Future<void>? modelLoadDelay;
   Future<void>? modelLoadFromUrlDelay;
   Future<void>? contextFreeDelay;
-  final bool? nativeVideoRuntimeSupported;
-  final Object? videoProbeError;
-  int? lastVideoProbeHandle;
-
   @override
   bool get isReady => _isReady;
 
@@ -275,15 +268,6 @@ class MockLlamaBackend
   Future<bool> supportsAudio(int mmContextHandle) async => false;
 
   @override
-  Future<bool?> supportsVideoRuntime(int mmContextHandle) async {
-    lastVideoProbeHandle = mmContextHandle;
-    if (videoProbeError case final error?) {
-      throw error;
-    }
-    return nativeVideoRuntimeSupported;
-  }
-
-  @override
   Future<({int total, int free})> getVramInfo() async =>
       (total: 8192, free: 4096);
 
@@ -296,6 +280,33 @@ class MockLlamaBackend
   }) async {
     return messages.map((m) => "${m['role']}: ${m['content']}").join('\n');
   }
+}
+
+class VideoProbeMockBackend extends MockLlamaBackend
+    implements BackendVideoRuntimeSupport {
+  VideoProbeMockBackend({
+    this.nativeVideoRuntimeSupported = false,
+    this.videoProbeError,
+  });
+
+  final bool? nativeVideoRuntimeSupported;
+  final Object? videoProbeError;
+  int? lastVideoProbeHandle;
+
+  @override
+  Future<bool?> supportsVideoRuntime(int mmContextHandle) async {
+    lastVideoProbeHandle = mmContextHandle;
+    if (videoProbeError case final error?) {
+      throw error;
+    }
+    return nativeVideoRuntimeSupported;
+  }
+}
+
+class LiteRtLmVideoMockBackend extends VideoProbeMockBackend
+    implements BackendRuntimeIdentity {
+  @override
+  LlamaRuntime? get runtime => LlamaRuntime.liteRtLm;
 }
 
 class DeferredEngineMockBackend extends MockLlamaBackend
@@ -1136,11 +1147,11 @@ class JsonSchemaThinkingMockBackend extends JsonSchemaMockBackend
 }
 
 void main() {
-  late MockLlamaBackend backend;
+  late VideoProbeMockBackend backend;
   late LlamaEngine engine;
 
   setUp(() {
-    backend = MockLlamaBackend();
+    backend = VideoProbeMockBackend();
     engine = LlamaEngine(backend);
   });
 
@@ -3173,7 +3184,9 @@ void main() {
     );
 
     test('video input remains unavailable when native probe is true', () async {
-      final videoBackend = MockLlamaBackend(nativeVideoRuntimeSupported: true);
+      final videoBackend = VideoProbeMockBackend(
+        nativeVideoRuntimeSupported: true,
+      );
       final videoEngine = LlamaEngine(videoBackend);
       try {
         await videoEngine.loadModel('qwen-test.gguf');
@@ -3203,7 +3216,9 @@ void main() {
     });
 
     test('backend without native probe receives generic guidance', () async {
-      final videoBackend = MockLlamaBackend(nativeVideoRuntimeSupported: null);
+      final videoBackend = VideoProbeMockBackend(
+        nativeVideoRuntimeSupported: null,
+      );
       final videoEngine = LlamaEngine(videoBackend);
       try {
         await videoEngine.loadModel('qwen-test.gguf');
@@ -3226,6 +3241,14 @@ void main() {
                 .having(
                   (error) => error.message,
                   'message',
+                  allOf(
+                    contains('mtmd_helper_get_capabilities'),
+                    contains('llamadart-native v0.8.0'),
+                  ),
+                )
+                .having(
+                  (error) => error.message,
+                  'message',
                   isNot(contains('FFmpeg')),
                 ),
           ),
@@ -3235,8 +3258,75 @@ void main() {
       }
     });
 
+    test(
+      'a backend with no video probe never gets projector guidance',
+      () async {
+        final webBackend = MockLlamaBackend();
+        final webEngine = LlamaEngine(webBackend);
+        try {
+          await webEngine.loadModel('qwen-test.gguf');
+
+          await expectLater(
+            webEngine
+                .generate(
+                  'describe',
+                  parts: [LlamaVideoContent(path: '/tmp/clip.mp4')],
+                )
+                .drain<void>(),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                allOf(
+                  contains('active backend'),
+                  isNot(contains('projector')),
+                  isNot(contains('multimodal context')),
+                ),
+              ),
+            ),
+          );
+          expect(webBackend.lastGenerationPrompt, isNull);
+        } finally {
+          await webEngine.dispose();
+        }
+      },
+    );
+
+    test('video input on LiteRT-LM names LiteRT-LM, not a projector', () async {
+      final liteBackend = LiteRtLmVideoMockBackend();
+      final liteEngine = LlamaEngine(liteBackend);
+      try {
+        await liteEngine.loadModel('qwen-test.litertlm');
+        expect(liteEngine.runtime, LlamaRuntime.liteRtLm);
+
+        await expectLater(
+          liteEngine
+              .generate(
+                'describe',
+                parts: [LlamaVideoContent(path: '/tmp/clip.mp4')],
+              )
+              .drain<void>(),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                startsWith('Video input is not consumable'),
+                contains('LiteRT-LM'),
+                isNot(contains('projector')),
+              ),
+            ),
+          ),
+        );
+        expect(liteBackend.lastGenerationPrompt, isNull);
+        expect(liteBackend.lastVideoProbeHandle, isNull);
+      } finally {
+        await liteEngine.dispose();
+      }
+    });
+
     test('video probe failure still produces generic typed error', () async {
-      final videoBackend = MockLlamaBackend(
+      final videoBackend = VideoProbeMockBackend(
         videoProbeError: StateError('missing optional probe'),
       );
       final videoEngine = LlamaEngine(videoBackend);

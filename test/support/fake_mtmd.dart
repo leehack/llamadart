@@ -117,10 +117,11 @@ final class FakeMtmd {
           audioBitmap(sampleCount),
       #supportsVision: (Pointer<mtmd_context> _) => vision,
       #supportsAudio: (Pointer<mtmd_context> _) => audio,
-      #supportsVideo: (Pointer<llama_model> model, Pointer<mtmd_context> _) {
-        videoProbeModels.add(model.address);
-        return video;
-      },
+      if (video != null)
+        #supportsVideo: (Pointer<llama_model> model, Pointer<mtmd_context> _) {
+          videoProbeModels.add(model.address);
+          return video!;
+        },
       #bitmapFree: (Pointer<mtmd_bitmap> bitmap) {
         freedBitmaps.add(bitmap.address);
       },
@@ -201,8 +202,9 @@ final class FakeMtmd {
   /// Whether the fake `mtmd_support_audio` reports an audio encoder.
   final bool audio;
 
-  /// Whether the fake `mtmd_helper_get_capabilities` reports video.
-  final bool video;
+  /// Whether the fake `mtmd_helper_get_capabilities` reports video; null
+  /// models a runtime that does not export the symbol.
+  final bool? video;
 
   /// Addresses of the models the fake projector was created for so far.
   final List<int> projectorModels = <int>[];

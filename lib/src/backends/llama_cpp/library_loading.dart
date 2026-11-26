@@ -617,7 +617,7 @@ class _MtmdApi {
   final _MtmdBitmapInitFromAudioDart bitmapInitFromAudio;
   final _MtmdSupportVisionDart supportsVision;
   final _MtmdSupportAudioDart supportsAudio;
-  final _MtmdSupportVideoDart supportsVideo;
+  final _MtmdSupportVideoDart? supportsVideo;
   final _MtmdBitmapFreeDart bitmapFree;
   final _MtmdTokenizeDart tokenize;
   final _MtmdHelperEvalChunksDart helperEvalChunks;
@@ -640,7 +640,7 @@ class _MtmdApi {
     required this.bitmapInitFromAudio,
     required this.supportsVision,
     required this.supportsAudio,
-    required this.supportsVideo,
+    this.supportsVideo,
     required this.bitmapFree,
     required this.tokenize,
     required this.helperEvalChunks,
@@ -661,7 +661,7 @@ class _MtmdApi {
     try {
       _MtmdLogSetDart? logSet;
       _MtmdLogSetDart? helperLogSet;
-      _MtmdSupportVideoDart supportsVideo = (_, _) => false;
+      _MtmdSupportVideoDart? supportsVideo;
       try {
         logSet = library.lookupFunction<_MtmdLogSetNative, _MtmdLogSetDart>(
           'mtmd_log_set',

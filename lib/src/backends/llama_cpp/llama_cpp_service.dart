@@ -5918,6 +5918,9 @@ class LlamaCppService {
           );
         }
         final nativeRuntimeSupportsVideo = supportsVideo(mmHandle);
+        if (nativeRuntimeSupportsVideo == null) {
+          throw LlamaUnsupportedException(_videoProbeMissingMessage);
+        }
         if (!nativeRuntimeSupportsVideo) {
           throw LlamaUnsupportedException(_videoUnreportedMessage());
         }
@@ -10505,6 +10508,12 @@ class LlamaCppService {
     return imageMagic || part is LlamaImageContent ? false : null;
   }
 
+  static const String _videoProbeMissingMessage =
+      'Video input cannot be inspected: the loaded native runtime does not '
+      'export mtmd_helper_get_capabilities, which needs llamadart-native '
+      'v0.8.0 or newer. Update the native runtime. Extract and send image '
+      'frames instead.';
+
   String _videoUnreportedMessage() {
     final platform = switch (_abi) {
       Abi.androidArm ||
@@ -10536,7 +10545,9 @@ class LlamaCppService {
   ///
   /// This is a behavioral probe. The helper symbol is present even when
   /// `MTMD_VIDEO` was compiled out, so symbol lookup alone is not sufficient.
-  bool supportsVideo(int mmContextHandle) {
+  /// Returns null when no loaded binding exports the probe (a runtime older
+  /// than llamadart-native v0.8.0), which is unknown rather than unsupported.
+  bool? supportsVideo(int mmContextHandle) {
     final mmCtx = _mtmdContexts[mmContextHandle];
     if (mmCtx == null) {
       return false;
@@ -10560,7 +10571,7 @@ class LlamaCppService {
     }
 
     final fallback = _resolveMtmdFallbackApi();
-    return fallback?.supportsVideo(model, mmCtx) ?? false;
+    return fallback?.supportsVideo?.call(model, mmCtx);
   }
 
   Pointer<llama_model>? _modelForMtmdContext(int mmContextHandle) {
