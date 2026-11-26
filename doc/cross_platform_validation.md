@@ -1898,12 +1898,15 @@ still required for every actual run.
 
 ### Native video input
 
-The pinned `llamadart-native` `v0.7.0-2` macOS, Linux and Windows archives are
-built with `LLAMA_SUBPROCESS`/`MTMD_VIDEO`, so `mtmd_helper_support_video`
-there reports whether the loaded projector has a vision encoder (an audio-only
-projector reports `false`). The Android and iOS archives are built without
-video, so it always reports `false`. FFmpeg/ffprobe is not packaged, and the
-public Dart path stays unsupported until frame-lifecycle validation exists.
+The pinned `llamadart-native` `v1.0.0-4` macOS, Linux and Windows archives are
+built with `LLAMA_SUBPROCESS`/`MTMD_VIDEO`, so
+`mtmd_helper_get_capabilities().video` there reports whether the loaded
+projector has a vision encoder (an audio-only projector reports `false`). The
+Android and iOS archives are built without video, so it always reports `false`.
+A runtime older than `llamadart-native` `v0.8.0` does not export that symbol;
+llamadart then reports the missing probe, not a projector or build fault.
+FFmpeg/ffprobe is not packaged, and the public Dart path stays unsupported
+until frame-lifecycle validation exists.
 Native LiteRT-LM direct media accepts image and audio only; WebGPU and Web
 LiteRT-LM have no validated video transport or frame-lifetime contract.
 `LlamaVideoContent` throws `LlamaUnsupportedException` naming either the

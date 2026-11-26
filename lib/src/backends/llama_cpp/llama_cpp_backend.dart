@@ -1539,7 +1539,7 @@ class NativeLlamaBackend
     _dispatchRequest(rp, SupportsVideoRequest(mmContextHandle, rp.sendPort));
     final res = await _receiveResponse(rp);
     if (res is ErrorResponse) throw _workerError(res);
-    return res as bool;
+    return res as bool?;
   }
 
   @override

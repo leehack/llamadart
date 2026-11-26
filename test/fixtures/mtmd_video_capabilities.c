@@ -31,6 +31,9 @@ EXPORT void fixture_set_video_enabled(bool enabled) { video_enabled = enabled; }
 EXPORT const struct llama_model *fixture_last_model(void) { return last_model; }
 EXPORT const struct mtmd_context *fixture_last_projector(void) { return last_projector; }
 
+// Compiled with -DFIXTURE_OMIT_CAPABILITIES to model a runtime that predates
+// mtmd_helper_get_capabilities.
+#ifndef FIXTURE_OMIT_CAPABILITIES
 EXPORT struct mtmd_helper_cap mtmd_helper_get_capabilities(
         const struct llama_model *model, const struct mtmd_context *projector) {
     last_model = model;
@@ -47,6 +50,7 @@ EXPORT struct mtmd_helper_cap mtmd_helper_get_capabilities(
         .audio_gen_spk_ref = !video_enabled,
     };
 }
+#endif
 
 // Fallback discovery requires these exports. This fixture exercises only
 // the capability ABI, so any call to the lookup-only stubs is an error.

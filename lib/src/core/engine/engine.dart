@@ -3501,10 +3501,10 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
 
   /// Whether video input is consumable through the public Dart generation API.
   ///
-  /// This remains false even if a custom native library was compiled with mtmd
-  /// video helpers: Dart does not yet own frame iteration, timestamp insertion,
-  /// cancellation, or lazy video-context cleanup. Use image frames explicitly
-  /// until that full contract is implemented.
+  /// This remains false even though the pinned desktop llama.cpp artifacts
+  /// carry the mtmd video helpers: Dart does not yet own frame iteration,
+  /// timestamp insertion, cancellation, or lazy video-context cleanup. Use
+  /// image frames explicitly until that full contract is implemented.
   Future<bool> get supportsVideo async => false;
 
   Future<void> _rejectUnsupportedVideoInput(
@@ -3514,7 +3514,23 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       return;
     }
 
-    bool? nativeRuntimeSupportsVideo;
+    if (runtime == LlamaRuntime.liteRtLm) {
+      throw LlamaUnsupportedException(
+        'Video input is not consumable through llamadart on LiteRT-LM: the '
+        'runtime accepts no video input. Extract and send image frames '
+        'instead.',
+      );
+    }
+
+    final candidate = backend;
+    if (candidate is! BackendVideoRuntimeSupport) {
+      throw LlamaUnsupportedException(
+        'Video input is not supported by the active backend. It does not '
+        'expose a consumable video transport or runtime capability probe. '
+        'Extract and send image frames instead.',
+      );
+    }
+
     final mmContextHandle = _mmContextHandle;
     if (mmContextHandle == null) {
       throw LlamaUnsupportedException(
@@ -3527,22 +3543,22 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       );
     }
 
-    final candidate = backend;
-    if (candidate is BackendVideoRuntimeSupport) {
-      try {
-        nativeRuntimeSupportsVideo =
-            await (candidate as BackendVideoRuntimeSupport)
-                .supportsVideoRuntime(mmContextHandle);
-      } catch (_) {
-        // A failed optional capability probe is an unsupported result. The
-        // generation request below still receives the typed public error.
-      }
+    bool? nativeRuntimeSupportsVideo;
+    try {
+      nativeRuntimeSupportsVideo =
+          await (candidate as BackendVideoRuntimeSupport).supportsVideoRuntime(
+            mmContextHandle,
+          );
+    } catch (_) {
+      // A failed optional capability probe is an unsupported result. The
+      // generation request below still receives the typed public error.
     }
 
     if (nativeRuntimeSupportsVideo == null) {
       throw LlamaUnsupportedException(
-        'Video input is not supported by the active backend. It does not '
-        'expose a consumable video transport or runtime capability probe. '
+        'Video input is not supported by the active backend: it reported no '
+        'video capability. A native runtime must export '
+        'mtmd_helper_get_capabilities (llamadart-native v0.8.0 or newer). '
         'Extract and send image frames instead.',
       );
     }
