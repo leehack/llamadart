@@ -11,6 +11,7 @@ import 'package:yaml/yaml.dart';
 
 import '../../../tool/release/collect_pr_changelog.dart';
 import '../../../tool/release/pr_changelog.dart';
+import '../../../tool/testing/check_released_changelog_sections.dart' as policy;
 import '../../support/dart_script_snapshot.dart';
 
 const _root = 'CHANGELOG.md';
@@ -190,15 +191,15 @@ const String webBridgeManifestSha256 =
 
 _Repo _repo() => _Repo.clone(_repoDirectory(), _seedRepo);
 
-_Repo _minorRepo() {
+_Repo _minorRepo({String version = '0.21.0'}) {
   final repo = _repo();
-  const history = '## 0.21.0\n\n- Minor release.\n\n$_oldRelease';
+  final history = '## $version\n\n- Minor release.\n\n$_oldRelease';
   repo.pr(2, 'N/A: Minor release.', {
-    'pubspec.yaml': 'name: llamadart\nversion: 0.21.0\n',
+    'pubspec.yaml': 'name: llamadart\nversion: $version\n',
     _root: '$_rootIntro$history',
     _docs: '$_docsIntro$history',
   });
-  repo.git(['tag', 'v0.21.0']);
+  repo.git(['tag', 'v$version']);
   return repo;
 }
 
@@ -733,6 +734,109 @@ void main() {
     );
   }
 
+  test('minor writer imports tagged patch bytes and binds late tags', () async {
+    final repo = _minorRepo(version: '1.0.0');
+    final through = repo.pr(3, '- Main change.');
+    repo.git(['switch', '-c', 'release/1.0.x', 'v1.0.0']);
+
+    String patch(int number, String path) =>
+        '## 1.0.$number\n\n'
+        "- Keep ${path == _root ? 'the ' : ''}default WebGPU bridge assets at "
+        '`v9.9.86` (unchanged from 1.0.0).\n'
+        '- Published café note $number.  \n\n';
+
+    String commitPatch(int number) {
+      final version = '1.0.$number';
+      return repo.pr(3 + number, 'N/A: Patch prep.', {
+        'pubspec.yaml': 'name: llamadart\nversion: $version\n',
+        for (final path in [_root, _docs])
+          path: repo
+              .git(['show', 'v1.0.0:$path'])
+              .replaceFirst('## 1.0.0\n', '${patch(number, path)}## 1.0.0\n'),
+      });
+    }
+
+    final first = commitPatch(1);
+    repo.git(['tag', '-a', 'v1.0.1', first, '-m', 'First patch']);
+    final second = commitPatch(2);
+    repo.git(['switch', 'main']);
+    final args = repo.args(version: '1.1.0', from: 'v1.0.0', through: through);
+    final oldReceipt = repo.file('.git/pr3b-receipt.md')
+      ..writeAsStringSync(_receiptBlock(await _collect(repo, args)));
+    expect(
+      await _collect(repo, [...args, '--verify-input', oldReceipt.path]),
+      contains('Release notes input verified.'),
+    );
+
+    repo.git(['tag', 'v1.0.2', second]);
+    final output = await _collect(repo, [...args, '--write']);
+    for (final path in [_root, _docs]) {
+      final text = repo.file(path).readAsStringSync();
+      final headings = RegExp(
+        r'^## (\S+)$',
+        multiLine: true,
+      ).allMatches(text).map((match) => match[1]);
+      expect(headings.take(4), ['1.1.0', '1.0.2', '1.0.1', '1.0.0']);
+      expect(text, contains('${patch(2, path)}${patch(1, path)}## 1.0.0\n'));
+    }
+    expect(
+      output.split('\n').where((line) => line.contains('"source":"patch-tag"')),
+      [
+        jsonEncode({'sha': second, 'source': 'patch-tag', 'tag': 'v1.0.2'}),
+        jsonEncode({'sha': first, 'source': 'patch-tag', 'tag': 'v1.0.1'}),
+      ],
+    );
+    await expectLater(
+      _collect(repo, [...args, '--verify-input', oldReceipt.path]),
+      throwsA(_formatError('Input-SHA256')),
+    );
+    final freshReceipt = repo.file('.git/pr3b-receipt.md')
+      ..writeAsStringSync(_receiptBlock(output));
+    expect(
+      await _collect(repo, [...args, '--verify-input', freshReceipt.path]),
+      contains('Release notes input verified.'),
+    );
+  });
+
+  test('imported patch bytes count toward the root archive boundary', () async {
+    final minor = '## 1.0.0\n\n- ${'x' * (256 * 1024 - 4096)}.\n\n';
+    final patch = '## 1.0.1\n\n- ${'y' * 5000}.\n\n';
+    final repo = _customRepo(previous: '1.0.0', history: minor);
+    const rootPreamble = 'Releases before 1.0.0 are in the archive.\n\n';
+    const archivePreamble =
+        'Releases of `llamadart` before 1.0.0, moved verbatim from root.\n\n';
+    const oldArchive = '## 0.8.0\n\n- Archived.\n';
+    final through = repo.pr(2, '- Main change.', {
+      _root: '$rootPreamble$minor',
+      _archive: '$archivePreamble$oldArchive',
+    });
+    repo.git(['switch', '-c', 'release/1.0.x', 'v1.0.0']);
+    repo.pr(3, 'N/A: Patch prep.', {
+      'pubspec.yaml': 'name: llamadart\nversion: 1.0.1\n',
+      _root: '$rootPreamble$patch',
+      _docs: '$_docsIntro$patch$minor',
+      _archive: '$archivePreamble$minor$oldArchive',
+    });
+    repo.git(['tag', 'v1.0.1']);
+    repo.git(['switch', 'main']);
+
+    await _collect(
+      repo,
+      repo.args(version: '1.1.0', from: 'v1.0.0', write: true),
+    );
+    final candidate = repo.commit('Minor prep', {
+      'pubspec.yaml': 'name: llamadart\nversion: 1.1.0\n',
+    });
+    final root = repo.file(_root).readAsStringSync();
+    expect(root, startsWith(rootPreamble.replaceFirst('1.0.0', '1.0.1')));
+    expect(root, endsWith(patch));
+    expect(
+      repo.file(_archive).readAsStringSync(),
+      archivePreamble.replaceFirst('1.0.0', '1.0.1') + minor + oldArchive,
+    );
+    expect(policy.checkReleasePrepTrees(repo.dir, through, candidate), isEmpty);
+  });
+
   for (final (label, tagVersion, fork, subject, path, accepted) in [
     (
       'off-chain patch cut',
@@ -785,6 +889,13 @@ void main() {
       repo.pr(4, '- Squash backport.');
       repo.pr(5, 'N/A: Patch prep.', {
         'pubspec.yaml': 'name: llamadart\nversion: $tagVersion\n',
+        for (final path in [_root, _docs])
+          path: repo
+              .git(['show', 'HEAD:$path'])
+              .replaceFirst(
+                '## 0.21.0\n',
+                '## $tagVersion\n\n- Published patch notes.\n\n## 0.21.0\n',
+              ),
       });
       repo.git(['tag', '-a', 'v$tagVersion', '-m', 'Annotated release']);
       repo.git(['switch', 'main']);
