@@ -580,6 +580,14 @@ void main() {
       false,
       0,
       false,
+      'Recovery version 0.20.3 does not match the patch base develop.',
+      false,
+      'develop',
+    ),
+    (
+      false,
+      0,
+      false,
       'does not identify the same-repository release/0.20.x prep',
       false,
       'release/0.20.x',
@@ -1414,6 +1422,7 @@ fi
       for (final args in [
         repo.args(write: true, verify: input.path),
         repo.args(candidate: repo.head),
+        repo.args(baseRef: ''),
       ]) {
         await expectLater(
           _collect(repo, args),
