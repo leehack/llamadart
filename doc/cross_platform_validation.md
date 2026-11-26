@@ -1779,7 +1779,8 @@ On macOS arm64 with Apple M4 Max Metal and LiteRT-LM `v0.20.0`, the
 `qwen3-litert-gpu-unicode` scenario returned `Hello! 😊` for the fixed token
 IDs and `Montréal 👋` on the first chat request. The admitted 614,236,160-byte
 legacy bundle (`555579ff2f4fd13379abe69c1c3ab5200f7338bc92471557f1d6614a6e5ab0b4`)
-returned `Hello!ĠðŁĺĬ` and `MontréalĠðŁĺĬ`, failing both exact assertions.
+returned `Hello!ĠðŁĺĬ` for the fixed token IDs and failed the exact C02 reply
+assertion.
 The corrected bundle also passed all 18 focused-runner assertions, including
 `C02.generate` after the quick sequence. That JIT run lacked portable-bundle
 provenance and remained unqualified.
