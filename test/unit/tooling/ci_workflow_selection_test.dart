@@ -803,7 +803,8 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
   });
 
   test('Linux package checks require each selected step to succeed', () async {
-    final jobs = readWorkflow('ci')['jobs'] as Map;
+    final workflow = readWorkflow('ci');
+    final jobs = workflow['jobs'] as Map;
     final aggregate = jobs['test-linux-web'] as Map;
     final folded = jobs['linux-package-checks'];
     expect(folded, isA<Map>(), reason: 'The aggregate needs the shared job.');
@@ -871,6 +872,25 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
         expect(step.containsKey('continue-on-error'), isFalse);
       }
     }
+    Map step(String id) => steps.singleWhere((step) => step['id'] == id);
+    final validationAnalyze = step('validation-analyze');
+    expect(
+      validationAnalyze['working-directory'],
+      'packages/llamadart_validation',
+    );
+    expect(validationAnalyze['run'], 'dart analyze --fatal-infos');
+    final parityCommand = step('parity-test')['run'] as String;
+    expect(parityCommand.split(RegExp(r'\s+')), contains('--fail-on-mismatch'));
+    final download = step('parity-model');
+    expect(download['env']['HF_TOKEN'], r'${{ secrets.HF_TOKEN }}');
+    for (final scope in [workflow, folded as Map, ...steps]) {
+      if (identical(scope, download)) continue;
+      expect(
+        scope['env']?['HF_TOKEN'],
+        isNull,
+        reason: scope['name'] as String?,
+      );
+    }
     final plan = await selected(['lib/llamadart.dart']);
     final outcomes = <String, Object?>{
       for (final id in stepGroups.values.expand((ids) => ids)) id: 'success',
@@ -920,6 +940,7 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
         steps.singleWhere((step) => '${step['run']}'.contains('flutter test'))
             as Map;
     expect(native['working-directory'], 'packages/llamadart_studio');
+    expect(native.containsKey('continue-on-error'), isFalse);
     for (final regression in [
       'macos_app_delegate_test.dart',
       'macos_static_semantics_test.dart',
@@ -931,6 +952,18 @@ for event,mode,oldflag,owner,attempt,cancel,good,main in itertools.product(('pus
         isTrue,
       );
     }
+  });
+
+  test('the Windows validation harness consumes its selector output', () {
+    final jobs = readWorkflow('ci')['jobs'] as Map;
+    expect(
+      jobs['changes']['outputs']['validation-harness-windows'],
+      r'${{ steps.select.outputs.validation-harness-windows }}',
+    );
+    expect(
+      jobs['validation-harness']['if'],
+      "needs.changes.outputs.validation-harness-windows == 'true'",
+    );
   });
 
   test('dependabot updates every independently resolved package', () {
