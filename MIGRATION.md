@@ -2,6 +2,16 @@
 
 This document covers the major breaking upgrade paths.
 
+## Unreleased: llama.cpp on an iOS simulator never uses Metal
+
+- An iOS simulator GPU reports `MTLGPUFamilyApple2`, and llama.cpp's Metal
+  kernels need `MTLGPUFamilyApple7`, so they returned incorrect output
+  ([#950](https://github.com/leehack/llamadart/issues/950)). `ComputeDevice.gpu`
+  now throws `LlamaUnsupportedException` there, and an explicit
+  `GpuBackend.metal` loads on the CPU with a warning instead of on Metal. Use
+  `ComputeDevice.auto` or `cpu` on a simulator, and test GPU inference on a
+  physical iOS device. iOS devices and macOS are unchanged.
+
 ## `0.20.x` -> `0.21.0`: Apple companions and LiteRT-LM
 
 - Upgrade core and all installed Apple SwiftPM companions together. The

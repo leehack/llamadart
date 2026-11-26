@@ -81,7 +81,12 @@ void main() {
             'gpuLayers': layers,
           }),
         );
-        if (preferredBackend != GpuBackend.auto &&
+        // Platform.environment does not expose SIMULATOR_UDID on iOS.
+        const onIosSimulator = bool.fromEnvironment('LLAMADART_IOS_SIMULATOR');
+        if (onIosSimulator) {
+          expect(selected.toLowerCase(), contains('cpu'));
+          expect(layers, 0);
+        } else if (preferredBackend != GpuBackend.auto &&
             preferredBackend != GpuBackend.cpu) {
           expect(selected.toLowerCase(), contains(preferredBackend.name));
           expect(layers, greaterThan(0));

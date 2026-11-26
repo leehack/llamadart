@@ -103,8 +103,8 @@ final decisions = await DecisionEngine.load(
   `ModelParams.device`: `ComputeDevice.auto` (the best GPU the backend loads,
   otherwise the CPU, and the CPU on Android, on an iOS simulator and on macOS
   x86_64), `cpu`, or `gpu`, which runs on a GPU (Vulkan on Android, Metal on
-  an iOS simulator and on macOS x86_64) or
-  throws `LlamaUnsupportedException` from the encoder load; `npu` is not
+  macOS x86_64) or throws `LlamaUnsupportedException` from the encoder load,
+  as it always does on an iOS simulator; `npu` is not
   supported. `threads` sets the CPU threads of the encoder and head; `0` keeps
   the runtime default (native llama.cpp uses 4, or the host's core count when
   lower).

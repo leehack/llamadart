@@ -48,7 +48,7 @@ Laya's `system_one` format (https://huggingface.co/convaiinnovations/laya):
   `ComputeDevice.auto` (best GPU, else CPU; CPU on Android, an iOS simulator
   and macOS x86_64), `cpu`, or `gpu` (Vulkan on Android, Metal on macOS
   x86_64; the encoder load throws `LlamaUnsupportedException`
-  when it would run on the CPU); `npu` is unsupported. `threads` sets the encoder and head CPU threads.
+  when it would run on the CPU, and always on an iOS simulator); `npu` is unsupported. `threads` sets the encoder and head CPU threads.
 - Read `await decisions.capabilities` for `isSupported`, `backendName` and
   `runtime`; show `unsupportedReason` when it is false.
 - Read `decisions.info.deviceName` for head placement. Native heads run on CPU
