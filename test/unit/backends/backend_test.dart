@@ -50,6 +50,33 @@ void main() {
     });
   });
 
+  test('names only leftover tuning for disabled unsupported samplers', () {
+    const params = GenerationParams(
+      xtcThreshold: 0.2,
+      dynatempRange: 0.5,
+      dynatempExponent: 2,
+      mirostatEta: 0.2,
+    );
+
+    expect(
+      () => rejectUnsupportedSamplerControls(params, 'WebGPU'),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          allOf(
+            contains('xtc, dynamicTemperature, mirostat'),
+            contains('xtcThreshold, mirostatEta'),
+            contains('reset'),
+            contains('defaults'),
+            isNot(contains('dynatempExponent')),
+            isNot(contains('mirostatTau')),
+          ),
+        ),
+      ),
+    );
+  });
+
   group('BackendPerfContextData', () {
     test('computes speculative acceptance rate when counts are available', () {
       const perf = BackendPerfContextData(

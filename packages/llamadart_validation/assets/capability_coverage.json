@@ -463,7 +463,7 @@
       ],
       "exemption": {
         "id": "native-extended-sampler-controls",
-        "reason": "The sampler_controls pack has no cases for typical-P, top-n-sigma, XTC, dynamic temperature or Mirostat. Synthetic GGUF VM tests check sampler-chain order, deterministic behavior, single-token grammars and pre-decode validation; VM and Chrome tests check unavailable runtimes. The pack follow-up adds model-backed reproducibility.",
+        "reason": "The sampler_controls pack has no cases for typical-P, top-n-sigma, XTC, dynamic temperature or Mirostat. Synthetic GGUF VM tests check sampler-chain order, deterministic behavior, single-token grammars and pre-decode validation; VM and Chrome tests check unavailable runtimes, and model-free VM tests cover the reset hints for disabled samplers. The pack follow-up adds model-backed reproducibility.",
         "issue": "https://github.com/leehack/llamadart/issues/2307"
       }
     },

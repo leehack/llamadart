@@ -217,7 +217,8 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
 - Both WebGPU and LiteRT-LM Web reject non-default `frequencyPenalty`,
   `penaltyLastN`, `logitBias`, `typicalP`, `topNSigma`, XTC, dynamic
   temperature, Mirostat and DRY (`dryMultiplier`) settings with
-  `LlamaUnsupportedException`.
+  `LlamaUnsupportedException`. If XTC, dynamic temperature or Mirostat is
+  disabled, reset the tuning fields named in the error to their defaults.
 - WebGPU and LiteRT-LM Web reject `GenerationParams.topLogprobs` with
   `LlamaUnsupportedException`; `supportsTokenLogprobs` is false. Use
   `scoreNextToken` on WebGPU to read next-token probabilities.

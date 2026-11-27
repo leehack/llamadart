@@ -2548,7 +2548,11 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       final resolvedParams = _snapshotLogitBias(draftParams);
       final samplerControls = requestedSamplerControls(resolvedParams);
       if (samplerControls.isNotEmpty) {
-        await _checkSamplerControls(samplerControls, requestEpoch);
+        await _checkSamplerControls(
+          resolvedParams,
+          samplerControls,
+          requestEpoch,
+        );
         if (request.isCancelled()) return;
       }
       if (resolvedParams.topLogprobs != null) {
@@ -2660,7 +2664,11 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       final resolvedParams = _snapshotLogitBias(draftParams);
       final samplerControls = requestedSamplerControls(resolvedParams);
       if (samplerControls.isNotEmpty) {
-        await _checkSamplerControls(samplerControls, requestEpoch);
+        await _checkSamplerControls(
+          resolvedParams,
+          samplerControls,
+          requestEpoch,
+        );
         if (request.isCancelled()) return;
       }
       if (resolvedParams.topLogprobs != null) {
@@ -3653,6 +3661,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
       : params.copyWith(logitBias: Map.unmodifiable(params.logitBias));
 
   Future<void> _checkSamplerControls(
+    GenerationParams params,
     Set<SamplerControl> requested,
     int requestEpoch,
   ) async {
@@ -3665,8 +3674,7 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     if (missing.isEmpty) return;
     final backendName = await _backendNameOf(candidate);
     throw LlamaUnsupportedException(
-      '$backendName does not support GenerationParams sampler controls: '
-      '${missing.map((control) => control.name).join(', ')}.',
+      unsupportedSamplerControlsMessage(params, backendName, missing),
     );
   }
 

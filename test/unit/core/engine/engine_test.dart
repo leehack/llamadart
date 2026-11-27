@@ -6141,6 +6141,40 @@ void main() {
     },
   );
 
+  test('engine names tuning left over after disabling samplers', () async {
+    final backend = LimitReportingMockBackend()..nativeChat = true;
+    final engine = LlamaEngine(backend);
+    addTearDown(engine.dispose);
+    await engine.loadModel('qwen-test.gguf');
+    const messages = [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+    ];
+
+    const on = GenerationParams(
+      xtcProbability: 0.5,
+      xtcThreshold: 0.2,
+      dynatempRange: 0.5,
+      dynatempExponent: 2,
+      mirostat: 2,
+      mirostatTau: 4,
+      mirostatEta: 0.2,
+    );
+    final off = on.copyWith(xtcProbability: 0, dynatempRange: 0, mirostat: 0);
+    final error = emitsError(
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        allOf(
+          contains('xtcThreshold, dynatempExponent, mirostatTau, mirostatEta'),
+          contains('reset'),
+          contains('defaults'),
+        ),
+      ),
+    );
+    await expectLater(engine.generate('hello', params: off), error);
+    await expectLater(engine.create(messages, params: off), error);
+  });
+
   group('LlamaEngine token log-probabilities', () {
     const messages = [
       LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
