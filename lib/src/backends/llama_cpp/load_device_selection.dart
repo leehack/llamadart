@@ -189,7 +189,7 @@ VulkanDeviceFacts? vulkanFactsOf(
 }
 
 /// Decides what a model load does about Vulkan devices below Vulkan 1.2 or,
-/// on [isAndroid], the known unsafe Adreno 750 driver.
+/// on [isAndroid], devices using Qualcomm proprietary Vulkan drivers.
 ///
 /// [usesGpu] is false for a load that offloads nothing, which never starts a
 /// device. [backendRegistry] is the ggml registry of an explicit GPU backend,
@@ -231,21 +231,24 @@ VulkanLoadDecision resolveVulkanLoadDecision({
   if (facts == null) return VulkanLoadDecision.unchanged;
 
   // Projector and decision-head GPU selection is independent of the model's
-  // list. Refuse GPU work if any registered Android device has this driver.
+  // list, so a registered Qualcomm Vulkan device can still be selected.
   if (isAndroid) {
     for (final device in devices.where((device) => device.isVulkan)) {
-      if (facts.any(
-        (fact) =>
-            fact.name == device.description &&
-            fact.isIntegratedGpu == (device.type == _typeIgpu) &&
-            fact.hasAdreno750DriverDefect,
-      )) {
+      final affected = facts
+          .where(
+            (fact) =>
+                fact.name == device.description &&
+                fact.isIntegratedGpu == (device.type == _typeIgpu) &&
+                fact.isQualcommProprietary,
+          )
+          .firstOrNull;
+      if (affected != null) {
         return VulkanLoadDecision._(
           unsupported:
-              '"${device.description}" (${device.name}) on Android driver '
-              '2150604839 has known llama.cpp Vulkan shader-compiler crashes '
-              'and incorrect quantized results. GPU work is excluded until '
-              'a native workaround and the model are qualified',
+              '"${affected.name}" (${device.name}) on Android uses Qualcomm '
+              'proprietary Vulkan driver ${affected.driverVersion}. This '
+              'driver family has known llama.cpp Vulkan shader-compiler '
+              'crashes and incorrect quantized results',
         );
       }
     }

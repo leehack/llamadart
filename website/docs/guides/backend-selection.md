@@ -171,10 +171,11 @@ never falls back to another device:
   no LiteRT-LM runtime.
 - `npu` is LiteRT-LM on Android only.
 
-Android llama.cpp excludes the known unsafe Adreno 750 driver `2150604839`.
-An explicit GPU request throws; automatic selection with a Vulkan preference
-falls back to CPU with a warning when no usable GPU remains. A native crash
-workaround does not establish correct inference for its quantized models.
+Android llama.cpp refuses GPU loads when a Qualcomm proprietary Vulkan
+device is registered, including loads that prefer another GPU backend.
+`ComputeDevice.gpu` throws `LlamaUnsupportedException`. A GPU attempt under
+`ComputeDevice.auto` falls back to CPU and logs a warning.
+See the [Android Vulkan driver check](../platforms/known-platform-issues#android).
 
 Native LiteRT-LM starts its runtime on the first call that needs it, such as
 the first generation or `tokenize`, so a GPU or NPU delegate that fails to

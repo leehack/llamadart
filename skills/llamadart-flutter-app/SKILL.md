@@ -205,9 +205,10 @@ or shipping runtimes the app does not use.
   `GpuBackend.opencl` throws. ggml-opencl admits only Adreno (and Intel) GPUs,
   not Mali. llama.cpp `ComputeDevice.auto` stays
   on the CPU there; Vulkan is experimental and device-dependent, so request
-  `ComputeDevice.gpu` only on devices the app has validated. Adreno 750
-  driver `2150604839` is excluded: an explicit GPU request throws; automatic
-  selection with a Vulkan preference falls back to CPU with a warning.
+  `ComputeDevice.gpu` only on devices the app has validated. When Android
+  registers a Qualcomm proprietary Vulkan device, llama.cpp refuses explicit
+  GPU loads even with another backend preference. A GPU attempt under
+  `ComputeDevice.auto` falls back to CPU with a warning.
   With `ComputeDevice.auto`, a bundled OpenCL backend without a device can
   fall back to registered Vulkan devices. The active backend reports `Vulkan`
   and uses the Vulkan settings even if devices below Vulkan 1.2 were filtered.

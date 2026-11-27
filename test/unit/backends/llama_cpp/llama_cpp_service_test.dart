@@ -7640,18 +7640,18 @@ void main() {
 
       for (final gpuLayers in [ModelParams.maxGpuLayers, -1]) {
         test(
-          'Android Adreno guard refuses explicit GPU and loads auto on CPU '
+          'Android Qualcomm Vulkan guard refuses explicit GPU and loads auto on CPU '
           'before a native model call can use the unsafe device ($gpuLayers layers)',
           () {
-            final adreno = entry('Vulkan0', description: 'Adreno (TM) 750');
+            final adreno = entry('Vulkan0', description: 'Adreno (TM) 740');
             const bad = VulkanDeviceFacts(
-              name: 'Adreno (TM) 750',
+              name: 'Adreno (TM) 740',
               deviceType: 2,
               instanceApiVersion: vulkan13,
               apiVersion: vulkan13,
               subgroupSize: 64,
               vendorId: 0x5143,
-              driverVersion: 2150604839,
+              driverVersion: 2150252615,
             );
             // Metal supplies the host's real GPU module; the injected registry
             // and facts supply Android's selected Vulkan device. No driver is
@@ -7671,7 +7671,7 @@ void main() {
                 isA<LlamaUnsupportedException>().having(
                   (e) => e.message,
                   'message',
-                  contains('driver 2150604839'),
+                  contains('driver 2150252615'),
                 ),
               ),
             );
@@ -7691,7 +7691,7 @@ void main() {
               warnings,
               contains(
                 allOf(
-                  contains('driver 2150604839'),
+                  contains('driver 2150252615'),
                   contains('so the model loaded on CPU with 0 GPU layers'),
                 ),
               ),
