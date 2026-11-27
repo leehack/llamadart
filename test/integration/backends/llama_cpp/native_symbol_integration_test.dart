@@ -676,7 +676,13 @@ void main() {
         isNotNull,
       );
       _expectDynamicLibraryExports(wrapper!, declarations.keys);
-      expect(llama_dart_model_fd_api_version(), 1);
+      // Looked up in the wrapper: Windows keeps it out of the primary asset
+      // that the generated binding resolves.
+      final fdApiVersion = ffi.DynamicLibrary.open(wrapper.path)
+          .lookupFunction<ffi.Uint32 Function(), int Function()>(
+            'llama_dart_model_fd_api_version',
+          );
+      expect(fdApiVersion(), 1);
     });
 
     test('model fd status wire values match the published header', () {
