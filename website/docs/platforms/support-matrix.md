@@ -229,6 +229,9 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Video | No | No | No | No |
 | Tool-result media | Images with a vision projector and a Hermes-style template (smoke-tested on macOS CPU and Metal with Qwen3.5-0.8B weights, a `qwen3vl_merger` projector and the Qwen3-VL template) | No | No | No |
 
+When XTC, dynamic temperature or Mirostat is disabled, unsupported runtimes
+name any non-default tuning fields to reset in the exception.
+
 Tool-result media are `LlamaToolResultContent.content` parts;
 `LlamaEngineCapabilities.toolResultMedia` reports them. Other formats, audio,
 video and URL-only images throw `LlamaUnsupportedException`, as do tool-role

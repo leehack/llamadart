@@ -44,9 +44,9 @@ runs during minor prep on `main`.
   backport with `git cherry-pick -x <revert SHA>`, or re-apply the source on
   `main` exactly. A revert declares `This reverts commit <full SHA>.` or
   `Reverts leehack/llamadart#<N>` on its own line, or is the exact inverse
-  patch. A `Revert "` subject or a body line starting with that declaration
-  whose target resolves to no commit or pull request counts as a revert of
-  any source it shares a path with.
+  patch. A well-formed SHA declaration counts only if its SHA identifies an
+  existing commit. A `Revert "` subject or a malformed `This reverts commit `
+  body line with no resolvable target triggers a shared-path check.
   To keep the backport instead, open a triaged forward-port issue and land one
   release-branch commit that adds
   `tool/release/retained_backports/<backport SHA>.json` and carries
@@ -54,6 +54,9 @@ runs during minor prep on `main`.
   keys `backport`, `source`, `revert` (the current revert SHA) and `issue`
   (the issue number) in that order. A later revert needs a new record. The
   backport guard rejects a source reverted on `main`.
+  For quoted titles ending in a PR number, the checks match the whole title
+  against earlier squash commit subjects and their titles without the squash
+  PR suffix. Multiple matches leave the title unresolved.
 - Classify each backport diff. For a high-risk exact backport of an audited
   main commit, run a delta audit covering patch equivalence, dependencies on
   the release branch, and CI at the backport head. An adapted high-risk

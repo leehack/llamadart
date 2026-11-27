@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 import '../../../tool/release/patch_branch.dart';
+import '../../../tool/testing/verify_release_docs_versions.dart';
 
 const _repo = 'leehack/llamadart';
 const _main = 'refs/remotes/origin/main';
@@ -326,6 +327,52 @@ void main() {
     }
   });
 
+  test(
+    'patch prep permits each current install doc and rejects an unlisted rename',
+    () async {
+      const unlisted = 'website/docs/getting-started/renamed-installation.md';
+      final docs = currentInstallDocPaths.toList();
+      _writePrepFiles(repo, '1.0.0', [...docs, unlisted]);
+      repo.anchorPrepBase('1.0.0');
+      repo.checkoutRelease();
+      _writePrepFiles(repo, '1.0.1', docs);
+      repo.prep('1.0.1', pr: 52);
+      repo.git(['tag', 'v1.0.1']);
+
+      expect(
+        await repo.guard(null, head: 'release/prep-1.0.1'),
+        contains('release prep'),
+      );
+      expect(await repo.parity(), contains('prep'));
+
+      repo.write(unlisted, 'Install version 1.0.1.\n');
+      repo.git(['add', unlisted]);
+      repo.git(['commit', '--amend', '--no-edit', '-q']);
+      repo.git(['tag', '-f', 'v1.0.1']);
+      await expectLater(
+        repo.guard(null, head: 'release/prep-1.0.1'),
+        throwsA(_failure(unlisted)),
+      );
+      await expectLater(repo.parity(), throwsA(_failure(unlisted)));
+    },
+  );
+
+  test('prep rejects a core patch from a different base minor', () async {
+    repo.write('pubspec.yaml', 'name: llamadart\nversion: 1.1.0\n');
+    repo.anchorPrepBase('1.0.0');
+    repo.checkoutRelease();
+    repo.prep('1.1.1', pr: 52);
+
+    await expectLater(
+      repo.guard(null, head: 'release/prep-1.1.1'),
+      throwsA(
+        _failure(
+          'Core pubspec.yaml must advance to the next patch on release/1.0.x',
+        ),
+      ),
+    );
+  });
+
   for (final (testName, before, after, docs) in [
     (
       'replays the 0.20.8 prep file set through guard and parity',
@@ -562,6 +609,43 @@ void main() {
         throwsA(_failure(_companionPubspec)),
       );
       await expectLater(repo.parity(), throwsA(_failure(_companionPubspec)));
+    });
+  }
+
+  for (final (name, version, constraint) in [
+    (
+      'a companion floor raise without a version bump',
+      '1.0.2',
+      '>=1.0.3 <1.1.0',
+    ),
+    (
+      'extra text before the companion range',
+      '1.0.3',
+      '>=1.0.0 >=1.0.3 <1.1.0',
+    ),
+    ('extra text after the companion range', '1.0.3', '>=1.0.3 <1.1.0 <1.2.0'),
+  ]) {
+    test('prep rejects $name', () async {
+      repo.write('pubspec.yaml', 'name: llamadart\nversion: 1.0.2\n');
+      _writeCoreFloor(repo, '1.0.2', '1.0.2', '1.1.0');
+      repo.anchorPrepBase('1.0.2');
+      repo.checkoutRelease();
+      repo.write(
+        _companionPubspec,
+        'name: $_companion\nversion: $version\ndependencies:\n'
+        "  llamadart: '$constraint'\n",
+      );
+      repo.prep('1.0.3', pr: 52);
+      repo.git(['tag', 'v1.0.3']);
+
+      final failure = throwsA(
+        _failure(
+          'Release prep may change only the version and raise the core floor '
+          'within the release line in $_companionPubspec.',
+        ),
+      );
+      await expectLater(repo.guard(null, head: 'release/prep-1.0.3'), failure);
+      await expectLater(repo.parity(), failure);
     });
   }
 
@@ -953,12 +1037,6 @@ void main() {
     for (final (name, subject, path, passes) in [
       ('shares a path', 'Revert "Unknown change (#70)"', 'fix', false),
       ('shares no path', 'Revert "Unknown change (#70)"', 'other', true),
-      (
-        'is declared only in the body',
-        'Undo unknown change (#70)',
-        'fix',
-        false,
-      ),
     ]) {
       test('an unresolved revert that $name', () async {
         final revert = repo.mainCommit(
@@ -976,6 +1054,54 @@ void main() {
         }
       });
     }
+
+    final unknownShaDeclaration = 'This reverts commit ${'0' * 40}.';
+    for (final (name, body) in [
+      ('standalone', unknownShaDeclaration),
+      ('fenced', '```text\n$unknownShaDeclaration\n```'),
+    ]) {
+      test('ignores a $name unknown SHA declaration', () async {
+        repo.mainCommit(
+          'Document a diagnostic (#70)',
+          body: body,
+          file: 'fix',
+          content: 'docs\n',
+        );
+        expect(await repo.guard(_backport(source)), contains('verified'));
+        repo.checkoutRelease();
+        final backport = repo.backport(source);
+        expect(await repo.parity(), contains('$backport backport exact'));
+      });
+    }
+
+    test('keeps a malformed SHA declaration fail-closed', () async {
+      final revert = repo.mainCommit(
+        'Undo a change (#70)',
+        body: 'This reverts commit $source',
+        file: 'fix',
+        content: 'drifted\n',
+      );
+      repo.checkoutRelease();
+      await expectFlagged(repo.backport(source), revert);
+    });
+
+    test(
+      'keeps a short SHA declaration ending with a period fail-closed',
+      () async {
+        final revert = repo.mainCommit(
+          'Undo a change (#70)',
+          body: 'This reverts commit abc1234.',
+          file: 'fix',
+          content: 'drifted\n',
+        );
+        await expectLater(
+          repo.guard(_backport(source)),
+          throwsA(allOf(_failure(source), _failure(revert))),
+        );
+        repo.checkoutRelease();
+        await expectFlagged(repo.backport(source), revert);
+      },
+    );
 
     test('all-lines parity checks only the maximal tip', () async {
       final revert = repo.mainRevert(source, subject: 'Revert fix (#59)');
@@ -1182,6 +1308,76 @@ void main() {
       expect(await repo.guard(_backport(source)), contains('verified'));
       expect(repo.requests, ['repos/$_repo/pulls/51']);
     });
+
+    test(
+      'keeps an earlier revert unresolved when a later title matches',
+      () async {
+        final revert = repo.mainCommit(
+          'Revert "Unknown change (#70)" (#58)',
+          file: 'fix',
+          content: 'drifted\n',
+        );
+        repo.mainCommit('Unknown change (#70) (#71)', file: 'other');
+        await expectLater(
+          repo.guard(_backport(source)),
+          throwsA(
+            allOf(
+              _failure(source),
+              _failure(revert),
+              _failure('unresolved revert on main'),
+            ),
+          ),
+        );
+        repo.checkoutRelease();
+        await expectFlagged(repo.backport(source), revert);
+      },
+    );
+  });
+
+  group('revert-button titles ending with another PR number', () {
+    for (final (otherTitle, declaration, expected) in [
+      ('An unrelated title', '', 'was reverted on main by'),
+      ('Fix a regression', '', 'an unresolved revert on main'),
+      ('Fix a regression', 'Reverts $_repo#57', null),
+    ]) {
+      test('other title: $otherTitle, declaration: $declaration', () async {
+        repo.mainCommit('$otherTitle (#57)', file: 'other');
+        final source = repo.mainCommit(
+          'Fix a regression (#57) (#51)',
+          body: _landed,
+          file: 'fix',
+        );
+        repo.mainCommit('Edit the fix (#56)', file: 'fix', content: 'more\n');
+        final revert = repo.mainCommit(
+          'Revert "Fix a regression (#57)" (#58)',
+          body: declaration,
+          file: 'fix',
+          content: 'drifted\n',
+        );
+        if (expected == null) {
+          expect(await repo.guard(_backport(source)), contains('verified'));
+        } else {
+          await expectLater(
+            repo.guard(_backport(source)),
+            throwsA(
+              allOf(_failure(source), _failure(revert), _failure(expected)),
+            ),
+          );
+        }
+        repo.checkoutRelease();
+        final backport = repo.backport(source);
+        if (expected == null) {
+          expect(await repo.parity(), contains('$backport backport exact'));
+        } else {
+          await expectLater(
+            repo.parity(),
+            throwsA(
+              allOf(_failure(backport), _failure(revert), _failure(expected)),
+            ),
+          );
+        }
+      });
+    }
   });
 
   test('a false cherry-pick trailer cannot fall back to patch-id', () async {

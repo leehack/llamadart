@@ -1016,7 +1016,8 @@ class GenerationParams {
 
   /// Chance, in [0, 1], that the exclude-top-choices (XTC) sampler removes
   /// every candidate at or above [xtcThreshold] except the least likely one,
-  /// on native llama.cpp. The default, 0.0, disables XTC.
+  /// on native llama.cpp. Set this to 0.0 and reset [xtcThreshold] to its
+  /// default (0.1) to disable XTC.
   final double xtcProbability;
 
   /// Probability a candidate needs for XTC to remove it, in (0, 0.5].
@@ -1027,9 +1028,11 @@ class GenerationParams {
   /// Dynamic temperature range on native llama.cpp: [temp] varies by this
   /// amount around its value with the candidates' entropy.
   ///
-  /// The default, 0.0, keeps [temp] fixed. [temp] minus this range must be at
-  /// least 0.01 as a 32-bit float, and it cannot be combined with a grammar (including one from
-  /// tools or a response format), a [thinkingBudget], [ignoreEos],
+  /// Set this to 0.0 and reset [dynatempExponent] to its default (1.0) to
+  /// keep [temp] fixed. With a positive range, [temp] minus this range must
+  /// be at least 0.01 as a 32-bit float. Dynamic temperature cannot be combined
+  /// with a grammar (including one from tools or a response format), a
+  /// [thinkingBudget], [ignoreEos],
   /// model-suppressed tokens or a [logitBias] of [double.negativeInfinity]:
   /// llama.cpp can then select a masked token.
   final double dynatempRange;
@@ -1038,8 +1041,9 @@ class GenerationParams {
   /// [dynatempRange] is positive; must be positive and finite.
   final double dynatempExponent;
 
-  /// Mirostat mode on native llama.cpp: 0 disables it, 1 and 2 select
-  /// Mirostat versions 1 and 2.
+  /// Mirostat mode on native llama.cpp. Modes 1 and 2 select Mirostat versions
+  /// 1 and 2. Set this to 0 and reset [mirostatTau] and [mirostatEta] to their
+  /// defaults (5.0 and 0.1) to disable Mirostat.
   ///
   /// Mirostat replaces the top-K, top-P, min-P and `dist` stages of the
   /// sampler chain with temperature followed by Mirostat; penalties,

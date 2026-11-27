@@ -200,8 +200,11 @@ modalities and speculative strategies before offering them.
   full context or 0 to disable repeat, frequency and presence penalties.
   The same set covers `typicalP`, `topNSigma`, XTC (`xtcProbability`,
   `xtcThreshold`), dynamic temperature (`dynatempRange`, `dynatempExponent`)
-  and Mirostat (`mirostat` 1 or 2, `mirostatTau`, `mirostatEta`). Mirostat
-  replaces top-K, top-P and min-P and needs a positive `temp`; invalid values
+  and Mirostat (`mirostat` 1 or 2, `mirostatTau`, `mirostatEta`). To disable
+  them, set `xtcProbability`, `dynatempRange` or `mirostat` to 0 and reset
+  its tuning fields to their defaults (`xtcThreshold: 0.1`,
+  `dynatempExponent: 1`, or `mirostatTau: 5, mirostatEta: 0.1`).
+  Mirostat replaces top-K, top-P and min-P and needs a positive `temp`; invalid values
   throw `LlamaArgumentException`. Dynamic temperature needs `temp` minus
   `dynatempRange` of at least 0.01 as a 32-bit float and throws
   `LlamaUnsupportedException` with a grammar, thinking budget, `ignoreEos`,

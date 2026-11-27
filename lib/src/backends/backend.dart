@@ -1167,10 +1167,39 @@ void rejectUnsupportedSamplerControls(
   final controls = requestedSamplerControls(params);
   if (controls.isEmpty) return;
   throw LlamaUnsupportedException(
-    '$backendName does not support GenerationParams sampler controls: '
-    '${controls.map((control) => control.name).join(', ')}. '
+    '${unsupportedSamplerControlsMessage(params, backendName, controls)} '
     'These controls are available on native llama.cpp.',
   );
+}
+
+/// Describes unsupported [controls] and any inactive settings to reset.
+String unsupportedSamplerControlsMessage(
+  GenerationParams params,
+  String backendName,
+  Set<SamplerControl> controls,
+) {
+  const defaults = GenerationParams();
+  final leftoverFields = <String>[
+    if (controls.contains(SamplerControl.xtc) &&
+        params.xtcProbability == defaults.xtcProbability &&
+        params.xtcThreshold != defaults.xtcThreshold)
+      'xtcThreshold',
+    if (controls.contains(SamplerControl.dynamicTemperature) &&
+        params.dynatempRange == defaults.dynatempRange &&
+        params.dynatempExponent != defaults.dynatempExponent)
+      'dynatempExponent',
+    if (controls.contains(SamplerControl.mirostat) &&
+        params.mirostat == defaults.mirostat) ...[
+      if (params.mirostatTau != defaults.mirostatTau) 'mirostatTau',
+      if (params.mirostatEta != defaults.mirostatEta) 'mirostatEta',
+    ],
+  ];
+  final message =
+      '$backendName does not support GenerationParams sampler controls: '
+      '${controls.map((control) => control.name).join(', ')}.';
+  if (leftoverFields.isEmpty) return message;
+  return '$message To disable these controls, reset '
+      '${leftoverFields.join(', ')} to their defaults.';
 }
 
 /// Rejects [GenerationParams.topLogprobs] on a runtime that does not report

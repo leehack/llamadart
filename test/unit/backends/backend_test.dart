@@ -50,6 +50,65 @@ void main() {
     });
   });
 
+  test('names only leftover tuning for disabled unsupported samplers', () {
+    const params = GenerationParams(
+      xtcThreshold: 0.2,
+      dynatempRange: 0.5,
+      dynatempExponent: 2,
+      mirostatEta: 0.2,
+    );
+
+    expect(
+      () => rejectUnsupportedSamplerControls(params, 'WebGPU'),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          allOf(
+            contains('xtc, dynamicTemperature, mirostat'),
+            contains('xtcThreshold, mirostatEta'),
+            contains('reset'),
+            contains('defaults'),
+            isNot(contains('dynatempExponent')),
+            isNot(contains('mirostatTau')),
+          ),
+        ),
+      ),
+    );
+  });
+
+  for (final (sampler, params, fields) in [
+    (
+      'xtc',
+      const GenerationParams(xtcProbability: 0.5, xtcThreshold: 0.2),
+      const ['xtcThreshold'],
+    ),
+    (
+      'mirostat',
+      const GenerationParams(mirostat: 2, mirostatTau: 4, mirostatEta: 0.2),
+      const ['mirostatTau', 'mirostatEta'],
+    ),
+  ]) {
+    test('omits reset hints for enabled unsupported $sampler', () {
+      expect(
+        () => rejectUnsupportedSamplerControls(params, 'WebGPU'),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf([
+              contains(
+                'WebGPU does not support GenerationParams sampler '
+                'controls: $sampler.',
+              ),
+              for (final field in fields) isNot(contains(field)),
+            ]),
+          ),
+        ),
+      );
+    });
+  }
+
   group('BackendPerfContextData', () {
     test('computes speculative acceptance rate when counts are available', () {
       const perf = BackendPerfContextData(
