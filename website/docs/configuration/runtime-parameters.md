@@ -565,9 +565,11 @@ Important fields:
   candidate. With token bans or runtime suppression, llamadart rejects the
   settings with `LlamaArgumentException` before decoding when the remaining
   candidate count, DRY window and temperature cannot guarantee a finite
-  candidate. Lower `dryMultiplier`, `dryBase` or `dryPenaltyLastN`, or allow
-  more tokens. Sampler setup scans the vocabulary for the breakers, so each
-  request that enables DRY pays for it.
+  candidate. A sparse mask can allow a longer window because DRY needs
+  distinct repeat continuations to exhaust the remaining candidates. If
+  validation rejects the settings, lower `dryMultiplier`, `dryBase` or
+  `dryPenaltyLastN`, or allow more tokens. Sampler setup scans the vocabulary
+  for the breakers on each request that enables DRY.
 - `presencePenalty`: llama.cpp presence penalty (finite, -100 to 100 on native
   llama.cpp); `0.0` preserves the
   existing behavior. WebGPU applies it only with bridge assets whose

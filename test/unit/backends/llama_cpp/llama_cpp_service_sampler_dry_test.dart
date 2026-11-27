@@ -687,6 +687,41 @@ void main() {
       expect(output, isNotEmpty);
       expect(output, isNot(contains(_b)));
     });
+
+    test('accepts a long DRY window with a sparse token mask', () async {
+      final params = _sampled.copyWith(dryMultiplier: 0.8, temp: 0.8);
+      await generate(
+        params.copyWith(
+          dryPenaltyLastN: 420,
+          logitBias: const {258: double.negativeInfinity},
+        ),
+      );
+      final output = await generate(
+        params.copyWith(dryPenaltyLastN: 1024, ignoreEos: true),
+      );
+      expect(output, isNotEmpty);
+    });
+
+    test('rejects a DRY window that can overflow two continuations', () async {
+      final params = overflow.copyWith(
+        dryBase: 10,
+        dryPenaltyLastN: 76,
+        logitBias: banAllBut({97 + 3, bToken}),
+      );
+      // The suffix matches twice inside the first run, followed by 'a' and 'b'.
+      final prompt = '${'a' * 38}b${'a' * 37}';
+      await expectLater(
+        generate(params, prompt: prompt),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (error) => error.name,
+            'name',
+            'dryMultiplier',
+          ),
+        ),
+      );
+      expect(decodes, 0);
+    });
   });
 
   group('validation', () {

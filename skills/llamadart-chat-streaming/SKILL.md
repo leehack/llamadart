@@ -216,11 +216,11 @@ modalities and speculative strategies before offering them.
   `:`, `"` and `*`) starts a new repeat. DRY runs after the penalties,
   works with Mirostat, and throws
   `LlamaUnsupportedException` with a grammar (including tools or
-  `responseFormat`) or a thinking budget. Token bans and runtime suppression
-  are supported when the DRY settings leave a finite candidate. If the
-  configured bounds cannot guarantee one, generation throws
-  `LlamaArgumentException` before decoding. While `dryMultiplier` is 0 the
-  other DRY fields are ignored, so zero it to turn DRY off.
+  `responseFormat`) or a thinking budget. With token bans or runtime
+  suppression, validation accounts for the remaining candidate count,
+  DRY window and temperature. If those bounds cannot guarantee a finite
+  candidate, generation throws `LlamaArgumentException` before decoding.
+  While `dryMultiplier` is 0 the other DRY fields are ignored.
 - Check `(await engine.capabilities).supportsTokenLogprobs` before setting
   `GenerationParams(topLogprobs: n)` (0 to 20) on native llama.cpp. They are
   raw-distribution values, before logit bias, penalties, grammar and
