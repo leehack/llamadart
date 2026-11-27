@@ -25,6 +25,7 @@ class GenerationStreamResult {
   final int? firstTokenLatencyMs;
   final int elapsedMs;
   final int decodeElapsedMs;
+  final LlamaGenerationUsage? usage;
 
   /// Whether the reply ended at a token limit (finish reason `length`).
   final bool reachedTokenLimit;
@@ -36,6 +37,7 @@ class GenerationStreamResult {
     required this.firstTokenLatencyMs,
     required this.elapsedMs,
     required this.decodeElapsedMs,
+    this.usage,
     this.reachedTokenLimit = false,
   });
 }
@@ -119,6 +121,7 @@ class ChatGenerationService {
     var sawFirstToken = false;
     var reachedTokenLimit = false;
     int? firstTokenLatencyMs;
+    LlamaGenerationUsage? usage;
 
     final effectiveNotifyIntervalMs = uiNotifyIntervalMs <= 0
         ? 0
@@ -255,6 +258,7 @@ class ChatGenerationService {
           break;
         }
 
+        usage = chunk.usage ?? usage;
         final content = chunk.text;
         final thinking = thinkingEnabled ? chunk.thinking : '';
         if (chunk.choices.firstOrNull?.finishReason == 'length') {
@@ -281,7 +285,12 @@ class ChatGenerationService {
             content.trim().isEmpty &&
             thinking.trim().isEmpty &&
             chunk.toolCalls.isEmpty;
-        if (!isWhitespaceOnly) {
+        final isUsageOnly =
+            chunk.usage != null &&
+            content.isEmpty &&
+            chunk.thinking.isEmpty &&
+            chunk.toolCalls.isEmpty;
+        if (!isWhitespaceOnly && !isUsageOnly) {
           generatedTokens++;
           pendingTokenDelta += 1;
         }
@@ -352,6 +361,7 @@ class ChatGenerationService {
       firstTokenLatencyMs: firstTokenLatencyMs,
       elapsedMs: streamElapsedMs,
       decodeElapsedMs: decodeElapsedMs,
+      usage: usage,
       reachedTokenLimit: reachedTokenLimit,
     );
   }

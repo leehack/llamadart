@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 import '../../../tool/release/patch_branch.dart';
+import '../../../tool/testing/verify_release_docs_versions.dart';
 
 const _repo = 'leehack/llamadart';
 const _main = 'refs/remotes/origin/main';
@@ -326,6 +327,52 @@ void main() {
     }
   });
 
+  test(
+    'patch prep permits each current install doc and rejects an unlisted rename',
+    () async {
+      const unlisted = 'website/docs/getting-started/renamed-installation.md';
+      final docs = currentInstallDocPaths.toList();
+      _writePrepFiles(repo, '1.0.0', [...docs, unlisted]);
+      repo.anchorPrepBase('1.0.0');
+      repo.checkoutRelease();
+      _writePrepFiles(repo, '1.0.1', docs);
+      repo.prep('1.0.1', pr: 52);
+      repo.git(['tag', 'v1.0.1']);
+
+      expect(
+        await repo.guard(null, head: 'release/prep-1.0.1'),
+        contains('release prep'),
+      );
+      expect(await repo.parity(), contains('prep'));
+
+      repo.write(unlisted, 'Install version 1.0.1.\n');
+      repo.git(['add', unlisted]);
+      repo.git(['commit', '--amend', '--no-edit', '-q']);
+      repo.git(['tag', '-f', 'v1.0.1']);
+      await expectLater(
+        repo.guard(null, head: 'release/prep-1.0.1'),
+        throwsA(_failure(unlisted)),
+      );
+      await expectLater(repo.parity(), throwsA(_failure(unlisted)));
+    },
+  );
+
+  test('prep rejects a core patch from a different base minor', () async {
+    repo.write('pubspec.yaml', 'name: llamadart\nversion: 1.1.0\n');
+    repo.anchorPrepBase('1.0.0');
+    repo.checkoutRelease();
+    repo.prep('1.1.1', pr: 52);
+
+    await expectLater(
+      repo.guard(null, head: 'release/prep-1.1.1'),
+      throwsA(
+        _failure(
+          'Core pubspec.yaml must advance to the next patch on release/1.0.x',
+        ),
+      ),
+    );
+  });
+
   for (final (testName, before, after, docs) in [
     (
       'replays the 0.20.8 prep file set through guard and parity',
@@ -562,6 +609,43 @@ void main() {
         throwsA(_failure(_companionPubspec)),
       );
       await expectLater(repo.parity(), throwsA(_failure(_companionPubspec)));
+    });
+  }
+
+  for (final (name, version, constraint) in [
+    (
+      'a companion floor raise without a version bump',
+      '1.0.2',
+      '>=1.0.3 <1.1.0',
+    ),
+    (
+      'extra text before the companion range',
+      '1.0.3',
+      '>=1.0.0 >=1.0.3 <1.1.0',
+    ),
+    ('extra text after the companion range', '1.0.3', '>=1.0.3 <1.1.0 <1.2.0'),
+  ]) {
+    test('prep rejects $name', () async {
+      repo.write('pubspec.yaml', 'name: llamadart\nversion: 1.0.2\n');
+      _writeCoreFloor(repo, '1.0.2', '1.0.2', '1.1.0');
+      repo.anchorPrepBase('1.0.2');
+      repo.checkoutRelease();
+      repo.write(
+        _companionPubspec,
+        'name: $_companion\nversion: $version\ndependencies:\n'
+        "  llamadart: '$constraint'\n",
+      );
+      repo.prep('1.0.3', pr: 52);
+      repo.git(['tag', 'v1.0.3']);
+
+      final failure = throwsA(
+        _failure(
+          'Release prep may change only the version and raise the core floor '
+          'within the release line in $_companionPubspec.',
+        ),
+      );
+      await expectLater(repo.guard(null, head: 'release/prep-1.0.3'), failure);
+      await expectLater(repo.parity(), failure);
     });
   }
 
@@ -1018,18 +1102,55 @@ void main() {
       expect(await repo.guard(_backport(source)), contains('verified'));
     });
 
-    test('resolves a revert by its quoted pull request title', () async {
-      repo.mainCommit('Other change (#57)', file: 'fix', content: 'other\n');
-      repo.mainCommit(
-        'Revert "Other change (#57)" (#58)',
-        body: '## Summary\n\nUndo #57.\n',
+    test('flags a title-only unresolved revert on a shared path', () async {
+      final revert = repo.mainCommit(
+        'Revert "Unknown change (#70)" (#58)',
         file: 'fix',
-        content: 'change\n',
+        content: 'drifted\n',
+      );
+      await expectLater(
+        repo.guard(_backport(source)),
+        throwsA(allOf(_failure(source), _failure('unresolved revert on main'))),
       );
       repo.checkoutRelease();
-      final backport = repo.backport(source);
-      expect(await repo.parity(), contains('$backport backport exact'));
+      await expectFlagged(repo.backport(source), revert);
     });
+
+    test(
+      'ignores a mid-subject revert title and indented declarations',
+      () async {
+        repo.mainCommit(
+          'Document Revert "Fix a regression (#51)" (#58)',
+          file: 'fix',
+          content: 'docs\n',
+        );
+        repo.mainCommit(
+          'Show indented revert declarations (#59)',
+          body:
+              '    This reverts commit $source.\n'
+              '    This reverts commit ${'0' * 40}.',
+          file: 'fix',
+          content: 'examples\n',
+        );
+        repo.checkoutRelease();
+        final backport = repo.backport(source);
+        expect(await repo.parity(), contains('$backport backport exact'));
+      },
+    );
+
+    for (final title in ['Other change', 'Keep "sample (#56)" in the output']) {
+      test('resolves the quoted pull request title: $title', () async {
+        repo.mainCommit('$title (#57)', file: 'fix', content: 'other\n');
+        repo.mainCommit(
+          'Revert "$title (#57)" (#58)',
+          file: 'fix',
+          content: 'drifted\n',
+        );
+        repo.checkoutRelease();
+        final backport = repo.backport(source);
+        expect(await repo.parity(), contains('$backport backport exact'));
+      });
+    }
 
     test('resolves a declared pull request merged before the minor', () async {
       repo.mainCommit(

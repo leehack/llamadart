@@ -68,6 +68,9 @@ const Map<String, List<String>> _currentDocDependencies =
       ],
     };
 
+/// Current install snippet paths that core release prep must be able to update.
+Iterable<String> get currentInstallDocPaths => _currentDocDependencies.keys;
+
 const _nativePinSource = 'lib/src/hook/native_release_pins.dart';
 const _installation = 'website/docs/getting-started/installation.md';
 const _supportMatrix = 'website/docs/platforms/support-matrix.md';
