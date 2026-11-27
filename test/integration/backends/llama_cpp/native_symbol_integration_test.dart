@@ -682,7 +682,8 @@ void main() {
           .lookupFunction<ffi.Uint32 Function(), int Function()>(
             'llama_dart_model_fd_api_version',
           );
-      expect(fdApiVersion(), 1);
+      // Windows loaders report UNSUPPORTED, so the API version is 0 there.
+      expect(fdApiVersion(), Platform.isWindows ? 0 : 1);
     });
 
     test('model fd status wire values match the published header', () {
