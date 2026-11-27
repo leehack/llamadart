@@ -3623,6 +3623,7 @@ Future<LocalE2eResult> runLocalE2e(
       'v1.0.0-2',
       'v1.0.0-3',
       'v1.0.0-4',
+      'v1.1.0',
     ];
     if (sha.length != 40 ||
         !RegExp(r'^[0-9a-f]{40}$').hasMatch(sha) ||

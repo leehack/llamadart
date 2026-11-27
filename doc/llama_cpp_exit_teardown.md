@@ -275,7 +275,7 @@ control record until process termination. No guarantee covers arbitrary
 simultaneous parent/worker death. Token registration is separate from payload
 ownership.
 
-The pinned `v1.0.0` runtime supplies owner API v1 for this creation-time
+The pinned `v1.1.0` runtime supplies owner API v1 for this creation-time
 cleanup path. Capability resolution remains all-or-nothing: custom runtimes
 with absent, partial or unsupported owner APIs use the existing path and
 retain its creation-time gap rather than mixing ownership protocols.

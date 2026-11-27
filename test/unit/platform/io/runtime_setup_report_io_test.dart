@@ -56,7 +56,7 @@ void main() {
           'stable_diffusion',
         ]);
         expect(report.runtimes.map((runtime) => runtime.expectedReleaseTag), [
-          'v1.0.0-4',
+          'v1.1.0',
           'v0.20.0',
           'v0.4.0-1',
         ]);

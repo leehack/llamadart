@@ -2247,6 +2247,19 @@ external ffi.Pointer<ggml_tensor> ggml_flash_attn_ext(
 );
 
 @ffi.Native<
+  ffi.Void Function(
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+  )
+>()
+external void ggml_flash_attn_ext_add_indexed_bias(
+  ffi.Pointer<ggml_tensor> a,
+  ffi.Pointer<ggml_tensor> table,
+  ffi.Pointer<ggml_tensor> indices,
+);
+
+@ffi.Native<
   ffi.Void Function(ffi.Pointer<ggml_tensor>, ffi.Pointer<ggml_tensor>)
 >()
 external void ggml_flash_attn_ext_add_sinks(
@@ -2262,6 +2275,9 @@ external int _ggml_flash_attn_ext_get_prec(ffi.Pointer<ggml_tensor> a);
 ggml_prec ggml_flash_attn_ext_get_prec(ffi.Pointer<ggml_tensor> a) {
   return ggml_prec.fromValue(_ggml_flash_attn_ext_get_prec(a));
 }
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<ggml_tensor>)>()
+external bool ggml_flash_attn_ext_has_indexed_bias(ffi.Pointer<ggml_tensor> a);
 
 @ffi.Native<
   ffi.Pointer<ggml_tensor> Function(
@@ -2392,6 +2408,7 @@ ggml_type ggml_ftype_to_ggml_type(ggml_ftype ftype) {
   return ggml_type.fromValue(_ggml_ftype_to_ggml_type(ftype.value));
 }
 
+@Deprecated('use ggml_gated_delta_net_ext instead')
 @ffi.Native<
   ffi.Pointer<ggml_tensor> Function(
     ffi.Pointer<ggml_context>,
@@ -2413,6 +2430,37 @@ external ffi.Pointer<ggml_tensor> ggml_gated_delta_net(
   ffi.Pointer<ggml_tensor> beta,
   ffi.Pointer<ggml_tensor> state,
   int K,
+);
+
+@ffi.Native<
+  ffi.Pointer<ggml_tensor> Function(
+    ffi.Pointer<ggml_context>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Bool,
+  )
+>()
+external ffi.Pointer<ggml_tensor> ggml_gated_delta_net_ext(
+  ffi.Pointer<ggml_context> ctx,
+  ffi.Pointer<ggml_tensor> q,
+  ffi.Pointer<ggml_tensor> k,
+  ffi.Pointer<ggml_tensor> v,
+  ffi.Pointer<ggml_tensor> g,
+  ffi.Pointer<ggml_tensor> beta,
+  ffi.Pointer<ggml_tensor> state,
+  ffi.Pointer<ggml_tensor> pend_k,
+  ffi.Pointer<ggml_tensor> pend_v,
+  ffi.Pointer<ggml_tensor> pend_gb,
+  ffi.Pointer<ggml_tensor> n_rep,
+  bool keep,
 );
 
 @ffi.Native<
@@ -4906,6 +4954,19 @@ external ffi.Pointer<ggml_tensor> ggml_sigmoid(
   ffi.Pointer<ggml_tensor> Function(
     ffi.Pointer<ggml_context>,
     ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+  )
+>()
+external ffi.Pointer<ggml_tensor> ggml_sigmoid_back(
+  ffi.Pointer<ggml_context> ctx,
+  ffi.Pointer<ggml_tensor> a,
+  ffi.Pointer<ggml_tensor> b,
+);
+
+@ffi.Native<
+  ffi.Pointer<ggml_tensor> Function(
+    ffi.Pointer<ggml_context>,
+    ffi.Pointer<ggml_tensor>,
   )
 >()
 external ffi.Pointer<ggml_tensor> ggml_sigmoid_inplace(
@@ -4968,6 +5029,19 @@ external ffi.Pointer<ggml_tensor> ggml_sin(
 external ffi.Pointer<ggml_tensor> ggml_sin_inplace(
   ffi.Pointer<ggml_context> ctx,
   ffi.Pointer<ggml_tensor> a,
+);
+
+@ffi.Native<
+  ffi.Pointer<ggml_tensor> Function(
+    ffi.Pointer<ggml_context>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Int32,
+  )
+>()
+external ffi.Pointer<ggml_tensor> ggml_sleep(
+  ffi.Pointer<ggml_context> ctx,
+  ffi.Pointer<ggml_tensor> a,
+  int us,
 );
 
 @ffi.Native<
@@ -5987,15 +6061,18 @@ external bool llama_batch_ext_set_pos(
   ffi.Pointer<llama_pos> pos,
 );
 
+@Deprecated('use llama_batch_ext_free instead')
 @ffi.Native<ffi.Void Function(llama_batch)>()
 external void llama_batch_free(llama_batch batch);
 
+@Deprecated('use llama_batch_ext_init and llama_batch_ext_add_token instead')
 @ffi.Native<llama_batch Function(ffi.Pointer<llama_token>, ffi.Int32)>()
 external llama_batch llama_batch_get_one(
   ffi.Pointer<llama_token> tokens,
   int n_tokens,
 );
 
+@Deprecated('use llama_batch_ext_init instead')
 @ffi.Native<llama_batch Function(ffi.Int32, ffi.Int32, ffi.Int32)>()
 external llama_batch llama_batch_init(int n_tokens, int embd, int n_seq_max);
 
@@ -7365,6 +7442,7 @@ external int llama_dart_vulkan_get_device_info(
   ffi.Pointer<llama_dart_vulkan_device_info> out_info,
 );
 
+@Deprecated('use llama_process with LLAMA_PROCESS_TYPE_DECODE instead')
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_context>, llama_batch)>()
 external int llama_decode(ffi.Pointer<llama_context> ctx, llama_batch batch);
 
@@ -7398,6 +7476,7 @@ external int llama_detokenize(
   bool unparse_special,
 );
 
+@Deprecated('use llama_process with LLAMA_PROCESS_TYPE_ENCODE instead')
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_context>, llama_batch)>()
 external int llama_encode(ffi.Pointer<llama_context> ctx, llama_batch batch);
 
@@ -7717,6 +7796,17 @@ external int llama_model_desc(
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_model>)>()
 external int llama_model_dflash_selector_top_k(ffi.Pointer<llama_model> model);
 
+@ffi.Native<ffi.Int Function(ffi.Pointer<llama_model>)>(
+  symbol: 'llama_model_dflash_variant',
+)
+external int _llama_model_dflash_variant(ffi.Pointer<llama_model> model);
+
+llama_dflash_variant llama_model_dflash_variant(
+  ffi.Pointer<llama_model> model,
+) {
+  return llama_dflash_variant.fromValue(_llama_model_dflash_variant(model));
+}
+
 @ffi.Native<ffi.Void Function(ffi.Pointer<llama_model>)>()
 external void llama_model_free(ffi.Pointer<llama_model> model);
 
@@ -7791,6 +7881,27 @@ external ffi.Pointer<llama_model> llama_model_load_from_splits(
   ffi.Pointer<ffi.Pointer<ffi.Char>> paths,
   int n_paths,
   llama_model_params params,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(ffi.Pointer<llama_model>, ffi.Pointer<ffi.Char>)
+>()
+external int llama_model_meta_arr_n(
+  ffi.Pointer<llama_model> model,
+  ffi.Pointer<ffi.Char> key,
+);
+
+@ffi.Native<
+  ffi.Pointer<ffi.Char> Function(
+    ffi.Pointer<llama_model>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Int32,
+  )
+>()
+external ffi.Pointer<ffi.Char> llama_model_meta_arr_str(
+  ffi.Pointer<llama_model> model,
+  ffi.Pointer<ffi.Char> key,
+  int i,
 );
 
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_model>)>()
@@ -9098,6 +9209,14 @@ external void mtmd_bitmap_set_mergeable(
   bool mergeable,
 );
 
+@ffi.Native<
+  ffi.Void Function(ffi.Pointer<mtmd_bitmap>, ffi.Pointer<ffi.Char>)
+>()
+external void mtmd_bitmap_set_transcript(
+  ffi.Pointer<mtmd_bitmap> bitmap,
+  ffi.Pointer<ffi.Char> transcript,
+);
+
 @ffi.Native<mtmd_context_params Function()>()
 external mtmd_context_params mtmd_context_params_default();
 
@@ -9134,6 +9253,21 @@ external int mtmd_encode_chunk(
 
 @ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_context>)>()
 external void mtmd_free(ffi.Pointer<mtmd_context> ctx);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Size,
+  )
+>()
+external int mtmd_gen_audio_g2p(
+  ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<ffi.Char> word,
+  ffi.Pointer<ffi.Char> buf,
+  int buf_size,
+);
 
 @ffi.Native<mtmd_gen_audio_info Function(ffi.Pointer<mtmd_context>)>()
 external mtmd_gen_audio_info mtmd_gen_audio_get_info(
@@ -9194,6 +9328,17 @@ external mtmd_gen_inp mtmd_gen_inp_default(ffi.Pointer<mtmd_context> ctx);
 
 @ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_gen_state>)>()
 external void mtmd_gen_state_free(ffi.Pointer<mtmd_gen_state> state);
+
+@ffi.Native<
+  ffi.Pointer<ffi.Int32> Function(
+    ffi.Pointer<mtmd_gen_state>,
+    ffi.Pointer<ffi.Size>,
+  )
+>()
+external ffi.Pointer<ffi.Int32> mtmd_gen_state_get_ref_codes(
+  ffi.Pointer<mtmd_gen_state> state,
+  ffi.Pointer<ffi.Size> n_codes,
+);
 
 @ffi.Native<
   ffi.Pointer<mtmd_gen_state> Function(
@@ -9423,6 +9568,11 @@ external ffi.Pointer<mtmd_helper_gen_audio> mtmd_helper_gen_audio_init(
 @ffi.Native<mtmd_helper_gen_audio_inp Function()>()
 external mtmd_helper_gen_audio_inp mtmd_helper_gen_audio_inp_default();
 
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<mtmd_helper_gen_audio>)>()
+external int mtmd_helper_gen_audio_max_frames(
+  ffi.Pointer<mtmd_helper_gen_audio> ctx,
+);
+
 @ffi.Native<ffi.Bool Function(ffi.Pointer<mtmd_helper_gen_audio>)>()
 external bool mtmd_helper_gen_audio_next_is_text(
   ffi.Pointer<mtmd_helper_gen_audio> ctx,
@@ -9473,6 +9623,21 @@ external int mtmd_helper_gen_audio_step_prompt(
 external mtmd_helper_cap mtmd_helper_get_capabilities(
   ffi.Pointer<llama_model> model,
   ffi.Pointer<mtmd_context> mctx,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<ffi.UnsignedChar>,
+    ffi.Size,
+    mtmd_helper_init_opt,
+    ffi.Pointer<mtmd_helper_media_meta>,
+  )
+>()
+external int mtmd_helper_get_media_meta(
+  ffi.Pointer<ffi.UnsignedChar> buf,
+  int len,
+  mtmd_helper_init_opt opt,
+  ffi.Pointer<mtmd_helper_media_meta> out,
 );
 
 @ffi.Native<llama_pos Function(ffi.Pointer<mtmd_input_chunks>)>()
@@ -10101,6 +10266,9 @@ final class ggml_backend_dev_caps extends ffi.Struct {
   @ffi.Bool()
   external bool mmap_support;
 
+  @ffi.Bool()
+  external bool fast_async_host_input;
+
   static ffi.Pointer<ggml_backend_dev_caps> $allocate(
     ffi.Allocator $allocator, {
     required bool async,
@@ -10108,12 +10276,14 @@ final class ggml_backend_dev_caps extends ffi.Struct {
     required bool buffer_from_host_ptr,
     required bool events,
     required bool mmap_support,
+    required bool fast_async_host_input,
   }) => $allocator<ggml_backend_dev_caps>()
     ..ref.async = async
     ..ref.host_buffer = host_buffer
     ..ref.buffer_from_host_ptr = buffer_from_host_ptr
     ..ref.events = events
-    ..ref.mmap_support = mmap_support;
+    ..ref.mmap_support = mmap_support
+    ..ref.fast_async_host_input = fast_async_host_input;
 }
 
 typedef ggml_backend_dev_get_extra_bufts_t =
@@ -10786,7 +10956,9 @@ enum ggml_op {
   GGML_OP_OPT_STEP_ADAMW(96),
   GGML_OP_OPT_STEP_SGD(97),
   GGML_OP_GLU(98),
-  GGML_OP_COUNT(99);
+  GGML_OP_SLEEP(99),
+  GGML_OP_SIGMOID_BACK(100),
+  GGML_OP_COUNT(101);
 
   final int value;
   const ggml_op(this.value);
@@ -10891,7 +11063,9 @@ enum ggml_op {
     96 => GGML_OP_OPT_STEP_ADAMW,
     97 => GGML_OP_OPT_STEP_SGD,
     98 => GGML_OP_GLU,
-    99 => GGML_OP_COUNT,
+    99 => GGML_OP_SLEEP,
+    100 => GGML_OP_SIGMOID_BACK,
+    101 => GGML_OP_COUNT,
     _ => throw ArgumentError('Unknown value for ggml_op: $value'),
   };
 }
@@ -11159,6 +11333,8 @@ enum ggml_tensor_flag {
     _ => throw ArgumentError('Unknown value for ggml_tensor_flag: $value'),
   };
 }
+
+typedef ggml_tensor_t = ffi.Pointer<ggml_tensor>;
 
 final class ggml_threadpool extends ffi.Opaque {}
 
@@ -12404,6 +12580,26 @@ enum llama_dart_vulkan_status {
   };
 }
 
+enum llama_dflash_variant {
+  LLAMA_DFLASH_VARIANT_NONE(-1),
+  LLAMA_DFLASH_VARIANT_DFLASH(0),
+  LLAMA_DFLASH_VARIANT_DFLASH2(1),
+  LLAMA_DFLASH_VARIANT_DSPARK(2),
+  LLAMA_DFLASH_VARIANT_LILICORR(3);
+
+  final int value;
+  const llama_dflash_variant(this.value);
+
+  static llama_dflash_variant fromValue(int value) => switch (value) {
+    -1 => LLAMA_DFLASH_VARIANT_NONE,
+    0 => LLAMA_DFLASH_VARIANT_DFLASH,
+    1 => LLAMA_DFLASH_VARIANT_DFLASH2,
+    2 => LLAMA_DFLASH_VARIANT_DSPARK,
+    3 => LLAMA_DFLASH_VARIANT_LILICORR,
+    _ => throw ArgumentError('Unknown value for llama_dflash_variant: $value'),
+  };
+}
+
 final class llama_embd extends ffi.Struct {
   external ffi.Pointer<ffi.Float> data;
 
@@ -12824,6 +13020,26 @@ final class llama_model_quantize_params extends ffi.Struct {
   @ffi.Size()
   external int max_buf_size;
 
+  external ffi.Pointer<llama_model_imatrix_data> activations;
+
+  external ffi.Pointer<llama_model_imatrix_data> statistics;
+
+  external ffi.Pointer<ffi.Pointer<ffi.Char>> stats_schema;
+
+  @ffi.Float()
+  external double target_bpw;
+
+  @ffi.Int64()
+  external int target_size;
+
+  external ffi.Pointer<ffi.Char> state_file;
+
+  external ffi.Pointer<ffi.UnsignedInt> target_exclude;
+
+  external ggml_abort_callback abort_callback;
+
+  external ffi.Pointer<ffi.Void> abort_callback_data;
+
   static ffi.Pointer<llama_model_quantize_params> $allocate(
     ffi.Allocator $allocator, {
     required int nthread,
@@ -12841,6 +13057,15 @@ final class llama_model_quantize_params extends ffi.Struct {
     required ffi.Pointer<llama_model_tensor_override> tt_overrides,
     required ffi.Pointer<ffi.Int32> prune_layers,
     required int max_buf_size,
+    required ffi.Pointer<llama_model_imatrix_data> activations,
+    required ffi.Pointer<llama_model_imatrix_data> statistics,
+    required ffi.Pointer<ffi.Pointer<ffi.Char>> stats_schema,
+    required double target_bpw,
+    required int target_size,
+    required ffi.Pointer<ffi.Char> state_file,
+    required ffi.Pointer<ffi.UnsignedInt> target_exclude,
+    required ggml_abort_callback abort_callback,
+    required ffi.Pointer<ffi.Void> abort_callback_data,
   }) => $allocator<llama_model_quantize_params>()
     ..ref.nthread = nthread
     ..ref.ftype = ftype
@@ -12856,7 +13081,16 @@ final class llama_model_quantize_params extends ffi.Struct {
     ..ref.kv_overrides = kv_overrides
     ..ref.tt_overrides = tt_overrides
     ..ref.prune_layers = prune_layers
-    ..ref.max_buf_size = max_buf_size;
+    ..ref.max_buf_size = max_buf_size
+    ..ref.activations = activations
+    ..ref.statistics = statistics
+    ..ref.stats_schema = stats_schema
+    ..ref.target_bpw = target_bpw
+    ..ref.target_size = target_size
+    ..ref.state_file = state_file
+    ..ref.target_exclude = target_exclude
+    ..ref.abort_callback = abort_callback
+    ..ref.abort_callback_data = abort_callback_data;
 }
 
 typedef llama_model_set_tensor_data_t =
@@ -13721,6 +13955,9 @@ final class mtmd_gen_audio_info extends ffi.Struct {
   @ffi.Int32()
   external int sample_rate;
 
+  @ffi.Int32()
+  external int n_channels;
+
   external ffi.Pointer<ffi.Char> model_variant;
 
   @ffi.Int32()
@@ -13730,11 +13967,13 @@ final class mtmd_gen_audio_info extends ffi.Struct {
     ffi.Allocator $allocator, {
     required mtmd_gen_audio_type type,
     required int sample_rate,
+    required int n_channels,
     required ffi.Pointer<ffi.Char> model_variant,
     required int n_voices,
   }) => $allocator<mtmd_gen_audio_info>()
     ..ref.type = type
     ..ref.sample_rate = sample_rate
+    ..ref.n_channels = n_channels
     ..ref.model_variant = model_variant
     ..ref.n_voices = n_voices;
 }
@@ -13747,7 +13986,15 @@ enum mtmd_gen_audio_type {
   MTMD_GEN_AUDIO_TYPE_SOPRANO(3),
   MTMD_GEN_AUDIO_TYPE_LFM3A(4),
   MTMD_GEN_AUDIO_TYPE_CHATTERBOX(5),
-  MTMD_GEN_AUDIO_TYPE_DRAMA3(6);
+  MTMD_GEN_AUDIO_TYPE_DRAMA3(6),
+  MTMD_GEN_AUDIO_TYPE_ZONOS3(7),
+  MTMD_GEN_AUDIO_TYPE_YUE2(8),
+  MTMD_GEN_AUDIO_TYPE_MINIMAX_MUSIC3(9),
+  MTMD_GEN_AUDIO_TYPE_FISH_S2(10),
+  MTMD_GEN_AUDIO_TYPE_MOSHI(11),
+  MTMD_GEN_AUDIO_TYPE_KOKORO(12),
+  MTMD_GEN_AUDIO_TYPE_TINY_VOCA(13),
+  MTMD_GEN_AUDIO_TYPE_VOXCPM2(14);
 
   final int value;
   const mtmd_gen_audio_type(this.value);
@@ -13760,6 +14007,14 @@ enum mtmd_gen_audio_type {
     4 => MTMD_GEN_AUDIO_TYPE_LFM3A,
     5 => MTMD_GEN_AUDIO_TYPE_CHATTERBOX,
     6 => MTMD_GEN_AUDIO_TYPE_DRAMA3,
+    7 => MTMD_GEN_AUDIO_TYPE_ZONOS3,
+    8 => MTMD_GEN_AUDIO_TYPE_YUE2,
+    9 => MTMD_GEN_AUDIO_TYPE_MINIMAX_MUSIC3,
+    10 => MTMD_GEN_AUDIO_TYPE_FISH_S2,
+    11 => MTMD_GEN_AUDIO_TYPE_MOSHI,
+    12 => MTMD_GEN_AUDIO_TYPE_KOKORO,
+    13 => MTMD_GEN_AUDIO_TYPE_TINY_VOCA,
+    14 => MTMD_GEN_AUDIO_TYPE_VOXCPM2,
     _ => throw ArgumentError('Unknown value for mtmd_gen_audio_type: $value'),
   };
 }
@@ -13801,6 +14056,23 @@ final class mtmd_gen_inp extends ffi.Struct {
   @ffi.Size()
   external int n_feats;
 
+  @ffi.Float()
+  external double speed;
+
+  external ffi.Pointer<ffi.Uint8> backbone_state;
+
+  @ffi.Size()
+  external int backbone_state_size;
+
+  @ffi.Int32()
+  external int backbone_n_past;
+
+  @ffi.Int32()
+  external int n_steps;
+
+  @ffi.Float()
+  external double cfg_scale;
+
   static ffi.Pointer<mtmd_gen_inp> $allocate(
     ffi.Allocator $allocator, {
     required mtmd_gen_process_type type,
@@ -13815,6 +14087,12 @@ final class mtmd_gen_inp extends ffi.Struct {
     required int n_codes,
     required ffi.Pointer<ffi.Float> feats,
     required int n_feats,
+    required double speed,
+    required ffi.Pointer<ffi.Uint8> backbone_state,
+    required int backbone_state_size,
+    required int backbone_n_past,
+    required int n_steps,
+    required double cfg_scale,
   }) => $allocator<mtmd_gen_inp>()
     ..ref.type = type
     ..ref.code0 = code0
@@ -13827,7 +14105,13 @@ final class mtmd_gen_inp extends ffi.Struct {
     ..ref.codes = codes
     ..ref.n_codes = n_codes
     ..ref.feats = feats
-    ..ref.n_feats = n_feats;
+    ..ref.n_feats = n_feats
+    ..ref.speed = speed
+    ..ref.backbone_state = backbone_state
+    ..ref.backbone_state_size = backbone_state_size
+    ..ref.backbone_n_past = backbone_n_past
+    ..ref.n_steps = n_steps
+    ..ref.cfg_scale = cfg_scale;
 }
 
 final class mtmd_gen_out extends ffi.Struct {
@@ -13929,6 +14213,9 @@ final class mtmd_helper_cap extends ffi.Struct {
   external bool audio_stream;
 
   @ffi.Bool()
+  external bool audio_duplex;
+
+  @ffi.Bool()
   external bool text_gen;
 
   @ffi.Bool()
@@ -13944,6 +14231,7 @@ final class mtmd_helper_cap extends ffi.Struct {
     required bool audio,
     required bool video,
     required bool audio_stream,
+    required bool audio_duplex,
     required bool text_gen,
     required bool audio_gen,
     required bool audio_gen_spk_ref,
@@ -13953,6 +14241,7 @@ final class mtmd_helper_cap extends ffi.Struct {
     ..ref.audio = audio
     ..ref.video = video
     ..ref.audio_stream = audio_stream
+    ..ref.audio_duplex = audio_duplex
     ..ref.text_gen = text_gen
     ..ref.audio_gen = audio_gen
     ..ref.audio_gen_spk_ref = audio_gen_spk_ref;
@@ -14019,6 +14308,8 @@ final class mtmd_helper_gen_audio_inp extends ffi.Struct {
 
   external ffi.Pointer<mtmd_bitmap> speaker_ref;
 
+  external ffi.Pointer<ffi.Char> speaker_ref_text;
+
   external ffi.Pointer<ffi.Char> lang;
 
   @ffi.Int32()
@@ -14032,6 +14323,18 @@ final class mtmd_helper_gen_audio_inp extends ffi.Struct {
 
   @ffi.Uint32()
   external int seed;
+
+  @ffi.Float()
+  external double speed;
+
+  @ffi.Float()
+  external double loudness;
+
+  @ffi.Float()
+  external double cfg_scale;
+
+  @ffi.Int32()
+  external int flow_steps;
 
   @ffi.UnsignedInt()
   external int out_typeAsInt;
@@ -14050,11 +14353,16 @@ final class mtmd_helper_gen_audio_inp extends ffi.Struct {
     required int n_past,
     required mtmd_helper_gen_audio_out_mode out_mode,
     required ffi.Pointer<mtmd_bitmap> speaker_ref,
+    required ffi.Pointer<ffi.Char> speaker_ref_text,
     required ffi.Pointer<ffi.Char> lang,
     required int top_k,
     required double top_p,
     required double temp,
     required int seed,
+    required double speed,
+    required double loudness,
+    required double cfg_scale,
+    required int flow_steps,
     required mtmd_helper_gen_audio_outtype out_type,
   }) => $allocator<mtmd_helper_gen_audio_inp>()
     ..ref.stream = stream
@@ -14064,11 +14372,16 @@ final class mtmd_helper_gen_audio_inp extends ffi.Struct {
     ..ref.n_past = n_past
     ..ref.out_mode = out_mode
     ..ref.speaker_ref = speaker_ref
+    ..ref.speaker_ref_text = speaker_ref_text
     ..ref.lang = lang
     ..ref.top_k = top_k
     ..ref.top_p = top_p
     ..ref.temp = temp
     ..ref.seed = seed
+    ..ref.speed = speed
+    ..ref.loudness = loudness
+    ..ref.cfg_scale = cfg_scale
+    ..ref.flow_steps = flow_steps
     ..ref.out_type = out_type;
 }
 
@@ -14112,6 +14425,66 @@ final class mtmd_helper_init_opt extends ffi.Struct {
   external mtmd_helper_video_init_params video_params;
 }
 
+final class mtmd_helper_media_meta extends ffi.Struct {
+  @ffi.UnsignedInt()
+  external int typeAsInt;
+
+  mtmd_helper_media_type get type =>
+      mtmd_helper_media_type.fromValue(typeAsInt);
+  set type(mtmd_helper_media_type value) => typeAsInt = value.value;
+
+  @ffi.Uint32()
+  external int width;
+
+  @ffi.Uint32()
+  external int height;
+
+  @ffi.Int32()
+  external int sample_rate;
+
+  @ffi.Float()
+  external double duration;
+
+  @ffi.Int32()
+  external int n_frames;
+
+  static ffi.Pointer<mtmd_helper_media_meta> $allocate(
+    ffi.Allocator $allocator, {
+    required mtmd_helper_media_type type,
+    required int width,
+    required int height,
+    required int sample_rate,
+    required double duration,
+    required int n_frames,
+  }) => $allocator<mtmd_helper_media_meta>()
+    ..ref.type = type
+    ..ref.width = width
+    ..ref.height = height
+    ..ref.sample_rate = sample_rate
+    ..ref.duration = duration
+    ..ref.n_frames = n_frames;
+}
+
+enum mtmd_helper_media_type {
+  MTMD_HELPER_MEDIA_TYPE_UNKNOWN(0),
+  MTMD_HELPER_MEDIA_TYPE_IMAGE(1),
+  MTMD_HELPER_MEDIA_TYPE_AUDIO(2),
+  MTMD_HELPER_MEDIA_TYPE_VIDEO(3);
+
+  final int value;
+  const mtmd_helper_media_type(this.value);
+
+  static mtmd_helper_media_type fromValue(int value) => switch (value) {
+    0 => MTMD_HELPER_MEDIA_TYPE_UNKNOWN,
+    1 => MTMD_HELPER_MEDIA_TYPE_IMAGE,
+    2 => MTMD_HELPER_MEDIA_TYPE_AUDIO,
+    3 => MTMD_HELPER_MEDIA_TYPE_VIDEO,
+    _ => throw ArgumentError(
+      'Unknown value for mtmd_helper_media_type: $value',
+    ),
+  };
+}
+
 typedef mtmd_helper_post_decode_callback =
     ffi.Pointer<ffi.NativeFunction<mtmd_helper_post_decode_callbackFunction>>;
 typedef mtmd_helper_post_decode_callbackFunction =
@@ -14128,6 +14501,124 @@ typedef Dartmtmd_helper_post_decode_callbackFunction =
 final class mtmd_helper_resampler extends ffi.Opaque {}
 
 final class mtmd_helper_video extends ffi.Opaque {}
+
+final class mtmd_helper_video_decoder extends ffi.Struct {
+  external ffi.Pointer<
+    ffi.NativeFunction<
+      ffi.Pointer<ffi.Void> Function(
+        ffi.Pointer<ffi.Void> user_data,
+        ffi.Pointer<ffi.Char> path,
+        ffi.Pointer<ffi.UnsignedChar> buf,
+        ffi.Size len,
+        ffi.Pointer<mtmd_helper_video_stream_info> info,
+      )
+    >
+  >
+  open;
+
+  external ffi.Pointer<
+    ffi.NativeFunction<
+      ffi.Bool Function(
+        ffi.Pointer<ffi.Void> state,
+        ffi.Uint32 width,
+        ffi.Uint32 height,
+        ffi.Float fps,
+        ffi.Pointer<ffi.Bool> fps_picked,
+      )
+    >
+  >
+  start;
+
+  external ffi.Pointer<
+    ffi.NativeFunction<
+      ffi.Bool Function(
+        ffi.Pointer<ffi.Void> state,
+        ffi.Pointer<ffi.UnsignedChar> rgb,
+        ffi.Uint32 width,
+        ffi.Uint32 height,
+      )
+    >
+  >
+  read_frame;
+
+  external ffi.Pointer<
+    ffi.NativeFunction<
+      ffi.Pointer<ffi.Float> Function(
+        ffi.Pointer<ffi.Void> state,
+        ffi.Int sample_rate,
+        ffi.Pointer<ffi.Size> n_samples,
+      )
+    >
+  >
+  read_audio;
+
+  external ffi.Pointer<
+    ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void> state)>
+  >
+  close;
+
+  external ffi.Pointer<ffi.Void> user_data;
+
+  static ffi.Pointer<mtmd_helper_video_decoder> $allocate(
+    ffi.Allocator $allocator, {
+    required ffi.Pointer<
+      ffi.NativeFunction<
+        ffi.Pointer<ffi.Void> Function(
+          ffi.Pointer<ffi.Void> user_data,
+          ffi.Pointer<ffi.Char> path,
+          ffi.Pointer<ffi.UnsignedChar> buf,
+          ffi.Size len,
+          ffi.Pointer<mtmd_helper_video_stream_info> info,
+        )
+      >
+    >
+    open,
+    required ffi.Pointer<
+      ffi.NativeFunction<
+        ffi.Bool Function(
+          ffi.Pointer<ffi.Void> state,
+          ffi.Uint32 width,
+          ffi.Uint32 height,
+          ffi.Float fps,
+          ffi.Pointer<ffi.Bool> fps_picked,
+        )
+      >
+    >
+    start,
+    required ffi.Pointer<
+      ffi.NativeFunction<
+        ffi.Bool Function(
+          ffi.Pointer<ffi.Void> state,
+          ffi.Pointer<ffi.UnsignedChar> rgb,
+          ffi.Uint32 width,
+          ffi.Uint32 height,
+        )
+      >
+    >
+    read_frame,
+    required ffi.Pointer<
+      ffi.NativeFunction<
+        ffi.Pointer<ffi.Float> Function(
+          ffi.Pointer<ffi.Void> state,
+          ffi.Int sample_rate,
+          ffi.Pointer<ffi.Size> n_samples,
+        )
+      >
+    >
+    read_audio,
+    required ffi.Pointer<
+      ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void> state)>
+    >
+    close,
+    required ffi.Pointer<ffi.Void> user_data,
+  }) => $allocator<mtmd_helper_video_decoder>()
+    ..ref.open = open
+    ..ref.start = start
+    ..ref.read_frame = read_frame
+    ..ref.read_audio = read_audio
+    ..ref.close = close
+    ..ref.user_data = user_data;
+}
 
 final class mtmd_helper_video_info extends ffi.Struct {
   @ffi.Uint32()
@@ -14167,17 +14658,52 @@ final class mtmd_helper_video_init_params extends ffi.Struct {
   @ffi.Bool()
   external bool no_soundtrack;
 
+  external ffi.Pointer<mtmd_helper_video_decoder> decoder;
+
   static ffi.Pointer<mtmd_helper_video_init_params> $allocate(
     ffi.Allocator $allocator, {
     required double fps_target,
     required ffi.Pointer<ffi.Char> ffmpeg_bin_dir,
     required int timestamp_interval_ms,
     required bool no_soundtrack,
+    required ffi.Pointer<mtmd_helper_video_decoder> decoder,
   }) => $allocator<mtmd_helper_video_init_params>()
     ..ref.fps_target = fps_target
     ..ref.ffmpeg_bin_dir = ffmpeg_bin_dir
     ..ref.timestamp_interval_ms = timestamp_interval_ms
-    ..ref.no_soundtrack = no_soundtrack;
+    ..ref.no_soundtrack = no_soundtrack
+    ..ref.decoder = decoder;
+}
+
+final class mtmd_helper_video_stream_info extends ffi.Struct {
+  @ffi.Uint32()
+  external int width;
+
+  @ffi.Uint32()
+  external int height;
+
+  @ffi.Float()
+  external double fps;
+
+  @ffi.Int32()
+  external int n_frames;
+
+  @ffi.Float()
+  external double duration;
+
+  static ffi.Pointer<mtmd_helper_video_stream_info> $allocate(
+    ffi.Allocator $allocator, {
+    required int width,
+    required int height,
+    required double fps,
+    required int n_frames,
+    required double duration,
+  }) => $allocator<mtmd_helper_video_stream_info>()
+    ..ref.width = width
+    ..ref.height = height
+    ..ref.fps = fps
+    ..ref.n_frames = n_frames
+    ..ref.duration = duration;
 }
 
 final class mtmd_image_tokens extends ffi.Opaque {}

@@ -19,7 +19,7 @@ PROMPT_SHA256 = hashlib.sha256(PROMPT.encode()).hexdigest()
 PIPELINE_ONLY_TAG = 'v0.8.0-2'
 # Preserve the historical field for sealed receipts from the earlier lanes.
 LEGACY_NATIVE3_REPORT_TAGS = ('v0.8.0-3', 'v0.9.0', 'v1.0.0', 'v1.0.0-1')
-TAGS = (PIPELINE_ONLY_TAG, *LEGACY_NATIVE3_REPORT_TAGS, 'v1.0.0-2', 'v1.0.0-3', 'v1.0.0-4')
+TAGS = (PIPELINE_ONLY_TAG, *LEGACY_NATIVE3_REPORT_TAGS, 'v1.0.0-2', 'v1.0.0-3', 'v1.0.0-4', 'v1.1.0')
 NATIVE_NAME = re.compile(r'^(?:lib)?(?:llama(?:dart)?|ggml|mtmd)(?:[-_.].*)?\.(?:dll|dylib)$', re.I)
 
 

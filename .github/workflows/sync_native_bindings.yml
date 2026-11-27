@@ -302,7 +302,7 @@ jobs:
             "- [ ] If stable_diffusion sync was requested, confirm release \`${RESOLVED_STABLE_DIFFUSION_TAG}\` includes every pinned runtime archive and the Apple XCFramework." \
             "- [ ] Confirm manifest provenance, ABI/capabilities, bundle coverage, checksums, and real-model evidence." \
             "- [ ] Confirm Apple SPM pins and current README/website/changelog surfaces are aligned." \
-            "- [ ] A moved llama.cpp pin clears \`llamaCppCompatibleAppleCompanionTags\`, so apps on the previous companion fail the Apple build. For a wrapper rebuild of the same upstream llama.cpp, re-list the previous pin only after confirming identical headers and thin binaries. Either way, update \`test/fixtures/native/llama_cpp_apple_compatibility.json\`: until then \`is bound to the verified artifacts\` in \`test/unit/hook/native_release_pins_test.dart\` fails." \
+            "- [ ] A moved llama.cpp pin clears \`llamaCppCompatibleAppleCompanionTags\`, so apps on the previous companion fail the Apple build. For a wrapper rebuild of the same upstream llama.cpp, re-list the previous pin only after confirming identical headers and thin binaries. Either way, \`binds the current XCFramework checksum to the companion pin\` in \`test/unit/hook/native_release_pins_test.dart\` fails until the companion manifest carries the pinned checksum; a re-listed pin also needs its own per-slice export and struct-layout evidence." \
             > "${body_file}"
           printf '\n## Changelog\n\n' >> "${body_file}"
           python3 tool/native/sync_native_release_pins.py changelog-section "${BASE_SHA}" "${PROPOSED_SHA}" >> "${body_file}"

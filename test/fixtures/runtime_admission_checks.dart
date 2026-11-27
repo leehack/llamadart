@@ -56,7 +56,7 @@ void main(List<String> arguments) {
 
   if (expected == 'refused') {
     if (error is! LlamaUnsupportedException ||
-        !error.message.contains('llama.cpp v1.0.0')) {
+        !error.message.contains('llama.cpp v1.1.0')) {
       throw StateError('$mode was not refused: $error');
     }
     if (spy() != 0) {
@@ -66,7 +66,7 @@ void main(List<String> arguments) {
     }
   } else {
     if (error is LlamaUnsupportedException &&
-        error.message.contains('llama.cpp v1.0.0')) {
+        error.message.contains('llama.cpp v1.1.0')) {
       throw StateError('$mode refused an admitted runtime: $error');
     }
     // The spy has no mtmd exports and `load` stops at the first missing

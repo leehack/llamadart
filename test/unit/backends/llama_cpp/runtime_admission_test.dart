@@ -7,7 +7,8 @@ import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
 
-const _v1 = 'b1b770d90d94cad9e9ea5b993bdbc383a522fb28';
+const _v1 = '171527522610996f5f0acf12334e185156ca8f44';
+const _v100 = 'b1b770d90d94cad9e9ea5b993bdbc383a522fb28';
 const _v090 = 'cd959bae99ff4bed22bef2604f45241c09bbb8c8';
 const _v080 = '8642541b255bfb5dc39cd351a178be09013a55d6';
 
@@ -16,7 +17,7 @@ String _identity(String commit, {String suffix = ''}) =>
 
 void main() {
   group('admitsRuntimeBuildIdentity', () {
-    test('admits the exact llama.cpp v1.0.0 commit', () {
+    test('admits the exact llama.cpp v1.1.0 commit', () {
       expect(admitsRuntimeBuildIdentity(_identity(_v1)), isTrue);
       expect(
         admitsRuntimeBuildIdentity(_identity(_v1, suffix: 'wrapper=abc;')),
@@ -46,6 +47,7 @@ void main() {
       'abbreviated commit': _identity(_v1.substring(0, 12)),
       'prefix of the commit': _identity('${_v1}0'),
       'no schema prefix': 'wrapper=abc;llama.cpp=$_v1;',
+      'v1.0.0': _identity(_v100),
       'v0.9.0': _identity(_v090),
       'v0.8.0': _identity(_v080),
     };
@@ -70,8 +72,8 @@ void main() {
             allOf(
               startsWith('Model loading needs a llamadart-native runtime'),
               contains(identity),
-              contains('llama.cpp v1.0.0 ($_v1)'),
-              contains('llamadart-native v1.0.0'),
+              contains('llama.cpp v1.1.0 ($_v1)'),
+              contains('llamadart-native v1.1.0'),
             ),
           ),
         ),

@@ -20,7 +20,9 @@ Linux. Install them on every machine that runs the app. Choosing modules:
   llamadart does not ship them on Linux. Without them the CUDA module fails to
   load and llama.cpp runs on CPU. A GPU-ready cloud image can ship the driver
   without them.
-- `hip`: ROCm runtime libs (for example `libhipblas.so.2`).
+- `hip`: ROCm 6.3 or newer runtime libs (for example `libhipblas.so.2`).
+  `libggml-hip.so` is built against ROCm 6.3.4; ROCm 6.1 and 6.2 no longer
+  satisfy it.
 
 ## Package examples
 

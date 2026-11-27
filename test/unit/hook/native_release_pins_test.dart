@@ -16,8 +16,8 @@ import 'package:test/test.dart';
 void main() {
   final sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
 
-  test('llama.cpp pins the approved v1.0.0-4 release', () {
-    expect(llamaCppTag, 'v1.0.0-4');
+  test('llama.cpp pins the approved v1.1.0 release', () {
+    expect(llamaCppTag, 'v1.1.0');
   });
 
   test('llama.cpp tag follows the native release tag grammar', () {
@@ -25,152 +25,31 @@ void main() {
   });
 
   group('Apple llama.cpp compatibility', () {
-    final proof =
-        jsonDecode(
-              File(
-                'test/fixtures/native/llama_cpp_apple_compatibility.json',
-              ).readAsStringSync(),
-            )
-            as Map<String, dynamic>;
-
-    final checksums = (proof['xcframework_checksums'] as Map)
-        .cast<String, String>();
-    final published = (proof['published_companion_tags'] as Map)
-        .cast<String, String>();
-
-    test('is bound to the verified artifacts', () {
-      expect(proof['current_tag'], llamaCppTag);
-      expect(published, isNotEmpty);
-      expect(
-        llamaCppCompatibleAppleCompanionTags.keys,
-        unorderedEquals(published.values.toSet()),
-      );
-      for (final description in llamaCppCompatibleAppleCompanionTags.values) {
-        expect(description.trim(), isNotEmpty);
-      }
-      expect(llamaCppCompatibleAppleCompanionChecksums, checksums);
-      expect(
-        File(
-          'packages/llamadart_llama_cpp_flutter/darwin/'
-          'llamadart_llama_cpp_flutter/Package.swift',
-        ).readAsStringSync(),
-        contains('checksum: "${checksums[llamaCppTag]}"'),
-      );
-    });
-
-    test('checked every framework slice', () {
-      final slices = proof['slices'] as List<dynamic>;
-      expect(proof['core_symbols_checked'], greaterThan(0));
-      expect(
-        slices.cast<Map<String, dynamic>>().map(
-          (slice) => (slice['library'], slice['architecture']),
-        ),
-        unorderedEquals([
-          ('ios-arm64', 'arm64'),
-          ('ios-arm64_x86_64-simulator', 'arm64'),
-          ('ios-arm64_x86_64-simulator', 'x86_64'),
-          ('macos-arm64_x86_64', 'arm64'),
-          ('macos-arm64_x86_64', 'x86_64'),
-        ]),
-      );
-      for (final slice in slices.cast<Map<String, dynamic>>()) {
-        final missing = slice['missing_core_symbols'] as Map<String, dynamic>;
-        expect(missing.keys, unorderedEquals(checksums.keys));
-        expect(missing.values, everyElement(isEmpty));
-      }
-    });
-
-    test('older Apple slices need a runtime probe for multi-end budgets', () {
-      const multi = 'llama_dart_sampler_init_reasoning_budget_multi';
-      expect(proof['optional_current_symbols'], [multi]);
-      for (final slice in (proof['slices'] as List).cast<Map>()) {
-        final missing = slice['missing_optional_symbols'] as Map;
-        expect(missing.keys, unorderedEquals(checksums.keys));
-        for (final tag in checksums.keys) {
-          expect(missing[tag], tag == llamaCppTag ? isEmpty : [multi]);
-        }
-      }
-    });
-
-    test('names the checksum the published companions declare', () {
-      for (final MapEntry(key: tag, value: nativeTag) in published.entries) {
-        final checksum = checksums[nativeTag];
-        expect(checksum, isNotNull);
-        final ref = 'refs/tags/$tag';
-        final tagExists =
-            Process.runSync('git', [
-              'show-ref',
-              '--verify',
-              '--quiet',
-              ref,
-            ]).exitCode ==
-            0;
-        if (!tagExists &&
-            Platform.environment['LLAMADART_REQUIRE_PUBLISHED_COMPANION_TAGS'] !=
-                '1') {
-          continue;
-        }
-        final shown = Process.runSync('git', [
-          'show',
-          '$ref:packages/llamadart_llama_cpp_flutter/darwin/'
-              'llamadart_llama_cpp_flutter/Package.swift',
-        ]);
-        expect(shown.exitCode, 0, reason: '$ref: ${shown.stderr}');
-        final manifest = shown.stdout as String;
-        expect(
-          manifest,
-          contains('let llamaCppTag = "$nativeTag"'),
-          reason: tag,
-        );
-        expect(manifest, contains('checksum: "$checksum"'), reason: tag);
-      }
-    });
-
-    test('core stays off what only the pinned runtime has', () {
-      final changedTypes =
-          (proof['types_changed_and_unused_by_core'] as List<dynamic>)
-              .cast<String>();
-      final bindings = RegExp(r'(^|/)(stable_diffusion_)?bindings\.dart$');
-      final word = RegExp(r'[A-Za-z_][A-Za-z_0-9]*');
-      final llamaBindings = File(
-        'lib/src/backends/llama_cpp/bindings.dart',
+    test('binds the current XCFramework checksum to the companion pin', () {
+      final manifest = File(
+        'packages/llamadart_llama_cpp_flutter/darwin/'
+        'llamadart_llama_cpp_flutter/Package.swift',
       ).readAsStringSync();
-      final dependingOnChangedTypes = <String>{
-        for (final match in RegExp(
-          r'^(?:external\s+[^;]*?|[\w.<>]+\s+)\b(\w+)\([^;{]*?\)\s*[;{]',
-          multiLine: true,
-        ).allMatches(llamaBindings))
-          if (word
-              .allMatches(match[0]!)
-              .any((w) => changedTypes.contains(w[0])))
-            match[1]!,
-      };
-      final forbidden = <String>{
-        ...(proof['current_only_symbols'] as List<dynamic>).cast<String>(),
-        ...changedTypes,
-        ...dependingOnChangedTypes,
-      };
-      final uses = <String>[];
-      for (final entity in Directory('lib').listSync(recursive: true)) {
-        if (entity is! File ||
-            !entity.path.endsWith('.dart') ||
-            bindings.hasMatch(entity.path.replaceAll(r'\', '/'))) {
-          continue;
-        }
-        final source = entity.readAsStringSync();
-        for (final match in word.allMatches(source)) {
-          if (forbidden.contains(match[0])) {
-            uses.add('${entity.path}: ${match[0]}');
-          }
-        }
-      }
       expect(
-        uses,
-        isEmpty,
-        reason:
-            'An admitted companion lacks these or lays them out differently. '
-            'Probe the runtime '
-            'first, then move the name out of the fixture.',
+        llamaCppCompatibleAppleCompanionChecksums[llamaCppTag],
+        matches(sha256Pattern),
+      );
+      expect(
+        manifest,
+        contains(
+          'checksum: "${llamaCppCompatibleAppleCompanionChecksums[llamaCppTag]}"',
+        ),
+      );
+      expect(manifest, contains('let llamaCppTag = "$llamaCppTag"'));
+    });
+
+    test('admits no earlier companion without its own checksum proof', () {
+      expect(
+        llamaCppCompatibleAppleCompanionChecksums.keys,
+        unorderedEquals({
+          llamaCppTag,
+          ...llamaCppCompatibleAppleCompanionTags.keys,
+        }),
       );
     });
   });

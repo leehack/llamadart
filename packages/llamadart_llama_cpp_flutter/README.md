@@ -20,7 +20,7 @@ dependencies:
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/llamadart-native@v1.0.0-4`.
+The Apple SwiftPM manifest pins `leehack/llamadart-native@v1.1.0`.
 
 Apps bound for the App Store should use this package: the Apple privacy
 manifest for the llama.cpp runtime ships inside this XCFramework, never in the

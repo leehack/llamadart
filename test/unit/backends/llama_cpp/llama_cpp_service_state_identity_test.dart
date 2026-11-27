@@ -14,7 +14,7 @@ import '../../../support/synthetic_embedding_gguf.dart';
 const _params = ModelParams(gpuLayers: 0, contextSize: 64);
 const _build =
     'llamadart-native-build/1;owner=abc;'
-    'llama.cpp=b1b770d90d94cad9e9ea5b993bdbc383a522fb28;backends=cpu';
+    'llama.cpp=171527522610996f5f0acf12334e185156ca8f44;backends=cpu';
 
 // Runs the real llama.cpp runtime on the CPU with a synthetic model; the
 // build identity reader stands in for runtimes that predate it.

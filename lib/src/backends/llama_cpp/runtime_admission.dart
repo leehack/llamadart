@@ -8,10 +8,10 @@ import 'build_identity.dart';
 /// other runtime is: a mismatched runtime reads and writes by-value structs at
 /// the wrong offsets, so there is deliberately no override.
 const String admittedLlamaCppCommit =
-    'b1b770d90d94cad9e9ea5b993bdbc383a522fb28';
+    '171527522610996f5f0acf12334e185156ca8f44';
 
 /// The llama.cpp release [admittedLlamaCppCommit] is tagged as.
-const String admittedLlamaCppRelease = 'v1.0.0';
+const String admittedLlamaCppRelease = 'v1.1.0';
 
 const String _identityPrefix = 'llamadart-native-build/1;';
 const String _commitKey = ';llama.cpp=';

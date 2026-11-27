@@ -11,13 +11,14 @@
 struct llama_model;
 struct mtmd_context;
 
-// llama.cpp v1.0.0 mtmd-helper.h declares these eight bools in this order.
+// llama.cpp v1.1.0 mtmd-helper.h declares these nine bools in this order.
 struct mtmd_helper_cap {
     bool chat;
     bool vision;
     bool audio;
     bool video;
     bool audio_stream;
+    bool audio_duplex;
     bool text_gen;
     bool audio_gen;
     bool audio_gen_spk_ref;
@@ -45,6 +46,7 @@ EXPORT struct mtmd_helper_cap mtmd_helper_get_capabilities(
         .audio = !video_enabled,
         .video = video_enabled,
         .audio_stream = !video_enabled,
+        .audio_duplex = !video_enabled,
         .text_gen = !video_enabled,
         .audio_gen = !video_enabled,
         .audio_gen_spk_ref = !video_enabled,
