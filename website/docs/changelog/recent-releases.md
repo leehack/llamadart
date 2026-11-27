@@ -11,10 +11,6 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
-## Unreleased
-
-- Native llama.cpp rejects DRY settings that can exhaust a token allow-list with `LlamaArgumentException`.
-
 ## 0.22.0
 
 - Add native llama.cpp sampler controls to `GenerationParams`: `frequencyPenalty`, `penaltyLastN`, `logitBias`, `typicalP`, `topNSigma`, `xtcProbability`/`xtcThreshold`, `dynatempRange`/`dynatempExponent` and `mirostat`/`mirostatTau`/`mirostatEta`. `LlamaEngineCapabilities.samplerControls` reports support; WebGPU and LiteRT-LM reject them. The example server maps `frequency_penalty`, `presence_penalty` and `logit_bias`.
