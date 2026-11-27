@@ -441,80 +441,142 @@ void main() {
       });
     }
 
-    test('release docs CLI runs checkLiteRtLmDocs', () async {
-      final packages = File('.dart_tool/package_config.json').absolute.path;
-      final verifier = await compileDartScript(
-        'tool/testing/verify_release_docs_versions.dart',
-      );
-      final cliRoot = Directory.systemTemp.createTempSync('cli-litert-docs-');
-      addTearDown(() => cliRoot.deleteSync(recursive: true));
+    group('release docs CLI', () {
+      late String packages;
+      late String verifier;
+      late Directory cliRoot;
 
-      final grammarFixture =
-          jsonDecode(
-                File(
-                  'tool/native/fixtures/native_release_tag_grammar.json',
-                ).readAsStringSync(),
-              )
-              as Map<String, dynamic>;
-      final docContract =
-          grammarFixture['documentation_contract'] as Map<String, dynamic>;
-      final contractDocs = (docContract['docs'] as Map<String, dynamic>).keys
-          .toList();
+      setUpAll(() async {
+        cliRoot = Directory.systemTemp.createTempSync('cli-release-docs-');
+        packages = File('.dart_tool/package_config.json').absolute.path;
+        verifier = await compileDartScript(
+          'tool/testing/verify_release_docs_versions.dart',
+        );
 
-      final paths = <String>{
-        'AGENTS.md',
-        'CHANGELOG.md',
-        'LICENSE',
-        'README.md',
-        '.github/workflows/sync_native_bindings.yml',
-        'lib/src/hook/native_release_pins.dart',
-        'pubspec.yaml',
-        'skills/llamadart-getting-started/SKILL.md',
-        fixture,
-        'tool/native/fixtures/native_release_tag_grammar.json',
-        'website/docs/changelog/recent-releases.md',
-        'website/docs/getting-started/installation.md',
-        'website/docs/guides/performance-tuning.md',
-        'website/docs/maintainers/native-and-web-sync.md',
-        'website/docs/platforms/support-matrix.md',
-        'packages/genkit_llamadart/pubspec.yaml',
-        for (final pkg in companionSwiftPins) ...[
-          pkg.pubspecPath,
-          pkg.changelogPath,
-          pkg.swiftPackagePath,
-          '${pkg.root}/README.md',
-        ],
-        ...contractDocs,
-      };
-      for (final path in paths) {
-        final src = File(path);
-        if (!src.existsSync()) continue;
-        final dst = File('${cliRoot.path}/$path');
-        dst.parent.createSync(recursive: true);
-        src.copySync(dst.path);
-      }
+        final grammarFixture =
+            jsonDecode(
+                  File(
+                    'tool/native/fixtures/native_release_tag_grammar.json',
+                  ).readAsStringSync(),
+                )
+                as Map<String, dynamic>;
+        final docContract =
+            grammarFixture['documentation_contract'] as Map<String, dynamic>;
+        final contractDocs = (docContract['docs'] as Map<String, dynamic>).keys
+            .toList();
+
+        final paths = <String>{
+          'AGENTS.md',
+          'CHANGELOG.md',
+          'LICENSE',
+          'README.md',
+          '.github/workflows/sync_native_bindings.yml',
+          'lib/src/hook/native_release_pins.dart',
+          'pubspec.yaml',
+          'skills/llamadart-getting-started/SKILL.md',
+          fixture,
+          'tool/native/fixtures/native_release_tag_grammar.json',
+          'website/docs/changelog/recent-releases.md',
+          'website/docs/getting-started/installation.md',
+          'website/docs/guides/performance-tuning.md',
+          'website/docs/maintainers/native-and-web-sync.md',
+          'website/docs/platforms/support-matrix.md',
+          'packages/genkit_llamadart/pubspec.yaml',
+          for (final pkg in companionSwiftPins) ...[
+            pkg.pubspecPath,
+            pkg.changelogPath,
+            pkg.swiftPackagePath,
+            '${pkg.root}/README.md',
+          ],
+          ...contractDocs,
+        };
+        for (final path in paths) {
+          final src = File(path);
+          if (!src.existsSync()) continue;
+          final dst = File('${cliRoot.path}/$path');
+          dst.parent.createSync(recursive: true);
+          src.copySync(dst.path);
+        }
+      });
+      tearDownAll(() => cliRoot.deleteSync(recursive: true));
 
       ProcessResult runCli() => Process.runSync(Platform.resolvedExecutable, [
         '--packages=$packages',
         verifier,
       ], workingDirectory: cliRoot.path);
 
-      final baseline = runCli();
-      expect(baseline.exitCode, 0, reason: baseline.stderr.toString());
+      ProcessResult runWithReplacement(
+        String path,
+        Pattern before,
+        String after,
+      ) {
+        final file = File('${cliRoot.path}/$path');
+        final original = file.readAsStringSync();
+        final changed = original.replaceFirst(before, after);
+        expect(changed, isNot(original), reason: path);
+        file.writeAsStringSync(changed);
+        try {
+          return runCli();
+        } finally {
+          file.writeAsStringSync(original);
+        }
+      }
 
-      final readme = File('${cliRoot.path}/README.md');
-      final original = readme.readAsStringSync();
-      final mutated = original.replaceFirst(
-        RegExp(r'upstream `[0-9a-f]{8}`'),
-        'upstream `22222222`',
-      );
-      expect(mutated, isNot(original));
-      readme.writeAsStringSync(mutated);
+      test('accepts the current docs', () {
+        final baseline = runCli();
+        expect(baseline.exitCode, 0, reason: baseline.stderr.toString());
+      });
 
-      final failed = runCli();
-      expect(failed.exitCode, 1);
-      expect(failed.stderr, contains('README.md names LiteRT-LM owner '));
-      expect(failed.stderr, contains('/ upstream 22222222,'));
+      test('rejects a stale LiteRT-LM upstream commit', () {
+        final failed = runWithReplacement(
+          'README.md',
+          RegExp(r'upstream `[0-9a-f]{8}`'),
+          'upstream `22222222`',
+        );
+        expect(failed.exitCode, 1);
+        expect(failed.stderr, contains('README.md names LiteRT-LM owner '));
+        expect(failed.stderr, contains('/ upstream 22222222,'));
+      });
+
+      for (final companion in companionSwiftPins) {
+        final path = '${companion.root}/README.md';
+        for (final (side, before, after) in [
+          (
+            'companion',
+            RegExp(
+              r'companion `[0-9]+\.[0-9]+\.x` pairs',
+              caseSensitive: false,
+            ),
+            'Companion `99.99.x` pairs',
+          ),
+          (
+            'core',
+            RegExp(r'with core `[0-9]+\.[0-9]+\.x`'),
+            'with core `99.99.x`',
+          ),
+        ]) {
+          test('${companion.package} rejects a stale $side pairing', () {
+            final failed = runWithReplacement(path, before, after);
+            expect(failed.exitCode, 1, reason: failed.stderr.toString());
+            expect(failed.stderr, contains('$path documents companion'));
+            expect(failed.stderr, contains('`99.99.x`'));
+          });
+        }
+      }
+
+      test('rejects a missing companion pairing', () {
+        final path = '${companionSwiftPins.first.root}/README.md';
+        final failed = runWithReplacement(
+          path,
+          RegExp(r'companion `[^`]+` pairs\s+with core `[^`]+`'),
+          'use compatible versions',
+        );
+        expect(failed.exitCode, 1, reason: failed.stderr.toString());
+        expect(
+          failed.stderr,
+          contains('$path is missing the pairing sentence'),
+        );
+      });
     });
   });
 
