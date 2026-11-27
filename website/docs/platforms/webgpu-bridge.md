@@ -543,7 +543,7 @@ This llamadart version pins bridge assets `v0.1.96`, which include the
 staging capability flag, API-version-1 media embedding contract, and
 `thinkingBudgetMultiEnd`.
 
-- The pinned `v0.1.96` bridge assets embed llama.cpp `v1.1.0`, matching the native runtime `v1.1.0`.
+- The pinned `v0.1.96` bridge assets embed llama.cpp `v1.1.0`, matching the native runtime `v1.1.0-1`.
 - The bridge releases temporary buffers during JS-backed staging and batches
   WebGPU weight uploads to reduce memory use while loading GGUF models.
 - Model metadata reports the vocabulary's BOS and EOS text and the effective

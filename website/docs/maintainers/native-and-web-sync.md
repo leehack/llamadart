@@ -871,6 +871,12 @@ prep bumps the matching companion to a core floor of `0.23.0`. The
 Linux x64 `libggml-hip.so` is built against ROCm 6.3.4, so the HIP backend
 needs ROCm 6.3 or newer.
 
+The `v1.1.0-1` wrapper rebuild keeps the same upstream commit, so admission is
+unchanged. It adds the exports `llama_dart_model_fd_api_version`,
+`llama_dart_model_load_from_fd`, `llama_dart_owner_model_load_from_fd` and
+`llama_dart_sampler_init_dry`, which the regenerated bindings declare and the
+core does not call.
+
 The 0.18.0 preparation moves to `v0.8.0-3` and requires its matching Apple
 companion. Older runtimes are no longer admitted: they lack the speculative
 rollback and model-creation ownership fixes. All three Apple companions are

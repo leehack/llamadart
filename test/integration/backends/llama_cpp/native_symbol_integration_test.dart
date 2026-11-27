@@ -626,6 +626,87 @@ void main() {
       expect(() => llama_dart_process_status.fromValue(0), throwsArgumentError);
     });
 
+    test('v1.1.0-1 model fd and DRY wrappers are declared and exported', () {
+      final source = File(
+        'lib/src/backends/llama_cpp/bindings.dart',
+      ).readAsStringSync();
+      const declarations = {
+        'llama_dart_model_fd_api_version':
+            '@ffi.Native<ffi.Uint32Function()>()'
+            'externalintllama_dart_model_fd_api_version();',
+        'llama_dart_model_load_from_fd':
+            '@ffi.Native<ffi.Int32Function(ffi.Int32,ffi.Int64,'
+            'llama_model_params,ffi.Pointer<ffi.Pointer<llama_model>>,)>()'
+            'externalintllama_dart_model_load_from_fd(intfd,intsize,'
+            'llama_model_paramsparams,'
+            'ffi.Pointer<ffi.Pointer<llama_model>>out_model,);',
+        'llama_dart_owner_model_load_from_fd':
+            '@ffi.Native<ffi.Int32Function(ffi.Pointer<ffi.Void>,ffi.Int32,'
+            'ffi.Int64,llama_model_params,'
+            'ffi.Pointer<ffi.Pointer<llama_model>>,)>()'
+            'externalintllama_dart_owner_model_load_from_fd('
+            'ffi.Pointer<ffi.Void>owner,intfd,intsize,'
+            'llama_model_paramsparams,'
+            'ffi.Pointer<ffi.Pointer<llama_model>>out_model,);',
+        'llama_dart_sampler_init_dry':
+            '@ffi.Native<ffi.Pointer<llama_sampler>Function('
+            'ffi.Pointer<llama_vocab>,ffi.Float,ffi.Float,ffi.Int32,'
+            'ffi.Int32,ffi.Pointer<ffi.Pointer<ffi.Char>>,ffi.Size,)>()'
+            'externalffi.Pointer<llama_sampler>llama_dart_sampler_init_dry('
+            'ffi.Pointer<llama_vocab>vocab,doubledry_multiplier,'
+            'doubledry_base,intdry_allowed_length,intdry_penalty_last_n,'
+            'ffi.Pointer<ffi.Pointer<ffi.Char>>seq_breakers,'
+            'intnum_breakers,);',
+      };
+      for (final entry in declarations.entries) {
+        expect(
+          _nativeDeclaration(source, entry.key),
+          entry.value,
+          reason: entry.key,
+        );
+      }
+      final wrapper = _llamadartWrapperLibraryFileOrNull();
+      expect(
+        wrapper,
+        isNotNull,
+        reason: 'Expected the llama.cpp wrapper library.',
+      );
+      expect(
+        ExitTeardownApi.tryResolve(isWindows: Platform.isWindows),
+        isNotNull,
+      );
+      _expectDynamicLibraryExports(wrapper!, declarations.keys);
+      // Looked up in the wrapper: Windows keeps it out of the primary asset
+      // that the generated binding resolves.
+      final fdApiVersion = ffi.DynamicLibrary.open(wrapper.path)
+          .lookupFunction<ffi.Uint32 Function(), int Function()>(
+            'llama_dart_model_fd_api_version',
+          );
+      // Windows loaders report UNSUPPORTED, so the API version is 0 there.
+      expect(fdApiVersion(), Platform.isWindows ? 0 : 1);
+    });
+
+    test('model fd status wire values match the published header', () {
+      const statuses = [
+        llama_dart_model_fd_status.LLAMA_DART_MODEL_FD_STATUS_SUCCESS,
+        llama_dart_model_fd_status.LLAMA_DART_MODEL_FD_STATUS_INVALID_ARGUMENT,
+        llama_dart_model_fd_status.LLAMA_DART_MODEL_FD_STATUS_UNSUPPORTED,
+        llama_dart_model_fd_status
+            .LLAMA_DART_MODEL_FD_STATUS_INVALID_DESCRIPTOR,
+        llama_dart_model_fd_status.LLAMA_DART_MODEL_FD_STATUS_SIZE_MISMATCH,
+        llama_dart_model_fd_status.LLAMA_DART_MODEL_FD_STATUS_LOAD_FAILED,
+        llama_dart_model_fd_status.LLAMA_DART_MODEL_FD_STATUS_ERROR,
+      ];
+      for (final (value, status) in statuses.indexed) {
+        expect(status.value, value);
+        expect(llama_dart_model_fd_status.fromValue(value), status);
+      }
+      expect(
+        () => llama_dart_model_fd_status.fromValue(7),
+        throwsArgumentError,
+      );
+    });
+
     test('v0.7.0 scheduler callbacks are declared and exported', () {
       final source = File(
         'lib/src/backends/llama_cpp/bindings.dart',
@@ -1231,6 +1312,12 @@ void main() {
     });
   });
 }
+
+String? _nativeDeclaration(String source, String symbol) => RegExp(
+  r'@ffi\.Native<[^@;]*?>\(\)\s*external\s+[^;]*?\b' +
+      RegExp.escape(symbol) +
+      r'\s*\([^;]*;',
+).firstMatch(source)?.group(0)?.replaceAll(RegExp(r'\s+'), '');
 
 bool _declaresExternalFunction(String source, String symbol) => RegExp(
   r'external\s+[^;]*\b' + RegExp.escape(symbol) + r'\s*\(',

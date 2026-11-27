@@ -436,7 +436,7 @@ hooks:
   release ships CUDA only when the `windows-x64-cuda12` archive is extracted
   into the same directory.
 
-The pinned `v1.1.0` runtime matches this core's FFI bindings. For a custom
+The pinned `v1.1.0-1` runtime matches this core's FFI bindings. For a custom
 bundle, use the required llama.cpp commit above and preserve the pinned
 runtime's struct layouts and symbols. The hook logs a warning when an
 override is active.

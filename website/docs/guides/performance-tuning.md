@@ -341,7 +341,7 @@ the same module's `Engine`, `Backend` and `SpeculativeDecodingMode` exports.
 
 DSpark (`SpeculativeDecodingConfig.draftDspark(draftModel: ...)`) is an
 experimental, opt-in llama.cpp external-draft strategy mapped to upstream
-`draft-dspark`. The default `v1.1.0` runtime supports it, including
+`draft-dspark`. The default `v1.1.0-1` runtime supports it, including
 speculators-format checkpoints. Native recurrent/hybrid target pairs such as
 LFM2 remain subject to the rollback restriction above. It is never
 selected automatically, and support still depends on the target, draft and
