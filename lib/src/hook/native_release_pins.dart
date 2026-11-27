@@ -5,7 +5,7 @@
 library;
 
 /// `leehack/llamadart-native` release tag downloaded for the llama.cpp runtime.
-const llamaCppTag = 'v1.1.0';
+const llamaCppTag = 'v1.1.0-1';
 
 /// The first `llamadart_llama_cpp_flutter` release whose `Package.swift` pins
 /// [llamaCppTag].
@@ -34,7 +34,8 @@ const llamaCppCompatibleAppleCompanionTags = <String, String>{};
 /// Native pin sync preserves this proof on a same-tag refresh and replaces it
 /// with the newly published artifact's checksum when the pin moves.
 const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
-  'v1.1.0': 'c43b2dee1e68aa88c592fa3c6a71c36ed42e02bd791fec68588506a232452fee',
+  'v1.1.0-1':
+      '1908b2f5f489e66986e43a3a9747fcfeff98efb8be09e3d6c462af8d2a24ea59',
 };
 
 /// SHA-256 of each published `llamadart-native-<bundle>-<llamaCppTag>.tar.gz`
@@ -44,27 +45,27 @@ const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
 /// against this map before extracting it.
 const llamaCppBundleSha256 = <String, String>{
   'android-arm64':
-      '7ef4009ea6e08509b1113b90aa6d50dcc2277072fc09ca5888ba623c615d3871',
+      'dd703c4558b7456f325e8a284613ab2d73948a521b889ff48e4bd4915bbaaf32',
   'android-x64':
-      '73b7f0add51d77b523741201c553ef9ea7d7f91d21525cfe873c00ad8f2819d6',
+      '167a52f3fc498b06c1166762ad524c29419b7dc936c14cd31f8643580d6fdf3e',
   'ios-arm64':
-      '248947edcf229ff389c25235ab0303efda064d3334b05810c1502fc215e715f3',
+      'bc6c4917f58ba847d14a9dd083de3f6fd69d5e86590ef9a55178a2886fd99527',
   'ios-arm64-sim':
-      '909465976242142448309ffc8db9420143badac2577a3194df8958479b9239ba',
+      '12a042b29e0991c0bde8f5efffaa9aa7d5ae7e4d6b60c1b292d910db5d0a0e76',
   'ios-x86_64-sim':
-      'e1bb80a08c5ffdc32cf9b56209b028943293e41351c797f299b03590cb653de4',
+      'f9f43cd48566787ce3db608ec7281d1dcdfc7740baa7e1e39c350825a4174185',
   'linux-arm64':
-      'c5c212f0fcb6966cffbff7069351a17b55a435a821a5d7df4d1cb178aa67c4df',
+      '5e1e52549e010106b5e4d80fdcc125ff45ae3e7b070d3b025dead8ce4cfc2a65',
   'linux-x64':
-      'c30b9fd6dd6bcb571bac1b89cde2362b56762212f14516c0c7028ca01d224ea8',
+      'eab7b2c3d15981f23ee422e4346ae3922a1afdee5c2188a1a3c3c88011bc65c8',
   'macos-arm64':
-      '31559d3b8c27b1c642b06dd6416dac74f80147c8953659f279d549e494101d32',
+      '10aa4081876c8f5a5321219e94568bfaae795f405668221c6eda3ffebdccc301',
   'macos-x86_64':
-      'c172ac519370124c3df908c5cdfdbc0cad4f501681d0d4454bb6335024bdb172',
+      'dac76f98bbba39ad8d1fd2c303a974192c54b265ddc222f963993c2daa77eb30',
   'windows-arm64':
-      '939c665987c6ba8699b95af95c13bce8e9edd4a5cca43a6730160710b3cffc95',
+      '8a740811729d1039ede309cdc61437cd76b40589e0fdeea4b9c53a1cb1538eaa',
   'windows-x64':
-      'b69fc46291fc2b49b6b48dcb0e12597cbb76aab07807991d0ca666c819706b65',
+      '371c091beacd630329244393854f4b961abb20c163e31f2006bdbb47083bcac4',
 };
 
 /// The `hook_contract_version` of the [llamaCppTag] release's `assets.json`.
@@ -101,7 +102,7 @@ const llamaCppBackendSidecarSpecs = <LlamaCppBackendSidecarSpec>[
     bundle: 'windows-x64',
     backend: 'cuda',
     archive: 'windows-x64-cuda12',
-    sha256: '8c5375003cd17771839697631d76262d660921a20ef6859ef645bbd8bb093f17',
+    sha256: 'bc731cde5de13deca6ac812a900fc924d56530dce17068e26164abeb29ea8926',
   ),
 ];
 
