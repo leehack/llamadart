@@ -113,7 +113,7 @@ Why the cause needs the owner patch, from upstream `v0.18.0`:
   forwards only text, final and error, so a proxy-only change cannot recover
   the discarded cause.
 - The official pinned
-  [Web conversation implementation](https://cdn.jsdelivr.net/npm/@litert-lm/core@0.19.0/dist/conversation.js)
+  [Web conversation implementation](https://cdn.jsdelivr.net/npm/@litert-lm/core@0.20.0/dist/conversation.js)
   streams messages and closes after `waitUntilDone`. It exposes no terminal
   cause; native artifact publication alone does not repair the browser package.
 
