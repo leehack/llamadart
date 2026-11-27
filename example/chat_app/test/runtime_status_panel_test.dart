@@ -25,7 +25,11 @@ void main() {
         ..devicePixelRatio = oldRatio;
     });
 
-    final provider = _ReadyRuntimeProvider();
+    final provider = _ReadyRuntimeProvider(
+      promptTokens: 26,
+      cachedPromptTokens: 0,
+      completionTokens: 12,
+    );
     addTearDown(provider.dispose);
 
     await tester.pumpWidget(
@@ -50,8 +54,20 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Runtime details'), findsOneWidget);
-    expect(find.text('Average speed'), findsOneWidget);
-    expect(find.text('mock bridge, echo'), findsOneWidget);
+    for (final (label, value) in [
+      ('Prompt tokens', '26'),
+      ('Cached prompt tokens', '0'),
+      ('Completion tokens', '12'),
+      ('Average speed', '86.2 tok/s'),
+      ('Runtime notes', 'mock bridge, echo'),
+    ]) {
+      final tile = find.widgetWithText(ListTile, label);
+      await tester.scrollUntilVisible(tile, 100);
+      expect(
+        find.descendant(of: tile, matching: find.text(value)),
+        findsOneWidget,
+      );
+    }
     expect(tester.takeException(), isNull);
   });
 
@@ -84,12 +100,17 @@ void main() {
 }
 
 class _ReadyRuntimeProvider extends ChatProvider {
-  _ReadyRuntimeProvider({this.runtime, this.runtimeGpuLayerCount})
-    : super(
-        chatService: MockChatService(),
-        settingsService: MockSettingsService(),
-        initialSettings: const ChatSettings(modelPath: 'mock-qwen.gguf'),
-      );
+  _ReadyRuntimeProvider({
+    this.runtime,
+    this.runtimeGpuLayerCount,
+    this.promptTokens,
+    this.cachedPromptTokens,
+    this.completionTokens,
+  }) : super(
+         chatService: MockChatService(),
+         settingsService: MockSettingsService(),
+         initialSettings: const ChatSettings(modelPath: 'mock-qwen.gguf'),
+       );
 
   @override
   bool get isReady => true;
@@ -110,10 +131,22 @@ class _ReadyRuntimeProvider extends ChatProvider {
   double? get lastTokensPerSecond => 86.2;
 
   @override
+  int? get lastPromptTokens => promptTokens;
+
+  @override
+  int? get lastCachedPromptTokens => cachedPromptTokens;
+
+  @override
+  int? get lastCompletionTokens => completionTokens;
+
+  @override
   String? get runtimeNotes => 'mock_bridge;echo';
 
   final LlamaRuntime? runtime;
   final int? runtimeGpuLayerCount;
+  final int? promptTokens;
+  final int? cachedPromptTokens;
+  final int? completionTokens;
 
   @override
   LlamaRuntime? get activeRuntime => runtime;

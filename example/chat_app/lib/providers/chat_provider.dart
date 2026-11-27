@@ -248,6 +248,9 @@ class ChatProvider extends ChangeNotifier {
   String? _runtimeNotes;
   String? _runtimeModelSource;
   String? _runtimeModelCacheState;
+  int? _lastPromptTokens;
+  int? _lastCachedPromptTokens;
+  int? _lastCompletionTokens;
   int? _lastFirstTokenLatencyMs;
   int? _lastGenerationLatencyMs;
   double? _lastTokensPerSecond;
@@ -566,6 +569,9 @@ class ChatProvider extends ChangeNotifier {
   String? get runtimeNotes => _runtimeNotes;
   String? get runtimeModelSource => _runtimeModelSource;
   String? get runtimeModelCacheState => _runtimeModelCacheState;
+  int? get lastPromptTokens => _lastPromptTokens;
+  int? get lastCachedPromptTokens => _lastCachedPromptTokens;
+  int? get lastCompletionTokens => _lastCompletionTokens;
   int? get lastFirstTokenLatencyMs => _lastFirstTokenLatencyMs;
   int? get lastGenerationLatencyMs => _lastGenerationLatencyMs;
   double? get lastTokensPerSecond => _lastTokensPerSecond;
@@ -1156,6 +1162,11 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void _clearGenerationMetrics() {
+    _lastPromptTokens = null;
+    _lastCachedPromptTokens = null;
+    _lastCompletionTokens = null;
+    _lastFirstTokenLatencyMs = null;
+    _lastGenerationLatencyMs = null;
     _lastTokensPerSecond = null;
     _lastDecodeTokensPerSecond = null;
     _lastNativePromptEvalMs = null;
@@ -1178,6 +1189,7 @@ class ChatProvider extends ChangeNotifier {
     _loadedMmprojPath = null;
     _resetRuntimeCapabilities();
     _clearRuntimeDiagnostics();
+    _clearGenerationMetrics();
   }
 
   Future<bool> _prefetchWebRemoteModelIfNeeded(
@@ -1315,6 +1327,7 @@ class ChatProvider extends ChangeNotifier {
     _activeBackend = 'Loading model...';
     _resetRuntimeCapabilities();
     _clearRuntimeDiagnostics();
+    _clearGenerationMetrics();
     notifyListeners();
 
     DateTime lastProgressNotifyAt = DateTime.now();
@@ -1783,8 +1796,6 @@ class ChatProvider extends ChangeNotifier {
 
     _messages.removeLast();
     _currentTokens = math.max(0, _currentTokens - replacedTokenCount);
-    _lastFirstTokenLatencyMs = null;
-    _lastGenerationLatencyMs = null;
     _clearGenerationMetrics();
 
     final history = _settings.singleTurnMode
@@ -2057,15 +2068,8 @@ class ChatProvider extends ChangeNotifier {
       return;
     }
 
-    var generationResult = const GenerationStreamResult(
-      fullResponse: '',
-      fullThinking: '',
-      generatedTokens: 0,
-      firstTokenLatencyMs: null,
-      elapsedMs: 0,
-      decodeElapsedMs: 0,
-    );
-    _lastFirstTokenLatencyMs = null;
+    GenerationStreamResult? generationResult;
+    _clearGenerationMetrics();
     final toolsForTurn = turnTools ?? _toolsForTurn();
     var appliedGeneratedTokenDeltas = 0;
     var hasMediaPartsInTurn = false;
@@ -2190,8 +2194,6 @@ class ChatProvider extends ChangeNotifier {
 
       final fullResponse = generationResult.fullResponse;
       final fullThinking = generationResult.fullThinking;
-      _lastFirstTokenLatencyMs = generationResult.firstTokenLatencyMs;
-
       // Final update
       if (_messages.isNotEmpty && !_messages.last.isUser) {
         final lastSessionMessage = context.session.history.isNotEmpty
@@ -2255,7 +2257,9 @@ class ChatProvider extends ChangeNotifier {
           // Some backends (e.g. LiteRT-LM on web) don't expose tokenizer
           // operations, so retain the generated-token count as the cache hint
           // instead of failing the turn.
-          var tokenCount = generationResult.generatedTokens;
+          var tokenCount =
+              generationResult.usage?.completionTokens ??
+              generationResult.generatedTokens;
           try {
             tokenCount = await _chatService.engine.getTokenCount(finalText);
           } on LlamaUnsupportedException {
@@ -2401,7 +2405,7 @@ class ChatProvider extends ChangeNotifier {
         );
       }
     } finally {
-      if (!accountingApplied) {
+      if (!accountingApplied && generationResult != null) {
         await _applyGenerationAccounting(
           context: context,
           generationResult: generationResult,
@@ -2421,9 +2425,7 @@ class ChatProvider extends ChangeNotifier {
       return;
     }
 
-    final generatedTokens = generationResult.generatedTokens;
-    final elapsedMs = generationResult.elapsedMs;
-    final decodeElapsedMs = generationResult.decodeElapsedMs;
+    final usage = generationResult.usage;
 
     BackendPerfContextData? performance;
     try {
@@ -2445,41 +2447,62 @@ class ChatProvider extends ChangeNotifier {
     _lastNativeEvalTokens = nativeEvalTokens;
     _lastNativeReusedGraphs = performance?.reusedGraphs;
 
-    final effectiveGeneratedTokens = nativeEvalTokens ?? generatedTokens;
+    final reportedCompletionTokens =
+        usage?.completionTokens ?? nativeEvalTokens;
+    final effectiveGeneratedTokens =
+        reportedCompletionTokens ?? generationResult.generatedTokens;
+    _lastPromptTokens = usage?.promptTokens;
+    _lastCachedPromptTokens = usage?.cachedPromptTokens;
+    _lastCompletionTokens =
+        reportedCompletionTokens ??
+        (effectiveGeneratedTokens > 0 ? effectiveGeneratedTokens : null);
     if (_messages.isNotEmpty &&
         !_messages.last.isUser &&
         !_messages.last.isInfo) {
       _messages.last.generatedTokenCount = effectiveGeneratedTokens;
     }
-    if (nativeEvalTokens != null &&
-        nativeEvalTokens != appliedGeneratedTokenDeltas) {
+    if (reportedCompletionTokens != null &&
+        reportedCompletionTokens != appliedGeneratedTokenDeltas) {
       _currentTokens = math.max(
         0,
-        _currentTokens + nativeEvalTokens - appliedGeneratedTokenDeltas,
+        _currentTokens + reportedCompletionTokens - appliedGeneratedTokenDeltas,
       );
     }
 
-    if (effectiveGeneratedTokens > 0 && elapsedMs > 0) {
-      _lastTokensPerSecond = effectiveGeneratedTokens / (elapsedMs / 1000);
+    final elapsed = usage?.duration;
+    final firstToken = usage?.timeToFirstToken;
+    final double? elapsedMs;
+    final double? decodeElapsedMs;
+    if (usage == null) {
+      _lastFirstTokenLatencyMs = generationResult.firstTokenLatencyMs;
+      if (generationResult.firstTokenLatencyMs != null ||
+          generationResult.fullResponse.isNotEmpty ||
+          generationResult.fullThinking.isNotEmpty) {
+        _lastGenerationLatencyMs = generationResult.elapsedMs;
+      }
+      elapsedMs = generationResult.elapsedMs.toDouble();
+      decodeElapsedMs = nativeEvalMs != null && nativeEvalMs > 0
+          ? nativeEvalMs
+          : generationResult.decodeElapsedMs.toDouble();
     } else {
-      _lastTokensPerSecond = null;
+      _lastFirstTokenLatencyMs = firstToken?.inMilliseconds;
+      _lastGenerationLatencyMs = elapsed?.inMilliseconds;
+      elapsedMs = elapsed == null ? null : elapsed.inMicroseconds / 1000;
+      decodeElapsedMs = elapsed == null || firstToken == null
+          ? null
+          : (elapsed - firstToken).inMicroseconds / 1000;
     }
 
-    final effectiveDecodeElapsedMs = nativeEvalMs != null && nativeEvalMs > 0
-        ? nativeEvalMs
-        : decodeElapsedMs.toDouble();
-    if (effectiveGeneratedTokens > 0 && effectiveDecodeElapsedMs > 0) {
-      _lastDecodeTokensPerSecond =
-          effectiveGeneratedTokens / (effectiveDecodeElapsedMs / 1000);
-    } else {
-      _lastDecodeTokensPerSecond = null;
-    }
-
-    if (generationResult.firstTokenLatencyMs != null ||
-        generationResult.fullResponse.isNotEmpty ||
-        generationResult.fullThinking.isNotEmpty) {
-      _lastGenerationLatencyMs = elapsedMs;
-    }
+    _lastTokensPerSecond =
+        effectiveGeneratedTokens > 0 && elapsedMs != null && elapsedMs > 0
+        ? effectiveGeneratedTokens / (elapsedMs / 1000)
+        : null;
+    _lastDecodeTokensPerSecond =
+        effectiveGeneratedTokens > 0 &&
+            decodeElapsedMs != null &&
+            decodeElapsedMs > 0
+        ? effectiveGeneratedTokens / (decodeElapsedMs / 1000)
+        : null;
   }
 
   /// Executes the parsed [toolCalls], records their results, and runs the

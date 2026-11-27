@@ -12,6 +12,9 @@ typedef _RuntimeStatus = ({
   LlamaRuntime? runtime,
   int currentTokens,
   int contextLimit,
+  int? promptTokens,
+  int? cachedPromptTokens,
+  int? completionTokens,
   double? tokensPerSecond,
   double? decodeTokensPerSecond,
   int? firstTokenLatencyMs,
@@ -48,6 +51,9 @@ class RuntimeStatusPanel extends StatelessWidget {
         runtime: provider.activeRuntime,
         currentTokens: provider.currentTokens,
         contextLimit: provider.contextLimit,
+        promptTokens: provider.lastPromptTokens,
+        cachedPromptTokens: provider.lastCachedPromptTokens,
+        completionTokens: provider.lastCompletionTokens,
         tokensPerSecond: provider.lastTokensPerSecond,
         decodeTokensPerSecond: provider.lastDecodeTokensPerSecond,
         firstTokenLatencyMs: provider.lastFirstTokenLatencyMs,
@@ -122,6 +128,13 @@ class RuntimeStatusPanel extends StatelessWidget {
       );
     }
 
+    add(Icons.input_rounded, 'Prompt tokens', status.promptTokens);
+    add(
+      Icons.cached_rounded,
+      'Cached prompt tokens',
+      status.cachedPromptTokens,
+    );
+    add(Icons.output_rounded, 'Completion tokens', status.completionTokens);
     add(
       Icons.speed_rounded,
       'Average speed',
