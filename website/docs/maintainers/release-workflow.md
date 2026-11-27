@@ -50,6 +50,9 @@ Backport the patch changelog import (PR3b) before the `0.22.0` prep.
   keys `backport`, `source`, `revert` (the current revert SHA) and `issue`
   (the issue number) in that order. A later revert needs a new record. The
   backport guard rejects a source reverted on `main`.
+  For quoted titles ending in a PR number, the checks match the whole title
+  against earlier squash commit subjects and their titles without the squash
+  PR suffix. Multiple matches leave the title unresolved.
 - Classify each backport diff. For a high-risk exact backport of an audited
   main commit, run a delta audit covering patch equivalence, dependencies on
   the release branch, and CI at the backport head. An adapted high-risk
