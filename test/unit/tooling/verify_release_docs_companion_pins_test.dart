@@ -500,23 +500,25 @@ void main() {
       });
       tearDownAll(() => cliRoot.deleteSync(recursive: true));
 
-      ProcessResult runCli() => Process.runSync(Platform.resolvedExecutable, [
-        '--packages=$packages',
-        verifier,
-      ], workingDirectory: cliRoot.path);
+      ProcessResult runCli({bool releasePrep = false}) => Process.runSync(
+        Platform.resolvedExecutable,
+        ['--packages=$packages', verifier, if (releasePrep) '--release-prep'],
+        workingDirectory: cliRoot.path,
+      );
 
       ProcessResult runWithReplacement(
         String path,
         Pattern before,
-        String after,
-      ) {
+        String after, {
+        bool releasePrep = false,
+      }) {
         final file = File('${cliRoot.path}/$path');
         final original = file.readAsStringSync();
         final changed = original.replaceFirst(before, after);
         expect(changed, isNot(original), reason: path);
         file.writeAsStringSync(changed);
         try {
-          return runCli();
+          return runCli(releasePrep: releasePrep);
         } finally {
           file.writeAsStringSync(original);
         }
@@ -563,6 +565,19 @@ void main() {
           });
         }
       }
+
+      test('release prep rejects a stale LiteRT-LM companion pairing', () {
+        const path = 'packages/llamadart_litert_lm_flutter/README.md';
+        final failed = runWithReplacement(
+          path,
+          RegExp(r'Companion `[0-9]+\.[0-9]+\.x` pairs'),
+          'Companion `99.99.x` pairs',
+          releasePrep: true,
+        );
+        expect(failed.exitCode, 1, reason: failed.stderr.toString());
+        // This fixture has no Git tag history, so exit status alone is insufficient.
+        expect(failed.stderr, contains('$path documents companion `99.99.x`'));
+      });
 
       test('rejects a missing companion pairing', () {
         final path = '${companionSwiftPins.first.root}/README.md';
