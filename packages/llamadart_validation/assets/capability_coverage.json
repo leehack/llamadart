@@ -473,7 +473,7 @@
       ],
       "exemption": {
         "id": "native-dry-sampler",
-        "reason": "The sampler_controls pack has no case for DRY. Synthetic GGUF VM tests check the sampler-chain position, the exact penalty against llama.cpp's DRY formula, history window, context cap, sequence breakers, prompt history, deterministic repetition suppression, grammar and thinking-budget refusal and pre-decode validation; VM and Chrome tests check unavailable runtimes. The pack follow-up adds model-backed reproducibility.",
+        "reason": "The sampler_controls pack has no case for DRY. Synthetic GGUF VM tests check sampler-chain order, penalty math, history, context cap, sequence breakers, repetition suppression, grammar and thinking-budget refusal, and pre-decode rejection when bans and DRY can exhaust finite candidates. VM and Chrome tests check unavailable runtimes. The pack follow-up adds model-backed reproducibility.",
         "issue": "https://github.com/leehack/llamadart/issues/2307"
       }
     },

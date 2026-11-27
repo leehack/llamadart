@@ -5812,7 +5812,37 @@ class LlamaCppService {
     }
   }
 
-  void _validateSamplerControls(
+  void _validateMaskedDryOverflow(
+    GenerationParams params,
+    int contextSize,
+    int remainingCandidates,
+  ) {
+    // Each penalized token needs a different occurrence of the matching
+    // suffix. For N candidates, at least one match must start N or more
+    // positions back, leaving at most window - N tokens in that match.
+    final window = math.min(params.dryPenaltyLastN, contextSize);
+    final exponent = window - remainingCandidates - params.dryAllowedLength;
+    if (exponent < 0) return;
+
+    // Leave float32 headroom for subtraction from the original logit and
+    // for temperature scaling. Ignoring the native exponent clamp bounds
+    // the penalty even when its exact threshold rounds differently in C++.
+    final penalty =
+        _float32(params.dryMultiplier) *
+        math.pow(_float32(params.dryBase), exponent);
+    final temp = params.temp <= 0 ? 1.0 : math.min(_float32(params.temp), 1.0);
+    if (_float32(2 * penalty / temp).isFinite) return;
+
+    throw LlamaArgumentException(
+      'GenerationParams.dryMultiplier with the configured token bans or '
+      'runtime suppression can leave no finite token to sample. Reduce '
+      'dryMultiplier, dryBase or dryPenaltyLastN, or allow more tokens.',
+      name: 'dryMultiplier',
+      invalidValue: params.dryMultiplier,
+    );
+  }
+
+  int _validateSamplerControls(
     GenerationParams params,
     int vocabSize,
     List<int> suppressedTokens,
@@ -5832,7 +5862,7 @@ class LlamaCppService {
         invalidValue: params.penaltyLastN,
       );
     }
-    if (params.logitBias.isEmpty) return;
+    if (params.logitBias.isEmpty && params.dryMultiplier == 0) return 0;
 
     final bans = <int>{};
     for (final MapEntry(key: token, value: bias) in params.logitBias.entries) {
@@ -5854,15 +5884,18 @@ class LlamaCppService {
         );
       }
     }
-    if (bans.isEmpty) return;
-    if (params.grammar?.isNotEmpty ?? false) {
-      throw LlamaUnsupportedException(_tokenBanWithGrammar);
-    }
-    if (params.thinkingBudget != null) {
-      throw LlamaUnsupportedException(
-        'GenerationParams.logitBias cannot ban tokens with a thinking budget. '
-        'Use finite biases or remove the thinking budget.',
-      );
+    if (bans.isNotEmpty) {
+      if (params.grammar?.isNotEmpty ?? false) {
+        throw LlamaUnsupportedException(_tokenBanWithGrammar);
+      }
+      if (params.thinkingBudget != null) {
+        throw LlamaUnsupportedException(
+          'GenerationParams.logitBias cannot ban tokens with a thinking budget. '
+          'Use finite biases or remove the thinking budget.',
+        );
+      }
+    } else if (params.dryMultiplier == 0) {
+      return 0;
     }
     bans.addAll(suppressedTokens.where((id) => id >= 0 && id < vocabSize));
     if (bans.length == vocabSize) {
@@ -5871,6 +5904,7 @@ class LlamaCppService {
         name: 'logitBias',
       );
     }
+    return bans.length;
   }
 
   /// Runs [action] while native batch logits are temporarily zeroed.
@@ -6064,7 +6098,11 @@ class LlamaCppService {
             })
           : model.suppressedTokens;
       _validateSamplerValues(params);
-      _validateSamplerControls(params, model.vocabSize, suppressedTokens);
+      final maskedCount = _validateSamplerControls(
+        params,
+        model.vocabSize,
+        suppressedTokens,
+      );
       _validateSamplingShape(params, suppressedTokens);
       _validateDrySampler(params);
       final topLogprobs = params.topLogprobs;
@@ -6119,6 +6157,9 @@ class LlamaCppService {
 
       // 2. Prepare Resources
       final nCtx = llama_n_ctx(ctx.pointer);
+      if (params.dryMultiplier != 0 && maskedCount != 0) {
+        _validateMaskedDryOverflow(params, nCtx, model.vocabSize - maskedCount);
+      }
       final batch = _batches[contextHandle]!.batch;
       if (params.dryMultiplier != 0 && params.dryAllowedLength >= nCtx) {
         throw LlamaArgumentException(
