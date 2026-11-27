@@ -56,7 +56,7 @@ void main() {
       );
     });
 
-    test('matches the Adreno defect by vendor, driver and device name', () {
+    test('matches the Qualcomm driver family by vendor and device name', () {
       VulkanDeviceFacts fact({
         int vendor = 0x5143,
         int driver = 2150604839,
@@ -70,10 +70,27 @@ void main() {
         vendorId: vendor,
         driverVersion: driver,
       );
-      expect(fact().hasAdreno750DriverDefect, isTrue);
-      expect(fact(vendor: 0).hasAdreno750DriverDefect, isFalse);
-      expect(fact(driver: 2150604840).hasAdreno750DriverDefect, isFalse);
-      expect(fact(name: 'Adreno (TM) 740').hasAdreno750DriverDefect, isFalse);
+      expect(fact().isQualcommProprietary, isTrue);
+      expect(fact(driver: 2150604830).isQualcommProprietary, isTrue);
+      expect(fact(driver: 0).isQualcommProprietary, isTrue);
+      for (final (gpu, driver) in [
+        (740, 2150252615),
+        (830, 2150760449),
+        (840, 2150932499),
+      ]) {
+        expect(
+          fact(name: 'Adreno (TM) $gpu', driver: driver).isQualcommProprietary,
+          isTrue,
+          reason: 'Adreno $gpu driver $driver',
+        );
+      }
+      expect(fact(vendor: 0).isQualcommProprietary, isFalse);
+      expect(fact(vendor: 0x13b5).isQualcommProprietary, isFalse);
+      expect(
+        fact(name: 'Turnip Adreno (TM) 750').isQualcommProprietary,
+        isFalse,
+      );
+      expect(fact(name: 'Mali-G715').isQualcommProprietary, isFalse);
     });
 
     test('has the small matmul tile defect at every subgroup size '

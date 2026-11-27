@@ -54,16 +54,12 @@ final class VulkanDeviceFacts {
   /// The vendor-specific `VkPhysicalDeviceProperties.driverVersion`.
   final int driverVersion;
 
-  /// The Android Adreno 750 driver with shader-compiler crashes and
-  /// incorrect quantized matrix-vector results (llamadart-native #79).
+  /// The Qualcomm proprietary Adreno driver family from issue #2348.
   ///
-  /// A crash workaround alone does not qualify this driver for inference;
-  /// common K-quants remain incorrect. Other driver versions are unaffected
-  /// by this narrowly matched guard.
-  bool get hasAdreno750DriverDefect =>
-      vendorId == 0x5143 &&
-      driverVersion == 2150604839 &&
-      name == 'Adreno (TM) 750';
+  /// The probe ABI does not expose the Vulkan driver ID. Qualcomm devices
+  /// in the affected logs use this prefix, and Mesa uses `Turnip Adreno`.
+  bool get isQualcommProprietary =>
+      vendorId == 0x5143 && name.startsWith('Adreno (TM) ');
 
   /// Whether ggml-vulkan can drive the device.
   ///

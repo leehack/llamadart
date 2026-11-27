@@ -50,12 +50,15 @@ drives and throws `LlamaUnsupportedException` naming the required release
 before loading any file, and `capabilities` on an attached engine reports the
 same in `unsupportedReason`. Web drives Qwen3-TTS only.
 
-On Android, GPU work stays off on the Adreno 750 driver that llama.cpp Vulkan
-miscomputes on ([llamadart-native#79](https://github.com/leehack/llamadart-native/issues/79)):
-there Soprano returns the same non-speech audio for every input and LFM3-Audio
-fails to create its pipelines, and Chatterbox and Pocket TTS are unqualified
-on it. On that driver automatic device selection
-falls back to the CPU with a warning, and `ComputeDevice.gpu` throws.
+On Android, llama.cpp refuses GPU loads when the runtime registers a
+Qualcomm proprietary Vulkan device. A GPU attempt under automatic device
+selection falls back to CPU with a warning, and `ComputeDevice.gpu` throws.
+On the Adreno 750 driver documented in
+[llamadart-native#79](https://github.com/leehack/llamadart-native/issues/79),
+Soprano produced the same non-speech audio for every input and LFM3-Audio
+failed to create its pipelines. Chatterbox and Pocket TTS remain
+unqualified on that driver. See the
+[Android Vulkan driver check](../platforms/known-platform-issues#android).
 
 ### LFM3-Audio
 

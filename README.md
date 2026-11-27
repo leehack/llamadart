@@ -176,6 +176,8 @@ instead of silently degrading.
 
 llama.cpp uses Metal on Apple platforms, Vulkan on Linux and Windows, and
 WebGPU in the browser. Android Vulkan is experimental and opt-in.
+llama.cpp refuses GPU loads when Android registers a Qualcomm proprietary
+Vulkan device. Automatic selection falls back to CPU with a warning.
 
 A llama.cpp runtime older than ggml `0.28.0` (llamadart-native `v0.8.0`)
 limits native Qwen3.5 on Android Vulkan to ordinary text on some GPUs; the

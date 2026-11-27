@@ -235,19 +235,18 @@ feature. For which runtime supports which feature, see the
   discrete GPU beside an old one, the load leaves the old one out and logs a
   warning; a GPU llama.cpp would not select, like an integrated GPU beside a
   discrete one, changes nothing.
-  On Android, the exact Qualcomm vendor `0x5143`, `Adreno (TM) 750`
-  driver `2150604839` has shader-compiler crashes and incorrect quantized
-  results, including common `Q4_K_M` models. When this device is registered,
-  GPU loads are refused even if another GPU was selected: projector and
-  decision-head GPU selection can independently choose the affected device.
-  `ComputeDevice.auto` loads on CPU with a warning, including when
-  `preferredBackend` requests Vulkan; `ComputeDevice.gpu` throws
-  `LlamaUnsupportedException`. CPU loads do not probe Vulkan. Other driver
-  versions are unchanged.
-  A shader crash workaround alone does not qualify this driver; re-enabling
-  a model requires qualification of the final native artifact on that exact
-  driver.
-  See [native issue #79](https://github.com/leehack/llamadart-native/issues/79).
+  On Android, llama.cpp refuses GPU loads if a registered Vulkan device
+  reports Qualcomm vendor `0x5143` and a device name starting with
+  `Adreno (TM) `. The refusal applies across driver versions. Adreno 740
+  and 750 can abort during prompt evaluation, and Adreno 830 and 840 can
+  produce incorrect output with quantized models. Projectors and decision
+  heads can independently select a registered Vulkan device, so the guard
+  also applies when the model requests another GPU backend. With
+  `ComputeDevice.auto`, a GPU attempt falls back to CPU with a warning.
+  `ComputeDevice.gpu` throws `LlamaUnsupportedException`. CPU-only loads
+  skip the probe. Mesa Turnip device names start with `Turnip` and follow
+  the normal Vulkan checks.
+  See [issue #2348](https://github.com/leehack/llamadart/issues/2348).
 
   Embeddings on a Pixel 8a (Tensor G3, Mali-G715, Android 14) with native
   `v0.9.0` (llama.cpp `cd959bae9`) and EmbeddingGemma 2 Q8_0 were slower on

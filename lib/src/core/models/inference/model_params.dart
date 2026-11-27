@@ -162,9 +162,9 @@ class ModelParams {
   /// `LlamaLogLevel.warn` record, and throws the GPU error if the CPU fails
   /// too. [validate] rejects a device that contradicts [preferredBackend],
   /// [gpuLayers], [mainGpu] or [liteRtLmBackend].
-  /// Android llama.cpp excludes the known unsafe Adreno 750 driver
-  /// `2150604839`: [ComputeDevice.gpu] throws, while automatic selection
-  /// with a Vulkan preference falls back to CPU with a warning.
+  /// Android llama.cpp refuses GPU loads when a Qualcomm proprietary Vulkan
+  /// device is registered. [ComputeDevice.gpu] throws, and a GPU attempt under
+  /// [ComputeDevice.auto] falls back to the CPU with a warning.
   final ComputeDevice device;
 
   /// Number of model layers to offload to the GPU (n_gpu_layers).
