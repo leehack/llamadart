@@ -633,7 +633,7 @@ void main() {
       'checks a model-defined allow-list without explicit token bans',
       () async {
         final path = writeSyntheticLlamaGguf(
-          '${modelPath}.suppressed.gguf',
+          '$modelPath.suppressed.gguf',
           eosTokenId: _eos,
           int32ArrayMetadata: {
             'tokenizer.ggml.suppress_tokens': banAllBut({bToken}).keys.toList(),
