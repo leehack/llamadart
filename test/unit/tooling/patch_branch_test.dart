@@ -1037,12 +1037,6 @@ void main() {
     for (final (name, subject, path, passes) in [
       ('shares a path', 'Revert "Unknown change (#70)"', 'fix', false),
       ('shares no path', 'Revert "Unknown change (#70)"', 'other', true),
-      (
-        'is declared only in the body',
-        'Undo unknown change (#70)',
-        'fix',
-        false,
-      ),
     ]) {
       test('an unresolved revert that $name', () async {
         final revert = repo.mainCommit(
@@ -1060,6 +1054,54 @@ void main() {
         }
       });
     }
+
+    final unknownShaDeclaration = 'This reverts commit ${'0' * 40}.';
+    for (final (name, body) in [
+      ('standalone', unknownShaDeclaration),
+      ('fenced', '```text\n$unknownShaDeclaration\n```'),
+    ]) {
+      test('ignores a $name unknown SHA declaration', () async {
+        repo.mainCommit(
+          'Document a diagnostic (#70)',
+          body: body,
+          file: 'fix',
+          content: 'docs\n',
+        );
+        expect(await repo.guard(_backport(source)), contains('verified'));
+        repo.checkoutRelease();
+        final backport = repo.backport(source);
+        expect(await repo.parity(), contains('$backport backport exact'));
+      });
+    }
+
+    test('keeps a malformed SHA declaration fail-closed', () async {
+      final revert = repo.mainCommit(
+        'Undo a change (#70)',
+        body: 'This reverts commit $source',
+        file: 'fix',
+        content: 'drifted\n',
+      );
+      repo.checkoutRelease();
+      await expectFlagged(repo.backport(source), revert);
+    });
+
+    test(
+      'keeps a short SHA declaration ending with a period fail-closed',
+      () async {
+        final revert = repo.mainCommit(
+          'Undo a change (#70)',
+          body: 'This reverts commit abc1234.',
+          file: 'fix',
+          content: 'drifted\n',
+        );
+        await expectLater(
+          repo.guard(_backport(source)),
+          throwsA(allOf(_failure(source), _failure(revert))),
+        );
+        repo.checkoutRelease();
+        await expectFlagged(repo.backport(source), revert);
+      },
+    );
 
     test('all-lines parity checks only the maximal tip', () async {
       final revert = repo.mainRevert(source, subject: 'Revert fix (#59)');

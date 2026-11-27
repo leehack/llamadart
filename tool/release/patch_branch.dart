@@ -588,7 +588,11 @@ class _Message {
       pullRequests = {},
       revertLike =
           subject.startsWith('Revert "') ||
-          _lines(body).any((line) => line.startsWith('This reverts commit ')) {
+          _lines(body).any(
+            (line) =>
+                line.startsWith('This reverts commit ') &&
+                !_revertedCommit.hasMatch(line),
+          ) {
     if (_revertedTitle.firstMatch(subject)?[1] case final number?) {
       pullRequests.add(number);
     }

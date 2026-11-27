@@ -44,9 +44,9 @@ runs during minor prep on `main`.
   backport with `git cherry-pick -x <revert SHA>`, or re-apply the source on
   `main` exactly. A revert declares `This reverts commit <full SHA>.` or
   `Reverts leehack/llamadart#<N>` on its own line, or is the exact inverse
-  patch. A `Revert "` subject or a body line starting with that declaration
-  whose target resolves to no commit or pull request counts as a revert of
-  any source it shares a path with.
+  patch. A well-formed SHA declaration counts only if its SHA identifies an
+  existing commit. A `Revert "` subject or a malformed `This reverts commit `
+  body line with no resolvable target triggers a shared-path check.
   To keep the backport instead, open a triaged forward-port issue and land one
   release-branch commit that adds
   `tool/release/retained_backports/<backport SHA>.json` and carries
