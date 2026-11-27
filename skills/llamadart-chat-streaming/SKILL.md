@@ -213,8 +213,11 @@ modalities and speculative strategies before offering them.
   `drySequenceBreakers` entry (default newline, `:`, `"` and `*`) starts a
   new repeat. It runs after the penalties, works with Mirostat, and throws
   `LlamaUnsupportedException` with a grammar (including tools or
-  `responseFormat`) or a thinking budget. While `dryMultiplier` is 0 the other
-  DRY fields are ignored, so zero it to turn DRY off.
+  `responseFormat`) or a thinking budget. Token bans and runtime suppression
+  are supported when the DRY settings leave a finite candidate. If the
+  configured bounds cannot guarantee one, generation throws
+  `LlamaArgumentException` before decoding. While `dryMultiplier` is 0 the
+  other DRY fields are ignored, so zero it to turn DRY off.
 - Check `(await engine.capabilities).supportsTokenLogprobs` before setting
   `GenerationParams(topLogprobs: n)` (0 to 20) on native llama.cpp. They are
   raw-distribution values, before logit bias, penalties, grammar and

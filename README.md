@@ -28,7 +28,8 @@ also supports `typicalP`, `topNSigma`, XTC (`xtcProbability`,
 `xtcThreshold`), dynamic temperature (`dynatempRange`, `dynatempExponent`)
 and Mirostat (`mirostat`, `mirostatTau`, `mirostatEta`), plus DRY repetition
 penalties (`dryMultiplier`, `dryBase`, `dryAllowedLength`, `dryPenaltyLastN`,
-`drySequenceBreakers`).
+`drySequenceBreakers`). DRY settings that can exhaust the candidates left by
+token bans or runtime suppression throw `LlamaArgumentException`.
 
 Native llama.cpp can report the log-probability of every generated token, with
 the most probable alternatives, on streamed chat completions and raw generation:

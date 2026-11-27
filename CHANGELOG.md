@@ -1,6 +1,10 @@
 Releases before 0.10.0 are in the
 [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).
 
+## Unreleased
+
+- Native llama.cpp rejects DRY settings that can exhaust a token allow-list with `LlamaArgumentException`.
+
 ## 0.22.0
 
 - Add native llama.cpp sampler controls to `GenerationParams`: `frequencyPenalty`, `penaltyLastN`, `logitBias`, `typicalP`, `topNSigma`, `xtcProbability`/`xtcThreshold`, `dynatempRange`/`dynatempExponent` and `mirostat`/`mirostatTau`/`mirostatEta`. `LlamaEngineCapabilities.samplerControls` reports support; WebGPU and LiteRT-LM reject them. The example server maps `frequency_penalty`, `presence_penalty` and `logit_bias`.

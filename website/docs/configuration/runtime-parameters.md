@@ -500,7 +500,8 @@ Important fields:
   throw `LlamaUnsupportedException`. If the bans and runtime suppression
   leave no token to sample, generation throws `LlamaArgumentException`.
   Runtime suppression, including `ignoreEos`, takes precedence over a
-  positive bias.
+  positive bias. DRY can also exhaust the remaining candidates when the
+  penalty overflows, including after temperature scaling.
 - `topLogprobs`: native llama.cpp reports the log-probability of each
   generated token. `null` (the default) reports none, 0 reports the sampled
   token, and N up to 20 adds the N most probable alternatives. See
@@ -559,7 +560,11 @@ Important fields:
   `LlamaArgumentException` before decoding, and a non-empty grammar
   (including one from tools or `responseFormat`) or a thinking budget throws
   `LlamaUnsupportedException`, because the penalty can leave no valid
-  candidate. Sampler setup scans the vocabulary for the breakers, so each
+  candidate. With token bans or runtime suppression, llamadart rejects the
+  settings with `LlamaArgumentException` before decoding when the remaining
+  candidate count, DRY window and temperature cannot guarantee a finite
+  candidate. Lower `dryMultiplier`, `dryBase` or `dryPenaltyLastN`, or allow
+  more tokens. Sampler setup scans the vocabulary for the breakers, so each
   request that enables DRY pays for it.
 - `presencePenalty`: llama.cpp presence penalty (finite, -100 to 100 on native
   llama.cpp); `0.0` preserves the

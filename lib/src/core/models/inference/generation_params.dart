@@ -998,7 +998,8 @@ class GenerationParams {
   /// [double.negativeInfinity] to ban a token. Bans cannot be combined with
   /// a non-empty grammar (including one from tools or a response format)
   /// or a [thinkingBudget], and at least one token must remain unsuppressed.
-  /// Model suppression and [ignoreEos] still apply.
+  /// Model suppression and [ignoreEos] still apply. See [dryMultiplier] for
+  /// limits on combining DRY with token bans.
   final Map<int, double> logitBias;
 
   /// Locally typical sampling threshold on native llama.cpp, in (0, 1].
@@ -1067,8 +1068,10 @@ class GenerationParams {
   /// DRY runs after the penalties and before the other samplers. It cannot
   /// be combined with a grammar (including one from tools or a response
   /// format) or a [thinkingBudget]: the penalty can leave no valid
-  /// candidate. Sampler setup scans the vocabulary once for the breakers, so
-  /// it adds a small cost to each request that enables DRY.
+  /// candidate. With token bans or runtime suppression, settings that can
+  /// exhaust the remaining finite candidates throw `LlamaArgumentException`
+  /// before decoding. Sampler setup scans the vocabulary once for the
+  /// breakers, so it adds a small cost to each request that enables DRY.
   final double dryMultiplier;
 
   /// Base of the exponential DRY penalty, from 1 to 100. The default is 1.75.

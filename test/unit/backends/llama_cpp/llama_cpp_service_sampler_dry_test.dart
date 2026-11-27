@@ -573,6 +573,109 @@ void main() {
         hasLength(6),
       );
     });
+
+    const bToken = _b + 3;
+    const vocabSize = 259;
+    Map<int, double> banAllBut(Set<int> kept) => {
+      for (var id = 0; id < vocabSize; id++)
+        if (!kept.contains(id)) id: double.negativeInfinity,
+    };
+
+    final overflow = _sampled.copyWith(
+      maxTokens: 60,
+      dryMultiplier: 100,
+      dryBase: 100,
+      dryAllowedLength: 0,
+      logitBias: banAllBut({bToken}),
+    );
+    for (final (name, params) in [
+      ('dist', overflow),
+      ('Mirostat 1', overflow.copyWith(mirostat: 1)),
+      ('Mirostat 2', overflow.copyWith(mirostat: 2)),
+      ('greedy', overflow.copyWith(temp: 0)),
+      (
+        'dist with ignoreEos',
+        overflow.copyWith(
+          dryMultiplier: 1,
+          dryBase: 10,
+          dryPenaltyLastN: 39,
+          temp: 0.1,
+          ignoreEos: true,
+          logitBias: banAllBut({bToken, _eos}),
+        ),
+      ),
+      (
+        'dist with overflow after temperature scaling',
+        overflow.copyWith(
+          dryMultiplier: 1,
+          dryBase: 10,
+          dryPenaltyLastN: 39,
+          temp: 0.1,
+        ),
+      ),
+    ]) {
+      test('rejects DRY that can exhaust an allow-list with $name', () async {
+        await expectLater(
+          generate(params),
+          throwsA(
+            isA<LlamaArgumentException>().having(
+              (e) => e.name,
+              'name',
+              'dryMultiplier',
+            ),
+          ),
+        );
+        expect(decodes, 0);
+      });
+    }
+
+    test(
+      'checks a model-defined allow-list without explicit token bans',
+      () async {
+        final path = writeSyntheticLlamaGguf(
+          '${modelPath}.suppressed.gguf',
+          eosTokenId: _eos,
+          int32ArrayMetadata: {
+            'tokenizer.ggml.suppress_tokens': banAllBut({bToken}).keys.toList(),
+          },
+        ).path;
+        context = service.createContext(
+          service.loadModel(path, _modelParams),
+          _modelParams,
+        );
+        await expectLater(
+          generate(overflow.copyWith(logitBias: const {})),
+          throwsA(isA<LlamaArgumentException>()),
+        );
+        expect(decodes, 0);
+      },
+    );
+
+    test('accepts a bounded DRY penalty with a one-token allow-list', () async {
+      expect(
+        await generate(
+          _sampled.copyWith(dryMultiplier: 0.8, logitBias: banAllBut({bToken})),
+        ),
+        List.filled(_sampled.maxTokens, _b),
+      );
+      expect(
+        await generate(
+          overflow.copyWith(dryMultiplier: 1, dryBase: 10, dryPenaltyLastN: 39),
+        ),
+        List.filled(overflow.maxTokens, _b),
+      );
+    });
+
+    test('accepts large DRY penalties when enough tokens remain', () async {
+      final output = await generate(
+        overflow.copyWith(
+          ignoreEos: true,
+          logitBias: const {bToken: double.negativeInfinity},
+        ),
+      );
+      expect(output, isNotEmpty);
+      expect(output, isNot(contains(_b)));
+    });
   });
 
   group('validation', () {
