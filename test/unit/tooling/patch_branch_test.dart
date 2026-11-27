@@ -1018,18 +1018,55 @@ void main() {
       expect(await repo.guard(_backport(source)), contains('verified'));
     });
 
-    test('resolves a revert by its quoted pull request title', () async {
-      repo.mainCommit('Other change (#57)', file: 'fix', content: 'other\n');
-      repo.mainCommit(
-        'Revert "Other change (#57)" (#58)',
-        body: '## Summary\n\nUndo #57.\n',
+    test('flags a title-only unresolved revert on a shared path', () async {
+      final revert = repo.mainCommit(
+        'Revert "Unknown change (#70)" (#58)',
         file: 'fix',
-        content: 'change\n',
+        content: 'drifted\n',
+      );
+      await expectLater(
+        repo.guard(_backport(source)),
+        throwsA(allOf(_failure(source), _failure('unresolved revert on main'))),
       );
       repo.checkoutRelease();
-      final backport = repo.backport(source);
-      expect(await repo.parity(), contains('$backport backport exact'));
+      await expectFlagged(repo.backport(source), revert);
     });
+
+    test(
+      'ignores a mid-subject revert title and indented declarations',
+      () async {
+        repo.mainCommit(
+          'Document Revert "Fix a regression (#51)" (#58)',
+          file: 'fix',
+          content: 'docs\n',
+        );
+        repo.mainCommit(
+          'Show indented revert declarations (#59)',
+          body:
+              '    This reverts commit $source.\n'
+              '    This reverts commit ${'0' * 40}.',
+          file: 'fix',
+          content: 'examples\n',
+        );
+        repo.checkoutRelease();
+        final backport = repo.backport(source);
+        expect(await repo.parity(), contains('$backport backport exact'));
+      },
+    );
+
+    for (final title in ['Other change', 'Keep "sample (#56)" in the output']) {
+      test('resolves the quoted pull request title: $title', () async {
+        repo.mainCommit('$title (#57)', file: 'fix', content: 'other\n');
+        repo.mainCommit(
+          'Revert "$title (#57)" (#58)',
+          file: 'fix',
+          content: 'drifted\n',
+        );
+        repo.checkoutRelease();
+        final backport = repo.backport(source);
+        expect(await repo.parity(), contains('$backport backport exact'));
+      });
+    }
 
     test('resolves a declared pull request merged before the minor', () async {
       repo.mainCommit(
