@@ -38,6 +38,14 @@ Use this checklist when upgrading `llamadart` across minor or major versions.
 
 ## Version-specific notes
 
+### 0.21.0: Apple companions and LiteRT-LM
+
+Upgrade core and Apple companions together; the native hook moves to LiteRT-LM
+`v0.20.0`. Native LiteRT-LM now rejects text LoRA at load, unset NPU
+handwritten-component flags follow bundle metadata, and custom Web preloads with
+explicit CPU inference must expose `window.LiteRtLmBackendEnum`. See
+[`MIGRATION.md`](https://github.com/leehack/llamadart/blob/main/MIGRATION.md#020x---0210-apple-companions-and-litert-lm).
+
 ### 0.20.2: opt-in `Qwen3WindowedAsrAdapter` and `SpeechToTextCapabilities.inputMode`
 
 `Qwen3WindowedAsrAdapter` subclasses `Qwen3AsrAdapter` for opt-in bounded

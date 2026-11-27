@@ -168,10 +168,15 @@ The maintained local-only diagnostic ran in headed Chrome 158.0.8127.88 on an
 Apple M4 Max (WebGPU adapter `apple` / `metal-3`). Both routes created an engine
 with CPU vision/audio processors and produced 768-dimensional vectors on the
 same model bytes. The text encoder ran on `Backend.CPU=2` or `Backend.GPU=3`.
-The reference uses native CPU vectors on the same model and inputs from the
-local v0.20.0 build of
+The reference uses native CPU vectors on the same model and inputs from a
+**local candidate** build of
 [litert-lm-native#127](https://github.com/leehack/litert-lm-native/pull/127)
-(`a550b0a`).
+(`a550b0a`, squash-merged as `72597c6`), not a published artifact. The published
+[`v0.20.0`](https://github.com/leehack/litert-lm-native/releases/tag/v0.20.0)
+release (2026-11-25, owner commit `d73bca7c`, upstream `95df4c2a`) contains
+that merge plus later changes to the bridge and the LiteRT/XNNPACK build, so
+these vectors are candidate-only observations. Native vectors and this
+comparison have not been regenerated on the published release.
 
 | Input | Web CPU cosine | Relative L2 | WebGPU cosine | Relative L2 |
 | --- | ---: | ---: | ---: | ---: |

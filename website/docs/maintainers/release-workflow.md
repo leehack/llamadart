@@ -10,9 +10,13 @@ companion and is not released by this checklist.
 ## Patch branches
 
 **Rollout status.** Before the first patch from a branch cut before this
-rollout, backport the patch guards (PR2), branch-aware changelog collector
-(PR3a), docs cut (PR4), and workflow wiring (PR5) to `release/M.m.x`.
-Backport the patch changelog import (PR3b) before the `0.22.0` prep.
+rollout, backport the [patch guards](https://github.com/leehack/llamadart/pull/2252),
+[branch-aware changelog collector](https://github.com/leehack/llamadart/pull/2258),
+[docs cut](https://github.com/leehack/llamadart/pull/2259), and
+[workflow wiring](https://github.com/leehack/llamadart/pull/2265) to
+`release/M.m.x`. The
+[patch changelog import](https://github.com/leehack/llamadart/pull/2266)
+runs during minor prep on `main`.
 
 - Squash work for the next minor into `main`. When the latest released minor
   needs a patch, cut `release/M.m.x` from `vM.m.0`. Maintain only the latest
@@ -605,6 +609,13 @@ Land individual PRs, including independent package release preps, with
 **Squash and merge**. Keep the `(#N)` subject suffix and the `## Changelog`
 section in the squash message. Reserve rebase merges for batch integration
 PRs whose constituent commits already carry both.
+
+If a landed commit has a readable `## Changelog` section and lacks a trailing
+`(#N)`, hold publication and follow the
+[case-specific repair guidance](#5-if-automation-is-blocked). Include the
+landed SHA, changelog section, and available PR and branch activity evidence
+in the release-blocking issue. The collector rejects resolution records for
+commits with a readable landed section.
 
 To resolve an already-landed, single-commit PR whose commit lacks both a
 trailing `(#N)` and a readable `## Changelog` section, commit a reviewed
