@@ -669,11 +669,24 @@ void main() {
         ),
         List.filled(_sampled.maxTokens, _b),
       );
-      expect(
-        await generate(
-          overflow.copyWith(dryMultiplier: 1, dryBase: 10, dryPenaltyLastN: 39),
+    });
+
+    test('rejects a multiplier that overflows the same DRY window', () async {
+      final params = overflow.copyWith(dryBase: 10, dryPenaltyLastN: 39);
+      await expectLater(
+        generate(params),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (error) => error.name,
+            'name',
+            'dryMultiplier',
+          ),
         ),
-        List.filled(overflow.maxTokens, _b),
+      );
+      expect(decodes, 0);
+      expect(
+        await generate(params.copyWith(dryMultiplier: 1)),
+        List.filled(params.maxTokens, _b),
       );
     });
 
