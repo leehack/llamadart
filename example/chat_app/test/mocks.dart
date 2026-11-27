@@ -228,6 +228,7 @@ class MockLlamaEngine extends LlamaEngine {
   List<LlamaChatMessage>? lastCreateMessages;
   BackendPerfContextData? performanceContext;
   List<String> createChunkContents = const ['Hi there'];
+  LlamaGenerationUsage? createUsage;
   bool rejectMediaWithoutProjector = false;
   String? lastLoadedModelPath;
   String? lastLoadedMmprojPath;
@@ -388,6 +389,16 @@ class MockLlamaEngine extends LlamaEngine {
             delta: LlamaCompletionChunkDelta(content: content),
           ),
         ],
+      );
+    }
+    if (createUsage case final usage?) {
+      yield LlamaCompletionChunk(
+        id: 'mock-id',
+        object: 'chat.completion.chunk',
+        created: 1234567890,
+        model: 'mock-model',
+        choices: const [],
+        usage: usage,
       );
     }
   }

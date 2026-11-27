@@ -5817,11 +5817,19 @@ class LlamaCppService {
     int contextSize,
     int remainingCandidates,
   ) {
-    // Each penalized token needs a different occurrence of the matching
-    // suffix. For N candidates, at least one match must start N or more
-    // positions back, leaving at most window - N tokens in that match.
     final window = math.min(params.dryPenaltyLastN, contextSize);
-    final exponent = window - remainingCandidates - params.dryAllowedLength;
+    // For three matches of length r, if the two older shifts a and b are
+    // within r of the newest match, both continuations equal the history
+    // token at reverse offset a + b - 1. Distinct continuations force every
+    // second older match at least r + 1 positions back. Starting at the current
+    // suffix, N earlier matches need N ~/ 2 such gaps and one extra shift
+    // for odd N. Each earlier match also needs its own shift.
+    final pairs = remainingCandidates ~/ 2;
+    final maxRepeat = math.min(
+      window - remainingCandidates,
+      (window - pairs - remainingCandidates % 2) ~/ (pairs + 1),
+    );
+    final exponent = maxRepeat - params.dryAllowedLength;
     if (exponent < 0) return;
 
     // Leave float32 headroom for subtraction from the original logit and
