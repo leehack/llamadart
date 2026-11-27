@@ -1461,4 +1461,139 @@ void main() {
       expect(decisions[2].escalation.retriedWithoutRemoteFetchBackend, isTrue);
     });
   });
+
+  group('recoverable bridge load rejections (assets v0.1.96+)', () {
+    const rejection =
+        'Failed to load GGUF model: llama_model_load_from_file failed';
+    const rejectionNoDetail = 'Failed to load GGUF model (code=-2)';
+    const wasm32Notes =
+        'core_wasm32_active;core_pthreads:1;thread_pool_size:4;'
+        'threads_batch:4;model_network_stream;model_response_stream';
+    const wasm64Notes =
+        'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+        'thread_pool_size:4;threads_batch:4;model_network_stream;'
+        'model_response_stream';
+    const fetchRejectedNotes =
+        'core_wasm32_active;core_pthreads:1;thread_pool_size:4;'
+        'threads_batch:4;model_fetch_backend_attempt;'
+        'model_fetch_chunk:4194304;model_fetch_backend_failed;'
+        'model_network_stream;model_response_stream';
+
+    void expectGivesUp(WebGpuRetryDecision decision) {
+      expect(decision.action, WebGpuRetryAction.giveUp);
+      expect(decision.logMessages, isEmpty);
+      expect(decision.preferMemory64, isNull);
+      expect(decision.forceRemoteFetchBackend, isNull);
+      final escalation = decision.escalation;
+      expect(escalation.retriedWithWasm32, isFalse);
+      expect(escalation.retriedWithWasm64, isFalse);
+      expect(escalation.retriedWithoutRemoteFetchBackend, isFalse);
+      expect(escalation.remoteFetchChunkRetryCount, 0);
+      expect(escalation.remoteFetchBackendKnownUnstable, isFalse);
+    }
+
+    for (final (label, output) in <(String, (String, String, String))>[
+      ('wasm32', ('wasm32', wasm32Notes, rejection)),
+      ('wasm64', ('wasm64', wasm64Notes, rejection)),
+      (
+        'wasm32 without a core error',
+        ('wasm32', wasm32Notes, rejectionNoDetail),
+      ),
+    ]) {
+      test('a rejected GGUF on $label gives up without a restart', () {
+        final failure = _published(output);
+
+        expect(isMemoryPressureErrorText(failure.errorText), isFalse);
+        expectGivesUp(classifyWebGpuLoadFailure(failure, _escalation()));
+      });
+    }
+
+    test('a rejected GGUF does not climb the ladder from an early rung', () {
+      final decision = classifyWebGpuLoadFailure(
+        _published(('wasm32', wasm32Notes, rejection), attemptIndex: 2),
+        _escalation(),
+      );
+
+      expectGivesUp(decision);
+    });
+
+    for (final forced in <bool>[false, true]) {
+      test('a rejected fetch-backed load restarts nothing '
+          '(forced fetch: $forced)', () {
+        final decision = classifyWebGpuLoadFailure(
+          _published(
+            ('wasm32', fetchRejectedNotes, rejection),
+            forced: forced,
+            optedIn: true,
+          ),
+          _escalation(),
+        );
+
+        expectGivesUp(decision);
+      });
+    }
+
+    test(
+      'a rejection that reports a memory phrase still restarts on wasm64',
+      () {
+        const message = '$rejection (out of memory)';
+        final decision = classifyWebGpuLoadFailure(
+          _published(('wasm32', wasm32Notes, message)),
+          _escalation(),
+        );
+
+        expect(decision.action, WebGpuRetryAction.restart);
+        expect(decision.preferMemory64, isTrue);
+        expect(decision.escalation.retriedWithWasm64, isTrue);
+      },
+    );
+
+    test('a rejection that reports a memory phrase advances on wasm64', () {
+      const message = '$rejection (out of memory)';
+      final decision = classifyWebGpuLoadFailure(
+        _published(('wasm64', wasm64Notes, message)),
+        _escalation(),
+      );
+
+      expect(decision.action, WebGpuRetryAction.advance);
+    });
+
+    test(
+      'an older bridge that aborts on the same input keeps its restarts',
+      () {
+        const nativeAbort = 'Aborted(native code called abort())';
+        final decisions = _replay(<WebGpuLoadFailure>[
+          _published((
+            'wasm32',
+            'core_wasm32_active;core_pthreads:1;thread_pool_size:4;'
+                'threads_batch:4;model_fetch_backend_attempt;'
+                'model_fetch_chunk:4194304;core_abort;'
+                'model_fetch_backend_abort',
+            nativeAbort,
+          ), optedIn: true),
+          _published(('wasm64', '$wasm64Notes;core_abort', 'Aborted()')),
+        ]);
+
+        expect(decisions[0].action, WebGpuRetryAction.restart);
+        expect(decisions[0].forceRemoteFetchBackend, isFalse);
+        expect(
+          decisions[0].escalation.retriedWithoutRemoteFetchBackend,
+          isTrue,
+        );
+        expect(decisions[1].action, WebGpuRetryAction.giveUp);
+      },
+    );
+
+    test('the same rejection on a fetch attempt ends the load at once', () {
+      final decisions = _replay(<WebGpuLoadFailure>[
+        _published(('wasm32', fetchRejectedNotes, rejection), optedIn: true),
+      ]);
+
+      expect(decisions.single.action, WebGpuRetryAction.giveUp);
+      expect(
+        decisions.single.escalation.retriedWithoutRemoteFetchBackend,
+        isFalse,
+      );
+    });
+  });
 }

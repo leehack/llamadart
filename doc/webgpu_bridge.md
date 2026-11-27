@@ -755,6 +755,14 @@ still reports the original failure. Worker mode normally replaces the worker
 and restores the model and its active LoRA adapters on demand. A plain error
 message containing "aborted" does not trigger the Dart load retry policy.
 
+With assets `v0.1.96+`, a model the core rejects or cannot read rejects
+`loadModelFromUrl()` with `Failed to load GGUF model` and no `core_abort`
+note, and the core stays usable. The Dart load retry policy treats that
+rejection as final: it names no memory phrase, so it restarts nothing and does
+not advance the fallback ladder. Memory-pressure phrases, staging notes and
+fetch-backed aborts still drive the restarts above. Older assets abort the core
+on the same input and keep the `core_abort` handling.
+
 Invalid WebGPU request arguments surface as `LlamaArgumentException`;
 capability rejections remain `LlamaUnsupportedException`. `scoreNextToken`
 keeps `RangeError` for int32 bounds and vocabulary errors, matching the
