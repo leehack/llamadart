@@ -1528,6 +1528,57 @@ void main() {
       },
     );
 
+    test('sendMessage uses terminal usage for request metrics', () async {
+      addTearDown(provider.dispose);
+      mockEngine
+        ..createUsage = const LlamaGenerationUsage(
+          promptTokens: 26,
+          cachedPromptTokens: 0,
+          completionTokens: 12,
+          timeToFirstToken: Duration(milliseconds: 250),
+          duration: Duration(milliseconds: 1000),
+        )
+        ..performanceContext = const BackendPerfContextData(
+          loadMs: 0,
+          promptEvalMs: 500,
+          evalMs: 3000,
+          sampleMs: 0,
+          promptEvalTokens: 32,
+          evalTokens: 36,
+          sampleCount: 36,
+          reusedGraphs: 0,
+        );
+
+      await provider.loadModel();
+      await provider.sendMessage('Hello');
+
+      expect(provider.currentTokens, 12);
+      expect(provider.messages.last.generatedTokenCount, 12);
+      expect(provider.lastPromptTokens, 26);
+      expect(provider.lastCachedPromptTokens, 0);
+      expect(provider.lastCompletionTokens, 12);
+      expect(provider.lastFirstTokenLatencyMs, 250);
+      expect(provider.lastGenerationLatencyMs, 1000);
+      expect(provider.lastTokensPerSecond, closeTo(12, 0.001));
+      expect(provider.lastDecodeTokensPerSecond, closeTo(16, 0.001));
+
+      mockEngine.createUsage = const LlamaGenerationUsage(
+        promptTokens: 30,
+        completionTokens: 0,
+      );
+      await provider.sendMessage('Again');
+
+      expect(provider.currentTokens, 12);
+      expect(provider.messages.last.generatedTokenCount, 0);
+      expect(provider.lastPromptTokens, 30);
+      expect(provider.lastCachedPromptTokens, isNull);
+      expect(provider.lastCompletionTokens, 0);
+      expect(provider.lastFirstTokenLatencyMs, isNull);
+      expect(provider.lastGenerationLatencyMs, isNull);
+      expect(provider.lastTokensPerSecond, isNull);
+      expect(provider.lastDecodeTokensPerSecond, isNull);
+    });
+
     test('sendMessage prefers native perf token counts for metrics', () async {
       final perfEngine = MockLlamaEngine()
         ..performanceContext = const BackendPerfContextData(
@@ -1550,6 +1601,9 @@ void main() {
       await perfProvider.sendMessage('Hello');
 
       expect(perfProvider.currentTokens, 32);
+      expect(perfProvider.lastPromptTokens, isNull);
+      expect(perfProvider.lastCachedPromptTokens, isNull);
+      expect(perfProvider.lastCompletionTokens, 32);
       expect(perfProvider.lastNativePromptEvalTokens, 26);
       expect(perfProvider.lastNativeEvalTokens, 32);
       expect(perfProvider.lastDecodeTokensPerSecond, closeTo(16, 0.001));
