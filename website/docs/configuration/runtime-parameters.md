@@ -511,6 +511,12 @@ Important fields:
 - `topNSigma`: keeps tokens whose logit is within this many standard
   deviations of the highest one, on native llama.cpp. The default, -1,
   disables it; other values must be positive and finite.
+- To disable these samplers when copying existing parameters, reset the
+  enabling field and any tuning fields together. For example, use
+  `params.copyWith(xtcProbability: 0, xtcThreshold: 0.1)` to disable XTC.
+  For dynamic temperature, set `dynatempRange: 0, dynatempExponent: 1`.
+  For Mirostat, set `mirostat: 0, mirostatTau: 5, mirostatEta: 0.1`.
+  Unsupported runtimes name any leftover tuning fields in the exception.
 - `xtcProbability` and `xtcThreshold`: exclude-top-choices sampling on native
   llama.cpp. With the given probability it removes every candidate at or above
   `xtcThreshold` (greater than 0, at most 0.5; default 0.1) except the least
@@ -565,9 +571,11 @@ Important fields:
   candidate. With token bans or runtime suppression, llamadart rejects the
   settings with `LlamaArgumentException` before decoding when the remaining
   candidate count, DRY window and temperature cannot guarantee a finite
-  candidate. Lower `dryMultiplier`, `dryBase` or `dryPenaltyLastN`, or allow
-  more tokens. Sampler setup scans the vocabulary for the breakers, so each
-  request that enables DRY pays for it.
+  candidate. A sparse mask can allow a longer window because DRY needs
+  distinct repeat continuations to exhaust the remaining candidates. If
+  validation rejects the settings, lower `dryMultiplier`, `dryBase` or
+  `dryPenaltyLastN`, or allow more tokens. Sampler setup scans the vocabulary
+  for the breakers on each request that enables DRY.
 - `presencePenalty`: llama.cpp presence penalty (finite, -100 to 100 on native
   llama.cpp); `0.0` preserves the
   existing behavior. WebGPU applies it only with bridge assets whose

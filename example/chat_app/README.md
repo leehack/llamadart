@@ -382,6 +382,12 @@ SD `v0.3.0-6` passed four full-VAE load/dispose cycles and eight decodes per dev
    it shows a notice instead. Raise **Max generated tokens** and send again.
 4. Tap **Load Model** to apply changes.
 
+Open **Runtime details** from the status bar to see the latest request's
+prompt, cached prompt and completion tokens, time to first token, and
+generation time. Available values depend on the backend. When a backend
+does not report usage, the app estimates completion tokens and timing from
+the stream and available native metrics.
+
 
 ## Testing Scenarios
 

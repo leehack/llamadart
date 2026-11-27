@@ -11,16 +11,15 @@ and its guides are canonical for adapter behavior.
 
 ## Install the published combination
 
-This example uses **genkit_llamadart 3.11.0** and **Genkit 1.0.0** on Dart
-**3.12+**. The adapter supports **llamadart 0.20.6 or newer in the 0.20 minor**.
-Use **llamadart 0.20.8** for GGUF in DartPad.
+This example uses **genkit_llamadart 3.13.0** and **Genkit 1.0.0** on Dart
+**3.12+**. The adapter supports **llamadart 0.21.0 up to, but excluding, 0.23.0**.
 
 ```bash
-dart pub add 'genkit:1.0.0' 'genkit_llamadart:3.11.0' 'llamadart:0.20.8'
+dart pub add 'genkit:1.0.0' 'genkit_llamadart:3.13.0' 'llamadart:0.22.0'
 ```
 
 For a Flutter app use `flutter pub add`. Apple SwiftPM apps using GGUF also add
-`llamadart_llama_cpp_flutter:0.20.8` directly. A LiteRT-LM app instead needs its
+`llamadart_llama_cpp_flutter:0.22.0` directly. A LiteRT-LM app instead needs its
 matching companion; see [installation](../getting-started/installation).
 iOS requires 16.4+ and macOS 14.0+. On Windows install the matching Microsoft
 Visual C++ runtime. CPU is the baseline; GPU placement needs its own qualification.
@@ -83,7 +82,7 @@ when you want a conversation. Do not wrap this runtime in a second llamadart
 `ChatSession`. Always inspect the final result: Genkit may represent an adapter
 error as `finishReason: failed` instead of throwing during iteration.
 
-For a Stop button call `await prepared.cancelActiveGeneration()` while a request
+For a Stop button call `prepared.cancelActiveGeneration()` while a request
 is active. For per-request cancellation use Genkit's `CancellationController`;
 see [lifecycle and cancellation](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/usage.md#lifecycle-and-cancellation).
 Dispose the prepared handle before shutting down Genkit; disposal is terminal.

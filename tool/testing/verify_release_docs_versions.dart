@@ -68,6 +68,9 @@ const Map<String, List<String>> _currentDocDependencies =
       ],
     };
 
+/// Current install snippet paths that core release prep must be able to update.
+Iterable<String> get currentInstallDocPaths => _currentDocDependencies.keys;
+
 const _nativePinSource = 'lib/src/hook/native_release_pins.dart';
 const _installation = 'website/docs/getting-started/installation.md';
 const _supportMatrix = 'website/docs/platforms/support-matrix.md';
@@ -872,6 +875,10 @@ final RegExp _dependencyLine = RegExp(
 );
 final RegExp _fenceLine = RegExp(r'^\s*```\s*([^\s`]*)?\s*$');
 final RegExp _versionLine = RegExp(r'^version:\s*(\S+)\s*$');
+final RegExp _companionReadmePairing = RegExp(
+  r'\bcompanion\s+`([^`]+)`\s+pairs\s+with\s+core\s+`([^`]+)`',
+  caseSensitive: false,
+);
 
 /// Selects the documented install pair without confusing a prepared companion
 /// with the companion shipped for the core version. Release preparation always
@@ -1156,6 +1163,7 @@ void main(List<String> arguments) {
       errors.addAll(
         checkCompanionVersionAlignment(Directory.current, coreVersion),
       );
+      _checkCompanionReadmePairings(coreVersion, versions, errors);
       if (releasePrep) {
         errors.addAll(
           checkPublishedCompanionPins(Directory.current, coreVersion),
@@ -1181,6 +1189,47 @@ void main(List<String> arguments) {
   );
   for (final bump in pending) {
     stdout.writeln('Pending companion bump: $bump');
+  }
+}
+
+void _checkCompanionReadmePairings(
+  Version coreVersion,
+  Map<String, String> versions,
+  List<String> errors,
+) {
+  final coreSeries = '${coreVersion.major}.${coreVersion.minor}.x';
+  for (final companion in companionSwiftPins) {
+    final Version version;
+    try {
+      version = Version.parse(versions[companion.package]!);
+    } on FormatException {
+      // The version-alignment check reports an invalid companion version.
+      continue;
+    }
+    final path = '${companion.root}/README.md';
+    final readme = _readFromRoot(Directory.current, path, errors);
+    if (readme == null) continue;
+    final companionSeries = '${version.major}.${version.minor}.x';
+    final matches = _companionReadmePairing.allMatches(readme);
+    for (final match in matches) {
+      final documentedCompanion = match.group(1)!;
+      final documentedCore = match.group(2)!;
+      if (documentedCompanion == companionSeries &&
+          documentedCore == coreSeries) {
+        continue;
+      }
+      errors.add(
+        '$path documents companion `$documentedCompanion` with core '
+        '`$documentedCore`. Expected companion `$companionSeries` '
+        'with core `$coreSeries`.',
+      );
+    }
+    if (matches.isEmpty) {
+      errors.add(
+        '$path is missing the pairing sentence for companion '
+        '`$companionSeries` and core `$coreSeries`.',
+      );
+    }
   }
 }
 
