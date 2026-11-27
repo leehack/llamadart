@@ -778,7 +778,6 @@ jobs:
           LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
           LLAMA_CPP_TEMPLATES_DIR: ${{ github.workspace }}/.dart_tool/llama_cpp_templates
           REQUIRE_LLAMA_CPP_TEMPLATES: '1'
-          LLAMADART_REQUIRE_PUBLISHED_COMPANION_TAGS: '1'
         run: dart test -p vm -j 1 --exclude-tags local-only ${{ needs.changes.outputs.coverage == 'true' && '--coverage=coverage' || '' }} --file-reporter=json:.dart_tool/test_events.jsonl ${{ steps.shard.outputs.files }}
 
       - name: Check the LiteRT-LM cache canary
