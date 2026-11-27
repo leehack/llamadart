@@ -1564,7 +1564,7 @@ it produces no qualification result. Before real local execution set all four:
 - `LLAMADART_DEFAULT_AOT_EXPECTED_SHA`: reviewed full lowercase checkout commit.
 - `LLAMADART_DEFAULT_AOT_EXPECTED_NATIVE_TAG` must match the source pin. The
   supported values are `v0.8.0-2`, `v0.8.0-3`, `v0.9.0`, `v1.0.0`,
-  `v1.0.0-1`, `v1.0.0-2`, `v1.0.0-3` and `v1.0.0-4`.
+  `v1.0.0-1`, `v1.0.0-2`, `v1.0.0-3`, `v1.0.0-4` and `v1.1.0`.
 - `LLAMADART_DEFAULT_AOT_MODEL_PATH`: the admitted local Qwen2.5-1.5B Instruct
   Q4_K_M fixture; local execution downloads nothing through the dispatcher.
 - `LLAMADART_DEFAULT_AOT_OUTPUT_ROOT`: a fresh owned evidence directory.

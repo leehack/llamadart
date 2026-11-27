@@ -1898,7 +1898,7 @@ still required for every actual run.
 
 ### Native video input
 
-The pinned `llamadart-native` `v1.0.0-4` macOS, Linux and Windows archives are
+The pinned `llamadart-native` `v1.1.0` macOS, Linux and Windows archives are
 built with `LLAMA_SUBPROCESS`/`MTMD_VIDEO`, so
 `mtmd_helper_get_capabilities().video` there reports whether the loaded
 projector has a vision encoder (an audio-only projector reports `false`). The

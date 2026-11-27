@@ -393,8 +393,8 @@ hooks:
   cores are written without leading zeros, and rebuild counters start at 1.
   List releases with
   `gh release list --repo leehack/llamadart-native --limit 20`.
-- This core loads only a runtime built from llama.cpp `v1.0.0`
-  (`b1b770d90d94cad9e9ea5b993bdbc383a522fb28`), which it checks from the
+- This core loads only a runtime built from llama.cpp `v1.1.0`
+  (`171527522610996f5f0acf12334e185156ca8f44`), which it checks from the
   runtime's `llama_dart_build_identity` before the first by-value call. Any
   other build, including a runtime without that export, is refused with
   `LlamaUnsupportedException`; there is no override.
@@ -436,7 +436,7 @@ hooks:
   release ships CUDA only when the `windows-x64-cuda12` archive is extracted
   into the same directory.
 
-The pinned `v1.0.0` runtime matches this core's FFI bindings. For a custom
+The pinned `v1.1.0` runtime matches this core's FFI bindings. For a custom
 bundle, use the required llama.cpp commit above and preserve the pinned
 runtime's struct layouts and symbols. The hook logs a warning when an
 override is active.

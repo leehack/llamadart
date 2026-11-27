@@ -256,6 +256,58 @@ void main() {
   );
 
   test(
+    'split mtmd fixture pins the nine-field mtmd_helper_cap layout',
+    () async {
+      final library = await compileFixture();
+      final nativeSetVideoEnabled = library
+          .lookupFunction<Void Function(Bool), void Function(bool)>(
+            'fixture_set_video_enabled',
+          );
+      final capabilities = library
+          .lookupFunction<
+            mtmd_helper_cap Function(
+              Pointer<llama_model>,
+              Pointer<mtmd_context>,
+            ),
+            mtmd_helper_cap Function(
+              Pointer<llama_model>,
+              Pointer<mtmd_context>,
+            )
+          >('mtmd_helper_get_capabilities');
+
+      for (final enabled in [true, false]) {
+        nativeSetVideoEnabled(enabled);
+        final cap = capabilities(nullptr, nullptr);
+        expect(
+          [
+            cap.chat,
+            cap.vision,
+            cap.audio,
+            cap.video,
+            cap.audio_stream,
+            cap.audio_duplex,
+            cap.text_gen,
+            cap.audio_gen,
+            cap.audio_gen_spk_ref,
+          ],
+          [
+            !enabled,
+            enabled,
+            !enabled,
+            enabled,
+            !enabled,
+            enabled,
+            !enabled,
+            enabled,
+            !enabled,
+          ],
+        );
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
     'split mtmd without mtmd_helper_get_capabilities reports unknown, not false',
     () async {
       await compileFixture(defines: const ['FIXTURE_OMIT_CAPABILITIES']);

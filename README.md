@@ -216,9 +216,9 @@ Current default runtime pins:
 
 | Runtime | Pin |
 | --- | --- |
-| Native llama.cpp / GGUF | `leehack/llamadart-native@v1.0.0-4` |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@v1.1.0` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.20.0` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.95` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.96` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.20.0` |
 
 The Web backend reuses cached HTTP(S) projectors through the pinned bridge.
@@ -257,7 +257,7 @@ overrides select backend modules; use `llamadart_native_path` to replace the
 complete runtime. The full override rules are in [Native runtime configuration](https://llamadart.leehack.com/docs/platforms/native-build-hooks#override-the-llamacpp-release).
 
 Await engine disposal before host shutdown. Forced worker cleanup during
-native creation uses owner API v1 in the pinned `v1.0.0` runtime. Raw
+native creation uses owner API v1 in the pinned `v1.1.0` runtime. Raw
 allocation-to-registration gaps remain; see the
 [shutdown contract](https://github.com/leehack/llamadart/blob/main/doc/llama_cpp_exit_teardown.md#creation-time-owner-preparation).
 

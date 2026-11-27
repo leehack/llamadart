@@ -10,19 +10,21 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 const _admitted =
-    'llamadart-native-build/1;llama.cpp=b1b770d90d94cad9e9ea5b993bdbc383a522fb28;';
+    'llamadart-native-build/1;llama.cpp=171527522610996f5f0acf12334e185156ca8f44;';
 
 // A null identity is the runtime without the export, or one reporting nothing.
 const Map<String, String?> _refused = {
   'null': null,
   'empty': '',
   'unknown': 'unknown',
-  'schema2': 'llamadart-native-build/2;llama.cpp=b1b770d9;',
+  'schema2': 'llamadart-native-build/2;llama.cpp=17152752;',
   'commit unknown': 'llamadart-native-build/1;llama.cpp=unknown;',
   'dirty':
-      'llamadart-native-build/1;llama.cpp=b1b770d90d94cad9e9ea5b993bdbc383a522fb28+dirty.1;',
+      'llamadart-native-build/1;llama.cpp=171527522610996f5f0acf12334e185156ca8f44+dirty.1;',
   'duplicate':
-      'llamadart-native-build/1;llama.cpp=b1b770d90d94cad9e9ea5b993bdbc383a522fb28;llama.cpp=unknown;',
+      'llamadart-native-build/1;llama.cpp=171527522610996f5f0acf12334e185156ca8f44;llama.cpp=unknown;',
+  'v1.0.0':
+      'llamadart-native-build/1;llama.cpp=b1b770d90d94cad9e9ea5b993bdbc383a522fb28;',
   'v0.9.0':
       'llamadart-native-build/1;llama.cpp=cd959bae99ff4bed22bef2604f45241c09bbb8c8;',
   'v0.8.0':

@@ -539,11 +539,11 @@ worker and restores the model on the next call.
 
 ## Pinned bridge assets
 
-This llamadart version pins bridge assets `v0.1.95`, which include the
+This llamadart version pins bridge assets `v0.1.96`, which include the
 staging capability flag, API-version-1 media embedding contract, and
 `thinkingBudgetMultiEnd`.
 
-- The pinned `v0.1.95` bridge assets embed llama.cpp `v1.0.0`, matching the native runtime `v1.0.0-4`.
+- The pinned `v0.1.96` bridge assets embed llama.cpp `v1.1.0`, matching the native runtime `v1.1.0`.
 - The bridge releases temporary buffers during JS-backed staging and batches
   WebGPU weight uploads to reduce memory use while loading GGUF models.
 - Model metadata reports the vocabulary's BOS and EOS text and the effective
@@ -559,7 +559,7 @@ Provenance and the pinned manifest digest are in
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.95 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.96 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -567,7 +567,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.95';
+  window.__llamadartBridgeAssetsTag = 'v0.1.96';
 </script>
 ```
 

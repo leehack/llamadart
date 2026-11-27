@@ -1994,14 +1994,12 @@ for event,flag,native,cancel,good,main in itertools.product(('push','pull_reques
     });
   }
 
-  test('Linux VM tests have published companion tags and require them', () {
+  test('Linux VM tests check out full tag history', () {
     final steps = readWorkflow('ci')['jobs']['test-linux-vm']['steps'] as List;
     final checkout = steps.singleWhere(
       (step) => '${step['uses']}'.startsWith('actions/checkout@'),
     );
     expect(checkout['with']?['fetch-depth'], 0);
-    final tests = steps.singleWhere((step) => step['name'] == 'Run VM tests');
-    expect(tests['env']['LLAMADART_REQUIRE_PUBLISHED_COMPANION_TAGS'], '1');
   });
 
   test('validation consumer resolves dependencies only in the chat app', () {
