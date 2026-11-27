@@ -19,8 +19,8 @@ confirmed. Metadata includes `llamadartCapabilities` with:
 - `state`: `unloaded`, `unverified` (a pending/failed probe or no provider), or `verified`
 - `ready`: whether the last checked runtime reports a loaded, usable model
 - `generation`: `penalty`, `minP`, `presencePenalty`, `thinkingBudget`, `streamBatching`,
-  `promptPrefixControl`, and `speculativeDecodingStrategies` from the last ready
-  snapshot; false flags and an empty strategy list before verification
+  `ignoreEos` (boolean; true only on native llama.cpp), `promptPrefixControl`, and
+  `speculativeDecodingStrategies` from the last ready snapshot; false flags and an empty strategy list before verification
 - `embedding`: the last probed `text`, `image` and `audio` embedding modalities;
   chat vision/audio support is never substituted for media embedding probes
 - `declared`: the definition's `tools`, `constrained`, and `embeddings` permissions
@@ -33,9 +33,10 @@ blocks inference. Disposing the plugin clears its
 support metadata. Registering an action does not guarantee that its runtime
 supports the requested feature.
 
-Inference controls are checked before generation. Nondefault batching and
-nonzero presence penalties require explicit support; thinking budgets and every
-selected speculative strategy must be confirmed. See [generation settings](usage.md#generation-settings)
+Inference controls are checked before generation. Nondefault batching,
+nonzero presence penalties and `ignoreEos: true` require explicit support;
+`ignoreEos` is also rejected with grammar-constrained output or active tools.
+Thinking budgets and every selected speculative strategy must be confirmed. See [generation settings](usage.md#generation-settings)
 for incompatible combinations and JSON configuration.
 
 Tools, strict JSON, embeddings, system messages, conversation history, images,
