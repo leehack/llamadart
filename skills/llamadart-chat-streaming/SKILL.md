@@ -208,10 +208,13 @@ modalities and speculative strategies before offering them.
   model-suppressed tokens or a banned token (`-infinity` `logitBias`).
   DRY (`dryMultiplier` above 0, up to 100) penalizes tokens that extend a
   repeat of at least `dryAllowedLength` (default 2) tokens within the last
-  `dryPenaltyLastN` (default 64, at most the context size), prompt included,
-  by `dryMultiplier * dryBase ^ (length - dryAllowedLength)`; text after a
-  `drySequenceBreakers` entry (default newline, `:`, `"` and `*`) starts a
-  new repeat. It runs after the penalties, works with Mirostat, and throws
+  `dryPenaltyLastN` tokens (default 64), including the prompt. The window is
+  capped at the context size reported by llama.cpp and must exceed
+  `dryAllowedLength`.
+  DRY subtracts `dryMultiplier * dryBase ^ (length - dryAllowedLength)`
+  from the logit. Text after a `drySequenceBreakers` entry (default newline,
+  `:`, `"` and `*`) starts a new repeat. DRY runs after the penalties,
+  works with Mirostat, and throws
   `LlamaUnsupportedException` with a grammar (including tools or
   `responseFormat`) or a thinking budget. While `dryMultiplier` is 0 the other
   DRY fields are ignored, so zero it to turn DRY off.

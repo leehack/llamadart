@@ -543,11 +543,13 @@ Important fields:
   on native llama.cpp. A `dryMultiplier` above 0 (at most 100; `llama-server`
   suggests 0.8) turns it on. A token that would extend a sequence already
   seen in the last `dryPenaltyLastN` tokens (1 or more, default 64, capped at
-  the context size; the prompt counts) beyond `dryAllowedLength` tokens (0 or
-  more, default 2, below `dryPenaltyLastN`) loses `dryMultiplier * dryBase ^
+  the context size reported by llama.cpp, including the prompt) beyond
+  `dryAllowedLength` tokens (0 or more, default 2, below the capped window)
+  loses `dryMultiplier * dryBase ^
   (length - dryAllowedLength)` from its logit, with `dryBase` from 1 to 100
-  (default 1.75). The penalty saturates near the largest 32-bit float, which
-  bans the token. A sequence breaker restarts the count: text on either side
+  (default 1.75). llama.cpp limits the exponent for long repeats. The
+  resulting penalty can still overflow and set the logit to negative
+  infinity. A sequence breaker restarts the count: text on either side
   of one is not a repeat, and a token that is a breaker by itself is never
   penalized. `drySequenceBreakers` defaults to newline, `:`, `"` and `*`
   (`GenerationParams.defaultDrySequenceBreakers`); an empty list uses none,

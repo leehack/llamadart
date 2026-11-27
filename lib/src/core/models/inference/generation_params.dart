@@ -1060,9 +1060,9 @@ class GenerationParams {
   /// ignored. Otherwise a token that would extend a sequence already seen in
   /// the last [dryPenaltyLastN] tokens (prompt included) beyond
   /// [dryAllowedLength] tokens has `dryMultiplier * dryBase ^ (length -
-  /// dryAllowedLength)` subtracted from its logit. The penalty saturates near
-  /// the largest 32-bit float, which bans the token. `llama-server`
-  /// suggests 0.8.
+  /// dryAllowedLength)` subtracted from its logit. llama.cpp limits the
+  /// exponent for long repeats, but the resulting penalty can still overflow
+  /// and set the logit to negative infinity. `llama-server` suggests 0.8.
   ///
   /// DRY runs after the penalties and before the other samplers. It cannot
   /// be combined with a grammar (including one from tools or a response
@@ -1077,7 +1077,8 @@ class GenerationParams {
   /// Length of a repeated sequence that DRY still allows, from 0. The default
   /// is 2.
   ///
-  /// It must be smaller than [dryPenaltyLastN].
+  /// It must be smaller than [dryPenaltyLastN] after that window is capped
+  /// at the actual context size reported by llama.cpp.
   final int dryAllowedLength;
 
   /// Number of recent tokens DRY scans for repeated sequences, from 1.
