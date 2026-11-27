@@ -1001,6 +1001,24 @@ void main() {
       await expectFlagged(repo.backport(source), revert);
     });
 
+    test(
+      'keeps a short SHA declaration ending with a period fail-closed',
+      () async {
+        final revert = repo.mainCommit(
+          'Undo a change (#70)',
+          body: 'This reverts commit abc1234.',
+          file: 'fix',
+          content: 'drifted\n',
+        );
+        await expectLater(
+          repo.guard(_backport(source)),
+          throwsA(allOf(_failure(source), _failure(revert))),
+        );
+        repo.checkoutRelease();
+        await expectFlagged(repo.backport(source), revert);
+      },
+    );
+
     test('all-lines parity checks only the maximal tip', () async {
       final revert = repo.mainRevert(source, subject: 'Revert fix (#59)');
       repo.checkoutRelease();
