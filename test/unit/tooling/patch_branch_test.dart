@@ -1308,6 +1308,76 @@ void main() {
       expect(await repo.guard(_backport(source)), contains('verified'));
       expect(repo.requests, ['repos/$_repo/pulls/51']);
     });
+
+    test(
+      'keeps an earlier revert unresolved when a later title matches',
+      () async {
+        final revert = repo.mainCommit(
+          'Revert "Unknown change (#70)" (#58)',
+          file: 'fix',
+          content: 'drifted\n',
+        );
+        repo.mainCommit('Unknown change (#70) (#71)', file: 'other');
+        await expectLater(
+          repo.guard(_backport(source)),
+          throwsA(
+            allOf(
+              _failure(source),
+              _failure(revert),
+              _failure('unresolved revert on main'),
+            ),
+          ),
+        );
+        repo.checkoutRelease();
+        await expectFlagged(repo.backport(source), revert);
+      },
+    );
+  });
+
+  group('revert-button titles ending with another PR number', () {
+    for (final (otherTitle, declaration, expected) in [
+      ('An unrelated title', '', 'was reverted on main by'),
+      ('Fix a regression', '', 'an unresolved revert on main'),
+      ('Fix a regression', 'Reverts $_repo#57', null),
+    ]) {
+      test('other title: $otherTitle, declaration: $declaration', () async {
+        repo.mainCommit('$otherTitle (#57)', file: 'other');
+        final source = repo.mainCommit(
+          'Fix a regression (#57) (#51)',
+          body: _landed,
+          file: 'fix',
+        );
+        repo.mainCommit('Edit the fix (#56)', file: 'fix', content: 'more\n');
+        final revert = repo.mainCommit(
+          'Revert "Fix a regression (#57)" (#58)',
+          body: declaration,
+          file: 'fix',
+          content: 'drifted\n',
+        );
+        if (expected == null) {
+          expect(await repo.guard(_backport(source)), contains('verified'));
+        } else {
+          await expectLater(
+            repo.guard(_backport(source)),
+            throwsA(
+              allOf(_failure(source), _failure(revert), _failure(expected)),
+            ),
+          );
+        }
+        repo.checkoutRelease();
+        final backport = repo.backport(source);
+        if (expected == null) {
+          expect(await repo.parity(), contains('$backport backport exact'));
+        } else {
+          await expectLater(
+            repo.parity(),
+            throwsA(
+              allOf(_failure(backport), _failure(revert), _failure(expected)),
+            ),
+          );
+        }
+      });
+    }
   });
 
   test('a false cherry-pick trailer cannot fall back to patch-id', () async {

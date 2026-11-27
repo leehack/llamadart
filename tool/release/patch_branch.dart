@@ -63,7 +63,7 @@ final _forwardLink = RegExp(
       r'/issues/([1-9][0-9]*)$',
 );
 final _revertedCommit = RegExp(r'^This reverts commit ([a-f0-9]{40})\.$');
-final _revertedTitle = RegExp(r'^Revert ".* \(#([1-9][0-9]*)\)"');
+final _revertedTitle = RegExp(r'^Revert "(.* \(#[1-9][0-9]*\))"');
 final _revertedPr = RegExp('^Reverts $_repository#([1-9][0-9]*)\$');
 final _recoveryPath = RegExp('^$_recoveryDirectory/([a-f0-9]{40})\\.json\$');
 
@@ -488,9 +488,20 @@ class _MainHistory {
   final _minorTags = <String, String>{};
   final _scans = <String, Future<_Scan>>{};
   final _reverts = <String, Future<_Revert?>>{};
+  late final Map<String, String> _subjects = git.subjects(tip);
   late final Set<String> pullRequests = {
-    for (final subject in git.subjects(tip)) ?_prSuffix.firstMatch(subject)?[1],
+    for (final subject in _subjects.values) ?_prSuffix.firstMatch(subject)?[1],
   };
+  late final Map<String, List<String>> _titleTargets = () {
+    final targets = <String, List<String>>{};
+    for (final MapEntry(key: sha, value: subject) in _subjects.entries) {
+      final suffix = _prSuffix.firstMatch(subject);
+      if (suffix == null) continue;
+      (targets[subject] ??= []).add(sha);
+      (targets[subject.substring(0, suffix.start)] ??= []).add(sha);
+    }
+    return targets;
+  }();
 
   String minor(String line) => _minorTags.putIfAbsent(line, () {
     final String sha;
@@ -523,6 +534,14 @@ class _MainHistory {
   Future<_Revert?> revertOf(String line, String source) =>
       _reverts['$line $source'] ??= _findRevert(line, source);
 
+  String? _resolveQuotedTitle(String? title, String revert) {
+    if (title == null) return null;
+    final position = positions[revert]!;
+    return _titleTargets[title]
+        ?.where((sha) => positions[sha]! > position)
+        .singleOrNull;
+  }
+
   Future<_Scan> _scan(String line) => _scans[line] ??= () async {
     final range = '${minor(line)}..$tip';
     final forward = git.patchIds(range);
@@ -550,13 +569,16 @@ class _MainHistory {
         for (final carrier in carriers)
           ?_prSuffix.firstMatch(scan.messages[carrier]!.subject)?[1],
       };
+      final titleTarget = _resolveQuotedTitle(message.quotedTitle, sha);
       if (message.commits.any(carriers.contains) ||
           message.pullRequests.any(numbers.contains) ||
+          carriers.contains(titleTarget) ||
           carriers.any(
             (carrier) => _same(scan.inverses[sha], scan.patches[carrier]),
           )) {
         revert = _Revert(sha, unresolved: false);
       } else if (message.revertLike &&
+          titleTarget == null &&
           !message.commits.any(git.hasCommit) &&
           !message.pullRequests.any(pullRequests.contains) &&
           (sourcePaths ??= git.changedPaths(
@@ -593,9 +615,6 @@ class _Message {
                 line.startsWith('This reverts commit ') &&
                 !_revertedCommit.hasMatch(line),
           ) {
-    if (_revertedTitle.firstMatch(subject)?[1] case final number?) {
-      pullRequests.add(number);
-    }
     for (final line in _lines(body)) {
       if (_revertedCommit.firstMatch(line)?[1] case final commit?) {
         commits.add(commit);
@@ -610,6 +629,7 @@ class _Message {
   final Set<String> commits;
   final Set<String> pullRequests;
   final bool revertLike;
+  late final String? quotedTitle = _revertedTitle.firstMatch(subject)?[1];
 }
 
 class _Scan {
@@ -1051,13 +1071,19 @@ class _Git {
     '--',
   ]).split('\x00').where((path) => path.isNotEmpty).toSet();
 
-  List<String> subjects(String revision) => text([
-    'log',
-    '--first-parent',
-    '-z',
-    '--format=%s',
-    revision,
-  ]).split('\x00');
+  Map<String, String> subjects(String revision) {
+    final fields = text([
+      'log',
+      '--first-parent',
+      '-z',
+      '--format=%H%x00%s',
+      revision,
+    ]).split('\x00');
+    return {
+      for (var index = 0; index + 1 < fields.length; index += 2)
+        fields[index]: fields[index + 1],
+    };
+  }
 
   Map<String, _Message> messages(String range) {
     final fields = text([
