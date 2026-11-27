@@ -6503,6 +6503,24 @@ external ffi.Pointer<ffi.Char> llama_dart_last_error();
 @ffi.Native<ffi.Bool Function(llama_memory_t, ffi.Bool)>()
 external bool llama_dart_memory_clear(llama_memory_t mem, bool data);
 
+@ffi.Native<ffi.Uint32 Function()>()
+external int llama_dart_model_fd_api_version();
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Int32,
+    ffi.Int64,
+    llama_model_params,
+    ffi.Pointer<ffi.Pointer<llama_model>>,
+  )
+>()
+external int llama_dart_model_load_from_fd(
+  int fd,
+  int size,
+  llama_model_params params,
+  ffi.Pointer<ffi.Pointer<llama_model>> out_model,
+);
+
 @ffi.Native<
   ffi.Pointer<llama_model> Function(ffi.Pointer<ffi.Char>, llama_model_params)
 >()
@@ -6720,6 +6738,23 @@ external ffi.Pointer<llama_context> llama_dart_owner_init_from_model(
 );
 
 @ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<ffi.Void>,
+    ffi.Int32,
+    ffi.Int64,
+    llama_model_params,
+    ffi.Pointer<ffi.Pointer<llama_model>>,
+  )
+>()
+external int llama_dart_owner_model_load_from_fd(
+  ffi.Pointer<ffi.Void> owner,
+  int fd,
+  int size,
+  llama_model_params params,
+  ffi.Pointer<ffi.Pointer<llama_model>> out_model,
+);
+
+@ffi.Native<
   ffi.Pointer<llama_model> Function(
     ffi.Pointer<ffi.Void>,
     ffi.Pointer<ffi.Char>,
@@ -6789,6 +6824,27 @@ external int llama_dart_process(
 external bool llama_dart_sampler_accept(
   ffi.Pointer<llama_sampler> smpl,
   int token,
+);
+
+@ffi.Native<
+  ffi.Pointer<llama_sampler> Function(
+    ffi.Pointer<llama_vocab>,
+    ffi.Float,
+    ffi.Float,
+    ffi.Int32,
+    ffi.Int32,
+    ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    ffi.Size,
+  )
+>()
+external ffi.Pointer<llama_sampler> llama_dart_sampler_init_dry(
+  ffi.Pointer<llama_vocab> vocab,
+  double dry_multiplier,
+  double dry_base,
+  int dry_allowed_length,
+  int dry_penalty_last_n,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> seq_breakers,
+  int num_breakers,
 );
 
 @ffi.Native<
@@ -12125,6 +12181,32 @@ enum llama_dart_fit_status {
     1 => LLAMA_DART_FIT_STATUS_FAILURE,
     2 => LLAMA_DART_FIT_STATUS_ERROR,
     _ => throw ArgumentError('Unknown value for llama_dart_fit_status: $value'),
+  };
+}
+
+enum llama_dart_model_fd_status {
+  LLAMA_DART_MODEL_FD_STATUS_SUCCESS(0),
+  LLAMA_DART_MODEL_FD_STATUS_INVALID_ARGUMENT(1),
+  LLAMA_DART_MODEL_FD_STATUS_UNSUPPORTED(2),
+  LLAMA_DART_MODEL_FD_STATUS_INVALID_DESCRIPTOR(3),
+  LLAMA_DART_MODEL_FD_STATUS_SIZE_MISMATCH(4),
+  LLAMA_DART_MODEL_FD_STATUS_LOAD_FAILED(5),
+  LLAMA_DART_MODEL_FD_STATUS_ERROR(6);
+
+  final int value;
+  const llama_dart_model_fd_status(this.value);
+
+  static llama_dart_model_fd_status fromValue(int value) => switch (value) {
+    0 => LLAMA_DART_MODEL_FD_STATUS_SUCCESS,
+    1 => LLAMA_DART_MODEL_FD_STATUS_INVALID_ARGUMENT,
+    2 => LLAMA_DART_MODEL_FD_STATUS_UNSUPPORTED,
+    3 => LLAMA_DART_MODEL_FD_STATUS_INVALID_DESCRIPTOR,
+    4 => LLAMA_DART_MODEL_FD_STATUS_SIZE_MISMATCH,
+    5 => LLAMA_DART_MODEL_FD_STATUS_LOAD_FAILED,
+    6 => LLAMA_DART_MODEL_FD_STATUS_ERROR,
+    _ => throw ArgumentError(
+      'Unknown value for llama_dart_model_fd_status: $value',
+    ),
   };
 }
 
