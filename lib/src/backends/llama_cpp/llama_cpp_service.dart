@@ -6120,6 +6120,14 @@ class LlamaCppService {
       // 2. Prepare Resources
       final nCtx = llama_n_ctx(ctx.pointer);
       final batch = _batches[contextHandle]!.batch;
+      if (params.dryMultiplier != 0 && params.dryAllowedLength >= nCtx) {
+        throw LlamaArgumentException(
+          'GenerationParams.dryAllowedLength must be smaller than the '
+          'effective DRY window of $nCtx tokens.',
+          name: 'dryAllowedLength',
+          invalidValue: params.dryAllowedLength,
+        );
+      }
       tokensPtr = malloc<Int32>(nCtx);
       pieceBuf = malloc<Uint8>(256);
       if (topLogprobs != null && onTokenLogprobs != null) {

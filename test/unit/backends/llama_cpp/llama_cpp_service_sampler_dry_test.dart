@@ -376,14 +376,17 @@ void main() {
       );
     });
 
-    test('saturates instead of overflowing on a long repeat', () {
-      final logits = penalties(
-        params.copyWith(dryMultiplier: 100, dryBase: 100),
-        List.filled(200, 10),
-      );
-      expect(logits[10], lessThan(-1e30));
-      expect(logits.where((logit) => logit.isNaN), isEmpty);
-    });
+    test(
+      'a large penalty can set a repeated token logit to negative infinity',
+      () {
+        final logits = penalties(
+          params.copyWith(dryMultiplier: 100, dryBase: 100),
+          List.filled(200, 10),
+        );
+        expect(logits[10], double.negativeInfinity);
+        expect(logits.where((logit) => logit.isNaN), isEmpty);
+      },
+    );
   });
 
   group('behavior', () {
@@ -410,6 +413,14 @@ void main() {
         final output = await generate(_dry.copyWith(dryAllowedLength: allowed));
         expect(longestRun(output), lessThanOrEqualTo(math.max(allowed, 1)));
       }
+    });
+
+    test('a DRY multiplier of 0.1 breaks a repetition loop', () async {
+      final baseline = await generate(_greedy);
+      expect(baseline, List.filled(_greedy.maxTokens, _b));
+      final output = await generate(_dry.copyWith(dryMultiplier: 0.1));
+      expect(output, isNotEmpty);
+      expect(output, isNot(baseline));
     });
 
     test(
@@ -576,6 +587,32 @@ void main() {
   });
 
   group('validation', () {
+    test('validates allowed length against the actual context cap', () async {
+      context = service.createContext(
+        model,
+        _modelParams.copyWith(contextSize: 32),
+      );
+      expect(service.getContextSize(context), 256);
+      final params = _dry.copyWith(dryPenaltyLastN: 300, dryAllowedLength: 256);
+      await expectLater(
+        generate(params),
+        throwsA(
+          isA<LlamaArgumentException>()
+              .having((error) => error.name, 'name', 'dryAllowedLength')
+              .having((error) => error.message, 'message', contains('256')),
+        ),
+      );
+      expect(decodes, 0);
+      expect(
+        await generate(params.copyWith(dryAllowedLength: 255)),
+        List.filled(params.maxTokens, _b),
+      );
+      expect(
+        await generate(params.copyWith(dryMultiplier: 0)),
+        List.filled(params.maxTokens, _b),
+      );
+    });
+
     final tooLong = 'x' * 41;
     final tooLongMultiByte = 'é' * 21;
     for (final (name, field, params) in [
@@ -707,11 +744,11 @@ void main() {
         _dry.copyWith(dryMultiplier: 1e-6, dryBase: 1),
         _dry.copyWith(dryAllowedLength: 0, dryPenaltyLastN: 1),
         _dry.copyWith(
-          dryAllowedLength: 0x7ffffffe,
+          dryAllowedLength: service.getContextSize(context) - 1,
           dryPenaltyLastN: 0x7fffffff,
         ),
       ]) {
-        expect(await generate(params), isNotNull);
+        expect(await generate(params), isNotEmpty);
       }
     });
   });
