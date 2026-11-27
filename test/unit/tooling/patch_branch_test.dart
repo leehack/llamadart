@@ -1308,6 +1308,30 @@ void main() {
       expect(await repo.guard(_backport(source)), contains('verified'));
       expect(repo.requests, ['repos/$_repo/pulls/51']);
     });
+
+    test(
+      'keeps an earlier revert unresolved when a later title matches',
+      () async {
+        final revert = repo.mainCommit(
+          'Revert "Unknown change (#70)" (#58)',
+          file: 'fix',
+          content: 'drifted\n',
+        );
+        repo.mainCommit('Unknown change (#70) (#71)', file: 'other');
+        await expectLater(
+          repo.guard(_backport(source)),
+          throwsA(
+            allOf(
+              _failure(source),
+              _failure(revert),
+              _failure('unresolved revert on main'),
+            ),
+          ),
+        );
+        repo.checkoutRelease();
+        await expectFlagged(repo.backport(source), revert);
+      },
+    );
   });
 
   group('revert-button titles ending with another PR number', () {
