@@ -1894,9 +1894,9 @@ class LlamaCppService {
     if (modelParams.gpuMemoryFit != null) {
       modelParams.validate();
     }
+    if (descriptor != null) _calls.requireModelFd();
     _requireAdmittedRuntime('Model loading');
     if (descriptor != null) {
-      _calls.requireModelFd();
       if (modelParams.gpuMemoryFit != null) {
         throw LlamaUnsupportedException(
           'ModelParams.gpuMemoryFit measures the model file by path, so it '
