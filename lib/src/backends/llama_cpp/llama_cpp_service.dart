@@ -7878,7 +7878,7 @@ class LlamaCppService {
         breakerArray[breakerPtrs.length - 1] = ptr.cast();
       }
       // The constructor copies the breakers into its own state.
-      return llama_sampler_init_dry(
+      return _calls.samplerInitDry(
         vocab,
         params.dryMultiplier,
         params.dryBase,
@@ -8040,7 +8040,13 @@ class LlamaCppService {
     }
 
     if (params.dryMultiplier != 0) {
-      final drySampler = _initDrySampler(params, vocab, nCtx);
+      final Pointer<llama_sampler> drySampler;
+      try {
+        drySampler = _initDrySampler(params, vocab, nCtx);
+      } on LlamaException {
+        _freeSamplerChain(sampler);
+        rethrow;
+      }
       if (drySampler == nullptr) {
         _freeSamplerChain(sampler);
         throw LlamaInferenceException(

@@ -874,11 +874,13 @@ needs ROCm 6.3 or newer.
 The `v1.1.0-1` wrapper rebuild keeps the same upstream commit, so admission is
 unchanged. It adds the exports `llama_dart_model_fd_api_version`,
 `llama_dart_model_load_from_fd`, `llama_dart_owner_model_load_from_fd` and
-`llama_dart_sampler_init_dry`, which the regenerated bindings declare. The
-core calls the three model-descriptor exports only through the optional
-`ModelFdApi` probe (`lib/src/backends/llama_cpp/model_fd_api.dart`: all three
-resolve and the version is at least 1): a `v1.1.0` override lacks them, keeps
-loading by path, and makes `LlamaEngine.setModelFromFileDescriptor` throw
+`llama_dart_sampler_init_dry`. The core routes the DRY sampler setup through
+the last when the runtime exports it and keeps the upstream call otherwise, so
+a `v1.1.0` runtime without it keeps the rest of the exception barrier. It calls
+the three model-descriptor exports only through the optional `ModelFdApi` probe
+(`lib/src/backends/llama_cpp/model_fd_api.dart`: all three resolve and the
+version is at least 1): a `v1.1.0` override lacks them, keeps loading by path,
+and makes `LlamaEngine.setModelFromFileDescriptor` throw
 `LlamaUnsupportedException` naming `v1.1.0-1`.
 
 The 0.18.0 preparation moves to `v0.8.0-3` and requires its matching Apple
