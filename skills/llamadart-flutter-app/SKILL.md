@@ -104,6 +104,13 @@ or shipping runtimes the app does not use.
   it checks the retained file's recorded length and any stored or supplied
   SHA-256. On web the default manager's operations throw
   `LlamaUnsupportedException`.
+- For a model the user picks or grants (Android Storage Access Framework,
+  iOS document picker), open the file in platform code and pass its descriptor
+  to `engine.setModelFromFileDescriptor(fd, size: length)`: a single-file GGUF
+  then loads without a copy. Close the descriptor after the call. On
+  `LlamaUnsupportedException` (Windows, an older runtime) or a streamed
+  provider (`LlamaArgumentException`), copy the file into the app cache and
+  `setModel` that path.
 - Do not cancel downloads on every app pause or screen lock. Downloads are
   foreground Dart HTTP requests; a later session resumes from the `.part`
   file when the server allows it. For background downloads, run an Android

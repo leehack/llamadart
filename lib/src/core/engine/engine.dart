@@ -585,6 +585,147 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
     await _setModel(model, params, download, onProgress);
   }
 
+  /// Loads a single-file GGUF from [fileDescriptor] with [params], replacing
+  /// the model this engine holds, without a file path or a copy.
+  ///
+  /// For a model the app can open but cannot name by a stable local path: an
+  /// Android `ContentResolver.openFileDescriptor` grant on a user-selected
+  /// document (pass `ParcelFileDescriptor.getFd()`), or an iOS or macOS file
+  /// the app opened inside its security scope. [fileDescriptor] must be an
+  /// open, readable, seekable regular file whose GGUF starts at offset 0.
+  /// Split GGUFs, a GGUF embedded at an offset, and a provider that streams
+  /// the document as a pipe are not supported: copy those into a local file
+  /// and use [setModel].
+  ///
+  /// The caller keeps [fileDescriptor]. The runtime duplicates it, reads from
+  /// offset 0, restores the offset and closes only its duplicate, so the app
+  /// may close its descriptor once this completes, and must not use it from
+  /// another thread meanwhile. By default the model stays memory-mapped from
+  /// the file after that: do not truncate or rewrite the file while the
+  /// model is loaded (deleting or renaming it is safe). Set
+  /// [ModelParams.useMmap] to false for a descriptor that cannot be mapped;
+  /// the runtime then reads the weights into memory it owns, still without a
+  /// copy on disk. [size] is the length the caller expects, such as
+  /// `AssetFileDescriptor.getLength()`; a different file size throws.
+  ///
+  /// A projector, LoRA adapters and a draft model are separate files that
+  /// keep loading by path: add them with [loadMultimodalProjector] after
+  /// this, and give [ModelParams.loras] as paths.
+  /// [ModelParams.gpuMemoryFit] measures the file by path and is not
+  /// available here. Like [setModel], a failure leaves nothing loaded, and
+  /// the old model is unloaded first.
+  ///
+  /// Throws:
+  /// - [LlamaUnsupportedException] on Windows, with a backend that cannot
+  ///   load from a descriptor (LiteRT-LM, the Web), and when the native
+  ///   runtime predates llamadart-native v1.1.0-1, including a `v1.1.0`
+  ///   runtime override. Never a success: catch it to copy the model into the
+  ///   app cache and load that path.
+  /// - [LlamaArgumentException] for an invalid [params], a negative
+  ///   [fileDescriptor] or [size], a descriptor that is not a readable,
+  ///   seekable regular file, and a [size] that differs from the file.
+  /// - [LlamaModelException] when llama.cpp cannot load the file.
+  /// - [LlamaStateException] after [dispose] and while another model load or
+  ///   unload runs.
+  ///
+  /// ```dart
+  /// try {
+  ///   await engine.setModelFromFileDescriptor(fd, size: length);
+  /// } on LlamaUnsupportedException {
+  ///   await engine.setModel(LlamaModel(ModelSource.path(copiedPath)));
+  /// }
+  /// ```
+  Future<void> setModelFromFileDescriptor(
+    int fileDescriptor, {
+    int? size,
+    ModelParams params = const ModelParams(),
+  }) {
+    return _observeModelLoad(
+      _descriptorSource,
+      params,
+      () => _withModelLifecycle('set a model', () async {
+        _checkFileDescriptorLoad(fileDescriptor, size, params);
+        await _unloadModel();
+        _throwIfDisposedDuringLoad();
+        await _loadModelFromDescriptor(fileDescriptor, size, params);
+        _throwIfDisposedDuringLoad();
+        await _captureObservedModel(_descriptorSource);
+        _throwIfDisposedDuringLoad();
+      }),
+    );
+  }
+
+  static const String _descriptorSource = 'file descriptor';
+
+  void _checkFileDescriptorLoad(
+    int fileDescriptor,
+    int? size,
+    ModelParams params,
+  ) {
+    params.validate();
+    if (fileDescriptor < 0) {
+      throw LlamaArgumentException(
+        'The file descriptor must not be negative.',
+        name: 'fileDescriptor',
+        invalidValue: fileDescriptor,
+      );
+    }
+    if (size != null && size < 0) {
+      throw LlamaArgumentException(
+        'The expected size must not be negative; pass null to skip the check.',
+        name: 'size',
+        invalidValue: size,
+      );
+    }
+    if (backend is! BackendFileDescriptorModelLoad) {
+      throw LlamaUnsupportedException(
+        'This backend cannot load a model from a file descriptor. Use '
+        'LlamaBackend() on a native platform other than Windows, or load the '
+        'model by path with setModel after copying it to a local file.',
+      );
+    }
+    if (params.loras.any((lora) => lora.source != null)) {
+      throw LlamaUnsupportedException(
+        'A model loaded from a file descriptor takes LoRA adapters only as '
+        'local paths; resolve LoraAdapterConfig.source to a file first.',
+      );
+    }
+  }
+
+  Future<void> _loadModelFromDescriptor(
+    int fileDescriptor,
+    int? size,
+    ModelParams modelParams,
+  ) async {
+    _ensureNotReady();
+    LlamaLogger.instance.info('Loading model from a file descriptor');
+    try {
+      await backend.setLogLevel(LlamaLogging.nativeLevel);
+      _cachedModelMetadata = null;
+      _modelHandle = await (backend as BackendFileDescriptorModelLoad)
+          .modelLoadFromFileDescriptor(fileDescriptor, modelParams, size: size);
+      _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
+      _modelChatTemplate = modelParams.chatTemplate;
+      _isReady = true;
+      LlamaLogger.instance.info('Model loaded from a file descriptor');
+    } catch (e, stackTrace) {
+      await _cleanupFailedLoadState();
+      LlamaLogger.instance.error(
+        'Failed to load a model from a file descriptor',
+        e,
+        stackTrace,
+      );
+      if (e is LlamaException) rethrow;
+      if (e is UnsupportedError) {
+        throw _unsupportedBackendOperation('Model loading', e);
+      }
+      throw LlamaModelException(
+        'Failed to load a model from a file descriptor',
+        _redactedErrorDetails(e, _descriptorSource),
+      );
+    }
+  }
+
   /// [setModel], naming the load [operation] and its files [assetType] in
   /// errors. [companions] are further files of the model: they resolve after
   /// the model's own, under the same rules, and this returns where each

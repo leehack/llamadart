@@ -47,7 +47,7 @@ a file path. It never invents a shared folder.
 | Platform | Sharing boundary | Store |
 | --- | --- | --- |
 | Linux, macOS, Windows | Every process of the user | A per-user directory, such as one under `defaultSharedCacheDirectory()` |
-| Android | Apps the user granted the same directory | Only a directory that apps reach as a file path. Storage Access Framework tree grants give content URIs, which the loaders cannot open. Do not request All Files Access to get a path. |
+| Android | Apps the user granted the same directory | Only a directory that apps reach as a file path. Storage Access Framework tree grants give content URIs, which the store cannot share. A single document's descriptor can load without a copy ([Load from a file descriptor](./model-lifecycle#load-from-a-file-descriptor)). Do not request All Files Access to get a path. |
 | iOS and sandboxed macOS | Apps in one App Group | The App Group container. Apps from unrelated developers have no shared writable directory; they can only load files the user picks. |
 | Web | None | `ModelStore.open` throws `LlamaUnsupportedException`: browser caches are origin-scoped. |
 

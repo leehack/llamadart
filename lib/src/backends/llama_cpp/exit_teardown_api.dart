@@ -9,6 +9,7 @@ import 'bindings.dart';
 import 'load_param_helpers.dart';
 import 'native_barrier_api.dart';
 import 'llama_cpp_raw_bindings.dart' as raw_bindings;
+import 'model_fd_api.dart';
 
 const _llamadartAsset = 'package:llamadart/llamadart';
 const _wrapperAsset = 'package:llamadart/llamadart_wrapper';
@@ -568,6 +569,63 @@ final class LlamaCppObjectCalls {
 
   final LlamaCppMixedBatchApi? Function()? _mixedBatchResolver;
 
+  /// The caller-owned descriptor loader, or `null` when the runtime lacks it
+  /// or is older than [ExitTeardownApi.minimumNativeRelease]. Independent of
+  /// the legacy all-or-nothing exit API otherwise: a runtime without it keeps
+  /// loading by path.
+  late final ModelFdApi? modelFd = exit == null
+      ? null
+      : _modelFdResolver != null
+      ? _modelFdResolver()
+      : ModelFdApi.tryResolve(isWindows: failures.isWindows);
+
+  final ModelFdApi? Function()? _modelFdResolver;
+
+  /// [modelFd], or throws [LlamaUnsupportedException] naming the platform or
+  /// runtime condition and the required native release.
+  ModelFdApi requireModelFd() =>
+      modelFd ??
+      (throw modelFdUnsupported(
+        isWindows: failures.isWindows,
+        hasExitTeardown: exit != null,
+      ));
+
+  /// Loads a single-file GGUF from [fd], an open descriptor the caller keeps.
+  ///
+  /// The runtime duplicates [fd] and closes only its duplicate, so the caller
+  /// may close it once this returns, and the model stays mapped from the
+  /// file. [size] is the length the caller expects, or negative to skip the
+  /// check. [owner] loads inside that worker owner. Throws
+  /// [LlamaUnsupportedException] without the loader, never a success, and
+  /// the exception [modelFdFailure] maps a refusal to.
+  Pointer<llama_model> loadModelFromDescriptor(
+    int fd,
+    int size,
+    llama_model_params params, {
+    Pointer<Void>? owner,
+  }) {
+    final api = requireModelFd();
+    final out = malloc<Pointer<llama_model>>();
+    try {
+      out.value = nullptr;
+      final status = owner == null
+          ? api.load(fd, size, params, out)
+          : api.ownerLoad(owner, fd, size, params, out);
+      if (status != ModelFdStatus.success.value) {
+        throw modelFdFailure(status, size: size);
+      }
+      final model = out.value;
+      if (model == nullptr) {
+        throw LlamaModelException(
+          'The native descriptor loader reported success without a model.',
+        );
+      }
+      return model;
+    } finally {
+      malloc.free(out);
+    }
+  }
+
   final int Function(Pointer<llama_model>) _modelInputWidth;
 
   /// Reads the vocabulary size and the model's suppress tokens, which
@@ -986,9 +1044,11 @@ final class LlamaCppObjectCalls {
     required this.stateSeqSetDataExt,
     required this.adapterLoraInit,
     LlamaCppMixedBatchApi? Function()? mixedBatchResolver,
+    ModelFdApi? Function()? modelFdResolver,
     int Function(Pointer<llama_model>)? modelInputWidth,
     int Function(Pointer<llama_context>)? contextSequenceCapacity,
   }) : _mixedBatchResolver = mixedBatchResolver,
+       _modelFdResolver = modelFdResolver,
        _modelInputWidth = modelInputWidth ?? llama_model_n_embd_inp,
        _contextSequenceCapacity = contextSequenceCapacity ?? llama_n_ctx_seq;
 
@@ -1005,6 +1065,7 @@ final class LlamaCppObjectCalls {
     NativeBarrierApi? barrier,
     bool isWindows = false,
     LlamaCppMixedBatchApi? Function()? mixedBatchResolver,
+    ModelFdApi? Function()? modelFdResolver,
     int Function(Pointer<llama_model>)? modelInputWidth,
     int Function(Pointer<llama_context>)? contextSequenceCapacity,
   }) {
@@ -1013,6 +1074,7 @@ final class LlamaCppObjectCalls {
       exit: exit,
       failures: failures,
       mixedBatchResolver: mixedBatchResolver,
+      modelFdResolver: modelFdResolver,
       modelInputWidth: modelInputWidth,
       contextSequenceCapacity: contextSequenceCapacity,
       loadModel: (path, params) {
@@ -1328,6 +1390,7 @@ final class LlamaCppObjectCalls {
     required bool isWindows,
     Pointer<NativeType> Function(String name)? symbol,
     LlamaCppMixedBatchApi? Function()? mixedBatchResolver,
+    ModelFdApi? Function()? modelFdResolver,
   }) {
     final exit = ExitTeardownApi.tryResolve(
       isWindows: isWindows,
@@ -1342,6 +1405,14 @@ final class LlamaCppObjectCalls {
       ),
       isWindows: isWindows,
       mixedBatchResolver: mixedBatchResolver,
+      modelFdResolver:
+          modelFdResolver ??
+          (symbol == null
+              ? null
+              : () => ModelFdApi.tryResolve(
+                  isWindows: isWindows,
+                  symbol: symbol,
+                )),
     );
   }
 

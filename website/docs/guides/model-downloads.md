@@ -371,8 +371,11 @@ use.
   user grants every participating app the same directory (do not request All
   Files Access by default), and `appGroup(...)` on iOS only for apps in the
   same App Group. Apps from unrelated developers should accept user-picked
-  files through the document picker and copy them into the app cache: the
-  loaders take file paths, not content URIs or file descriptors.
+  files through the document picker. Native llama.cpp can load a
+  single-file GGUF from the picker's open descriptor without a copy
+  ([Load from a file descriptor](./model-lifecycle#load-from-a-file-descriptor));
+  copy the file into the app cache when that is unavailable, for a split or
+  multimodal set, or for a streamed document.
 - A download into an App Group container holds a file lock there (see
   [Locking](#reference-resume-locking-and-cache-metadata)). iOS terminates an
   app that is suspended while holding a lock in a shared container

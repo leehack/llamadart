@@ -41,6 +41,26 @@ class ModelLoadRequest extends WorkerRequest {
   ModelLoadRequest(this.modelPath, this.modelParams, super.sendPort);
 }
 
+/// Request to load a model from a file descriptor the caller owns.
+class ModelLoadFromDescriptorRequest extends WorkerRequest {
+  /// The open descriptor of the model file.
+  final int fileDescriptor;
+
+  /// The expected size of the file in bytes, or null to skip the check.
+  final int? size;
+
+  /// Parameters for loading the model.
+  final ModelParams modelParams;
+
+  /// Creates a new [ModelLoadFromDescriptorRequest].
+  ModelLoadFromDescriptorRequest(
+    this.fileDescriptor,
+    this.modelParams,
+    this.size,
+    super.sendPort,
+  );
+}
+
 /// Request to free a model.
 class ModelFreeRequest extends WorkerRequest {
   /// The handle of the model to free.

@@ -172,8 +172,9 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
   /// This is the intended Android cross-developer sharing shape: the user grants
   /// each app access to the same model library using platform APIs such as the
   /// Storage Access Framework. The returned manager is file-backed; apps that
-  /// receive only content URIs must first bridge them to a local file path or a
-  /// future file-descriptor-backed loader.
+  /// receive only content URIs must first bridge them to a local file path, or
+  /// open them and load a single-file GGUF with
+  /// `LlamaEngine.setModelFromFileDescriptor`.
   factory DefaultModelDownloadManager.userSelected({
     required String cacheDirectory,
   }) {

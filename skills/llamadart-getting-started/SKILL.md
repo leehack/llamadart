@@ -145,6 +145,16 @@ interface does not establish backend/model support; read `await engine.capabilit
   per-user cache on desktop, the app's cache directory on Android and iOS (no
   `path_provider` needed). On web the runtime fetches the file itself and a
   local path is a URL relative to the document.
+- A single-file GGUF the app can open but not name by path (an Android
+  `ContentResolver.openFileDescriptor` grant, a user-picked iOS or macOS file)
+  loads without a copy: `engine.setModelFromFileDescriptor(fd, size: length)`.
+  The app keeps `fd` and closes it after the call; the file must not be
+  truncated while the model is loaded. It throws `LlamaUnsupportedException` on
+  Windows, the Web, LiteRT-LM and a native runtime older than
+  `llamadart-native` v1.1.0-1 (including a `v1.1.0` override): catch it, copy
+  the file into the app cache and `setModel` that path. A pipe from a streaming
+  provider throws `LlamaArgumentException`; projectors, LoRA adapters and
+  `gpuMemoryFit` stay path-based.
 - `setModel` replaces the loaded model; do not call `unloadModel()` first.
   `unloadModel()` only frees the model without loading another. Neither
   queues: while a `setModel` runs, another `setModel` or an `unloadModel`

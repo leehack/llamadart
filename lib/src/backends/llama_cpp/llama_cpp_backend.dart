@@ -40,6 +40,7 @@ class NativeLlamaBackend
         BackendMultimodalSupport,
         BackendRuntimeDiagnostics,
         BackendModelFileTypeDiagnostics,
+        BackendFileDescriptorModelLoad,
         BackendGpuEnumeration,
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
@@ -565,6 +566,29 @@ class NativeLlamaBackend
     }
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception("Unknown response during model load");
+  }
+
+  @override
+  Future<int> modelLoadFromFileDescriptor(
+    int fileDescriptor,
+    ModelParams params, {
+    int? size,
+  }) async {
+    checkModelParamsTypeFor(params, LlamaRuntime.llamaCpp);
+    checkModelParamsSupportedBy(params, LlamaRuntime.llamaCpp, web: false);
+    await _ensureIsolate();
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
+      ModelLoadFromDescriptorRequest(fileDescriptor, params, size, rp.sendPort),
+    );
+    final res = await _receiveResponse(rp);
+    if (res is HandleResponse) {
+      _activeModelHandle = res.handle;
+      return res.handle;
+    }
+    if (res is ErrorResponse) throw _workerError(res);
+    throw Exception('Unknown response during model load from a descriptor');
   }
 
   @override
