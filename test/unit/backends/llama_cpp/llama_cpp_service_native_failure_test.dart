@@ -8,6 +8,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/backend.dart';
+import 'package:llamadart/src/backends/isolate_shutdown_releases.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
@@ -389,9 +390,15 @@ void main() {
       dryMultiplier: 0.8,
     );
 
+    final heldBefore = IsolateShutdownReleases.current.debugHeldForTesting;
     await expectLater(
       _generate(service, context, 'ab', dry),
       throwsA(_caught<LlamaInferenceException>('llama_sampler_init_dry')),
+    );
+    expect(
+      IsolateShutdownReleases.current.debugHeldForTesting,
+      hasLength(heldBefore.length),
+      reason: 'the sampler chain is freed, not left held for shutdown',
     );
 
     barrier.throwing.clear();
@@ -401,6 +408,34 @@ void main() {
       hasLength(2),
     );
   });
+
+  test(
+    'the tracked DRY call receives the settings and every breaker',
+    () async {
+      start();
+
+      await _generate(
+        service,
+        context,
+        'ab',
+        _greedy.copyWith(
+          dryMultiplier: 0.8,
+          dryBase: 1.5,
+          dryAllowedLength: 3,
+          dryPenaltyLastN: 16,
+          drySequenceBreakers: const ['xy', 'zw', 'q'],
+        ),
+      );
+
+      expect(barrier.dryCalls, hasLength(1));
+      final call = barrier.dryCalls.single;
+      expect(call.breakers, ['xy', 'zw', 'q']);
+      expect(call.multiplier, closeTo(0.8, 1e-6));
+      expect(call.base, 1.5);
+      expect(call.allowedLength, 3);
+      expect(call.penaltyLastN, 16);
+    },
+  );
 
   test('DRY setup on a runtime without the wrapper calls the upstream '
       'function', () async {

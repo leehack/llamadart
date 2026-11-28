@@ -40,6 +40,18 @@ final class FakeNativeBarrier {
   /// Native names of the calls made so far, in order.
   final List<String> calls = <String>[];
 
+  /// The arguments of each `llama_dart_sampler_init_dry` call so far.
+  final List<
+    ({
+      double multiplier,
+      double base,
+      int allowedLength,
+      int penaltyLastN,
+      List<String> breakers,
+    })
+  >
+  dryCalls = [];
+
   /// The pointer the creating functions return when they succeed without
   /// [real].
   static final Pointer<Void> object = Pointer.fromAddress(0x7000);
@@ -116,6 +128,16 @@ final class FakeNativeBarrier {
             sequenceBreakers,
             sequenceBreakerCount,
           ) {
+            dryCalls.add((
+              multiplier: multiplier,
+              base: base,
+              allowedLength: allowedLength,
+              penaltyLastN: penaltyLastN,
+              breakers: [
+                for (var i = 0; i < sequenceBreakerCount; i++)
+                  sequenceBreakers[i].cast<Utf8>().toDartString(),
+              ],
+            ));
             if (!_succeeds('llama_dart_sampler_init_dry')) return nullptr;
             final wrapper = real?.samplerInitDry;
             if (wrapper == null && real == null) return object.cast();
