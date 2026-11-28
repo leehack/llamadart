@@ -447,6 +447,13 @@ void main() {
         [vocab],
       ),
       (
+        'llama_sampler_init_dry',
+        (calls, _) => calls.samplerInitDry(vocab, 0.8, 1.75, 2, 64, nullptr, 0),
+        isA<LlamaInferenceException>(),
+        [],
+        [vocab],
+      ),
+      (
         'llama_tokenize',
         (calls, _) =>
             calls.tokenize(vocab, nullptr, 0, nullptr, 0, false, false),
@@ -516,6 +523,7 @@ void main() {
     const barrierCalls = {
       'llama_sampler_accept',
       'llama_sampler_init_grammar_lazy_patterns',
+      'llama_sampler_init_dry',
       'llama_tokenize',
       'llama_token_to_piece',
       'llama_memory_clear',
@@ -622,6 +630,10 @@ void main() {
         nullptr,
       );
       expect(
+        calls.samplerInitDry(vocab, 0.8, 1.75, 2, 64, nullptr, 0),
+        nullptr,
+      );
+      expect(
         calls.tokenize(vocab, nullptr, 0, nullptr, 0, false, false),
         _statusException,
       );
@@ -658,6 +670,7 @@ void main() {
         nullptr,
         0,
       );
+      calls.samplerInitDry(vocab, 0.8, 1.75, 2, 64, nullptr, 0);
       calls.tokenize(vocab, nullptr, 0, nullptr, 0, false, false);
       calls.tokenToPiece(vocab, 1, nullptr, 0, 0, false);
       calls.memoryClear(context, nullptr, true);
@@ -665,10 +678,30 @@ void main() {
       expect(barrier.calls, [
         'llama_dart_sampler_accept',
         'llama_dart_sampler_init_grammar_lazy_patterns',
+        'llama_dart_sampler_init_dry',
         'llama_dart_tokenize',
         'llama_dart_token_to_piece',
         'llama_dart_memory_clear',
       ]);
+    });
+
+    test('DRY setup keeps the upstream call on a barrier without the '
+        'wrapper, and the other barrier calls stay wrapped', () {
+      final skewed = FakeNativeBarrier(hasDrySampler: false);
+      addTearDown(skewed.dispose);
+      final calls = LlamaCppObjectCalls.tracked(
+        failingExit(),
+        barrier: skewed.api,
+      );
+
+      expect(calls.samplerInitDry, same(llama_sampler_init_dry));
+      calls.tokenize(vocab, nullptr, 0, nullptr, 0, false, false);
+      expect(skewed.calls, ['llama_dart_tokenize']);
+      expect(
+        tracked().samplerInitDry,
+        isNot(same(llama_sampler_init_dry)),
+        reason: 'a barrier with the wrapper must not call the upstream',
+      );
     });
 
     test('freeing an object forgets that it was free-only', () {
@@ -707,6 +740,19 @@ void main() {
       expect(current.exit, isNotNull);
       expect(current.failures.barrier, isNotNull);
       expect(current.failures.isWindows, isWindows);
+      expect(current.samplerInitDry, isNot(same(llama_sampler_init_dry)));
+
+      // v1.1.0 admitted by commit, before the wrapper rebuild that exports
+      // the DRY sampler: the barrier stays, the DRY call is upstream.
+      final withoutDry = LlamaCppObjectCalls.resolve(
+        isWindows: isWindows,
+        symbol: (name) => name == 'llama_dart_sampler_init_dry'
+            ? missing(name)
+            : exported(name),
+      );
+      expect(withoutDry.failures.barrier, isNotNull);
+      expect(withoutDry.failures.barrier!.samplerInitDry, isNull);
+      expect(withoutDry.samplerInitDry, same(llama_sampler_init_dry));
 
       // v0.5.0-1 to v0.6.0: exit teardown only.
       final withoutBarrier = LlamaCppObjectCalls.resolve(
