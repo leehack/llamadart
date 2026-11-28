@@ -3,10 +3,12 @@ library;
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:llamadart/src/backends/llama_cpp/model_fd_api.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
@@ -303,5 +305,43 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('loads inside the worker owner when one is installed', () async {
+    // A worker isolate owns its models: the owner variant is the one called,
+    // with the token the parent created. The installed owner is global to an
+    // isolate, so this runs in its own.
+    final calls = await Isolate.run(() {
+      final bootstrap = LlamaCppService.createOwnerBootstrap();
+      if (bootstrap == null) return ['no owner API'];
+      final calls = <String>[];
+      final service = LlamaCppService(
+        isMacosX64: false,
+        objectCalls: LlamaCppObjectCalls.tracked(
+          ExitTeardownApi.tryResolve(isWindows: false)!,
+          modelFdResolver: () => ModelFdApi(
+            load: (_, _, _, _) {
+              calls.add('plain');
+              return ModelFdStatus.loadFailed.value;
+            },
+            ownerLoad: (owner, _, _, _, _) {
+              calls.add(
+                owner.address == bootstrap.token.address ? 'owner' : 'other',
+              );
+              return ModelFdStatus.loadFailed.value;
+            },
+          ),
+        ),
+      )..initializeBackend();
+      service.installWorkerOwner(bootstrap.token.address);
+      try {
+        service.loadModelFromDescriptor(3, _params);
+      } on LlamaModelException {
+        calls.add('refused');
+      }
+      return calls;
+    });
+
+    expect(calls, ['owner', 'refused']);
   });
 }
