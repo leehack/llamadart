@@ -86,9 +86,10 @@ into place under the entry lock.
 1. **Stale references.** Whether a user-facing app may drop other apps'
    references, for example after confirming with the user, or references
    expire after a period without use.
-2. **Android file access.** Whether loading from a file descriptor is a
-   `llamadart-native` prerequisite, so a Storage Access Framework grant can be
-   shared without a file path.
+2. **Android file access.** Core loads a single-file GGUF from a descriptor
+   (`LlamaEngine.setModelFromFileDescriptor`, `llamadart-native` v1.1.0-1). Whether
+   the store hands out such descriptors for a Storage Access Framework grant,
+   instead of file paths, is open.
 3. **Desktop interop.** Whether the desktop store adopts content-addressed
    blobs compatible with the Hugging Face hub cache.
 4. **Multi-file sets.** Whether shard sets, such as the Safetensors sets of

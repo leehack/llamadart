@@ -297,6 +297,55 @@ active LoRA adapters. Pass the new model's projector as
 are applied again by each load, and adapters added with `setLoraSource` must
 be set again. `unloadModel()` frees the model without loading another.
 
+## Load from a file descriptor
+
+A model file the app can open but cannot name by a stable path loads without a
+copy through its open descriptor: an Android Storage Access Framework
+document (`ContentResolver.openFileDescriptor`) or a file the user picked on
+iOS or macOS. Platform code opens the file and passes the integer descriptor:
+
+```dart
+try {
+  await engine.setModelFromFileDescriptor(fd, size: length);
+} on LlamaException {
+  // Unsupported here, a pipe, a split GGUF or a GGUF at an offset: copy the
+  // document into the app cache and load that path.
+  await engine.setModel(LlamaModel(ModelSource.path(copiedPath)));
+}
+```
+
+- `fd` is an open, readable, seekable regular file whose GGUF starts at offset
+  0. The runtime duplicates it, reads from offset 0, restores the offset and
+  closes only its duplicate. You keep `fd`: close it, or the Android
+  `ParcelFileDescriptor`, once the call completes, and do not use it from
+  another thread meanwhile.
+- `size` is the length you expect, such as `AssetFileDescriptor.getLength()`.
+  A different size throws `LlamaArgumentException`; leave it `null` to skip
+  the check.
+- The model stays memory-mapped from the file after `fd` is closed: do not
+  truncate or rewrite the file while the model is loaded. Deleting or renaming
+  it is safe. For a descriptor that cannot be mapped, set
+  `ModelParams.useMmap: false`; the runtime then reads the weights into memory
+  it owns, still without a copy on disk.
+- `fd` must be between 0 and 2147483647 (the runtime takes a 32-bit
+  descriptor), or `LlamaArgumentException` is thrown.
+- A provider that streams the document gives a pipe, not a regular file, and
+  throws `LlamaArgumentException`: copy those into the app cache. A split GGUF
+  or a GGUF at an offset is refused by llama.cpp with `LlamaModelException`.
+- Single-file GGUF on native llama.cpp only, with `llamadart-native` v1.1.0-1
+  or later. Windows, the Web, LiteRT-LM and `ModelParams.gpuMemoryFit` throw
+  `LlamaUnsupportedException`; so does a `v1.1.0` runtime override, which
+  lacks the loader. It never reports success without it.
+- The model has no file name, so the Android workaround that keeps the
+  projector of a Qwen3.5-0.8B file on the CPU, which keys on that name, does
+  not apply: load such a model by path on Android.
+- A projector, LoRA adapters and a draft model stay path-based: add the
+  projector with `loadMultimodalProjector(path)` after the load and give
+  `ModelParams.loras` as paths.
+
+Tests cover the descriptor loader with a generated model on POSIX hosts. No Storage Access Framework provider or iOS security scope has
+run it yet, so test your provider and keep the copy fallback.
+
 ## Readiness and serialized loads
 
 - Check `engine.isReady` before inference.

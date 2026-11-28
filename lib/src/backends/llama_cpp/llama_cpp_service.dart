@@ -1868,11 +1868,43 @@ class LlamaCppService {
   ///
   /// Returns a handle to the loaded model.
   /// Throws an [Exception] if the file does not exist or fails to load.
-  int loadModel(String modelPath, ModelParams modelParams) {
+  int loadModel(String modelPath, ModelParams modelParams) =>
+      _loadModel(modelParams, modelPath: modelPath);
+
+  /// Loads a single-file GGUF from [fileDescriptor], which the caller opened
+  /// and keeps.
+  ///
+  /// [size] is the length the caller expects, or `null` to skip the check.
+  /// Throws [LlamaUnsupportedException] when the runtime has no descriptor
+  /// loader.
+  int loadModelFromDescriptor(
+    int fileDescriptor,
+    ModelParams modelParams, {
+    int? size,
+  }) => _loadModel(
+    modelParams,
+    descriptor: (fd: fileDescriptor, size: size ?? -1),
+  );
+
+  int _loadModel(
+    ModelParams modelParams, {
+    String? modelPath,
+    ({int fd, int size})? descriptor,
+  }) {
     if (modelParams.gpuMemoryFit != null) {
       modelParams.validate();
     }
+    if (descriptor != null) _calls.requireModelFd();
     _requireAdmittedRuntime('Model loading');
+    if (descriptor != null) {
+      if (modelParams.gpuMemoryFit != null) {
+        throw LlamaUnsupportedException(
+          'ModelParams.gpuMemoryFit measures the model file by path, so it '
+          'cannot fit a model loaded from a file descriptor. Leave it unset, '
+          'or load the model by path.',
+        );
+      }
+    }
     modelParams = resolveComputeDeviceParams(
       modelParams,
       isAndroid: _isAndroid,
@@ -1880,7 +1912,8 @@ class LlamaCppService {
       isMacosX64: _isMacosX64,
       platform: Platform.operatingSystem,
     );
-    final modelFileSize = _validateGgufModelFile(modelPath, 'Model');
+    final modelFileSize =
+        descriptor?.size ?? _validateGgufModelFile(modelPath!, 'Model');
 
     _applyConfiguredLogLevel();
     final effectiveBackend = resolvePreferredBackendForLoad(
@@ -2052,7 +2085,7 @@ class LlamaCppService {
       } else {
         try {
           fitLoad = _fitGpuMemory(
-            modelPath,
+            modelPath!,
             modelParams,
             fit,
             mparams,
@@ -2104,16 +2137,25 @@ class LlamaCppService {
         : modelParams.preferredBackend;
 
     Pointer<llama_model> modelPtr = nullptr;
-    final modelPathPtr = modelPath.toNativeUtf8(allocator: _modelLoadAllocator);
+    final modelPathPtr = modelPath?.toNativeUtf8(
+      allocator: _modelLoadAllocator,
+    );
     try {
-      modelPtr = _loadOwnedModel(modelPathPtr.cast(), mparams);
+      modelPtr = descriptor == null
+          ? _loadOwnedModel(modelPathPtr!.cast(), mparams)
+          : _calls.loadModelFromDescriptor(
+              descriptor.fd,
+              descriptor.size,
+              mparams,
+              owner: _nativeOwner?.token,
+            );
       IsolateShutdownReleases.current.hold(
         ShutdownStage.model,
         _calls.modelFreeAddress,
         modelPtr,
       );
     } finally {
-      _modelLoadAllocator.free(modelPathPtr);
+      if (modelPathPtr != null) _modelLoadAllocator.free(modelPathPtr);
       if (tensorSplit != null) {
         _modelLoadAllocator.free(tensorSplit);
       }
@@ -3051,7 +3093,7 @@ class LlamaCppService {
 
   _LlamaModelWrapper _createModelWrapper(
     Pointer<llama_model> modelPointer, {
-    required String sourcePath,
+    required String? sourcePath,
   }) {
     try {
       final info = _calls.samplingModelInfo(modelPointer);

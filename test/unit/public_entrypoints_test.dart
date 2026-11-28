@@ -389,6 +389,7 @@ void main() {
       'BackendPromptPenaltyGeneration',
       'BackendLoadCheck',
       'BackendLoraSupport',
+      'BackendFileDescriptorModelLoad',
       'BackendModelFileTypeDiagnostics',
       'BackendModelFormatRouting',
       'BackendUrlModelLoadCancellation',

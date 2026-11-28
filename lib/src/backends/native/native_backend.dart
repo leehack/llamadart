@@ -45,6 +45,7 @@ class NativeAutoBackend
         BackendModelFormatRouting,
         BackendModelFormatDetection,
         BackendLoadCheck,
+        BackendFileDescriptorModelLoad,
         LlamaBackend,
         BackendAvailability,
         BackendLoraSupport,
@@ -234,6 +235,23 @@ class NativeAutoBackend
     final format = await resolveLocalModelFormat(path);
     final delegate = await _delegateFor(format.runtime);
     return delegate.modelLoad(path, params);
+  }
+
+  @override
+  Future<int> modelLoadFromFileDescriptor(
+    int fileDescriptor,
+    ModelParams params, {
+    int? size,
+  }) async {
+    final delegate = await _delegateFor(LlamaRuntime.llamaCpp);
+    if (delegate is! BackendFileDescriptorModelLoad) {
+      throw LlamaUnsupportedException(
+        'Loading a model from a file descriptor needs the native llama.cpp '
+        'backend, but a custom llama.cpp backend factory is in use.',
+      );
+    }
+    return (delegate as BackendFileDescriptorModelLoad)
+        .modelLoadFromFileDescriptor(fileDescriptor, params, size: size);
   }
 
   @override

@@ -317,6 +317,14 @@ void runLlamaWorkerForTesting(
             );
             message.sendPort.send(HandleResponse(handle));
 
+          case ModelLoadFromDescriptorRequest():
+            final handle = service.loadModelFromDescriptor(
+              message.fileDescriptor,
+              message.modelParams,
+              size: message.size,
+            );
+            message.sendPort.send(HandleResponse(handle));
+
           case LogLevelRequest():
             service.setLogLevel(message.logLevel);
             message.sendPort.send(DoneResponse());

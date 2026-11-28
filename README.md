@@ -164,6 +164,9 @@ Dispose every engine before a native host calls C `exit()`; see
 engine in `ChatSession`:
 [First chat session](https://llamadart.leehack.com/docs/getting-started/first-chat-session).
 
+A native model file the app can open but not name by path, such as an Android document grant or a file the user picked, loads without a copy through its descriptor with `engine.setModelFromFileDescriptor`; see
+[Load from a file descriptor](https://llamadart.leehack.com/docs/guides/model-lifecycle#load-from-a-file-descriptor).
+
 ## Runtimes and platforms
 
 `LlamaBackend()` routes by model file type. After a model loads,

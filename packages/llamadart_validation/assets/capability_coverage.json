@@ -862,6 +862,17 @@
         "issue": "https://github.com/leehack/llamadart/issues/1715",
         "reason": "Durable compiled grammar, native lazy activation, public completion routing, false/missing capability, draft-parameter copy, native worker transport and prompt-penalty sampler controls cover this bounded legacy ToolParam route. Affected-family fresh generation is a separate required exact-source gate; existing validation packs do not qualify LFM2 schema accuracy or new devices. Web loaded-core admission and version-skew refusal are covered by webgpu_backend_test.dart; prompt_penalty_grammar_e2e_test.dart checks direct/worker wasm32/memory64 transport and sampler behavior. These pipeline checks do not establish affected-family accuracy or hardware GPU qualification (llama-web-bridge#207)."
       }
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.setModelFromFileDescriptor",
+        "matrix:Model load from a caller-owned file descriptor (setModelFromFileDescriptor)"
+      ],
+      "exemption": {
+        "id": "engine-file-descriptor-load",
+        "issue": "https://github.com/leehack/llamadart/issues/243",
+        "reason": "VM tests load a generated GGUF through real POSIX descriptors in the llama.cpp service and worker backend (mapped and read-into-memory loads, closed, directory, pipe, write-only, size-mismatch and non-GGUF refusals, descriptor and offset kept) and cover the Windows, version-skew and missing-export paths with typed LlamaUnsupportedException. Validation-pack profiles do not encode caller-owned descriptors, and no Android Storage Access Framework provider or iOS security scope has run the loader; that device evidence stays open on the issue."
+      }
     }
   ]
 }

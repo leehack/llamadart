@@ -60,6 +60,14 @@ the same cooperative ordering during image loading and sampling. See
   warning at its first model load (visible at log level `warn` or lower) and
   exits behave as they did before exit teardown.
 
+`lib/src/backends/llama_cpp/model_fd_api.dart` holds the optional descriptor
+loaders `v1.1.0-1` adds (`ModelFdApi`: `llama_dart_model_load_from_fd` and its
+owner twin). They are the teardown-guarded twins of the path loader, resolved
+all or nothing with their version export, and called through
+`LlamaCppObjectCalls.loadModelFromDescriptor`; the model they return is freed
+like any other. A runtime without them, or Windows, keeps loading by path and
+refuses a descriptor with `LlamaUnsupportedException`.
+
 `lib/src/backends/llama_cpp/native_barrier_api.dart` holds the functions
 `v0.6.0-1` adds (`NativeBarrierApi`): the last-error accessors, and wrappers
 for the upstream functions the service used to call directly and that throw

@@ -55,6 +55,7 @@ export 'src/backends/backend.dart'
         BackendLoraSupport,
         BackendJsonSchemaChatGeneration,
         BackendJsonSchemaThinkingChatGeneration,
+        BackendFileDescriptorModelLoad,
         BackendModelFileTypeDiagnostics,
         BackendModelFormatRouting,
         BackendUrlModelLoadCancellation,

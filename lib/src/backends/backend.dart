@@ -1344,6 +1344,31 @@ abstract class BackendModelFileTypeDiagnostics {
   Future<ModelFileType?> getModelFileType(int modelHandle);
 }
 
+/// Optional backend capability for loading a model from a file descriptor the
+/// caller opened.
+///
+/// Backends without it, and runtimes that lack the loader, make
+/// `LlamaEngine.setModelFromFileDescriptor` throw `LlamaUnsupportedException`.
+abstract class BackendFileDescriptorModelLoad {
+  /// Loads a single-file GGUF from [fileDescriptor], an open, readable,
+  /// seekable regular file at offset 0, and returns the model handle.
+  ///
+  /// The runtime duplicates [fileDescriptor] and closes only its duplicate:
+  /// the caller keeps its descriptor, may close it once this completes, and
+  /// must not use it meanwhile. [size] is the length the caller expects, or
+  /// `null` to skip the check.
+  ///
+  /// Throws `LlamaUnsupportedException` when the platform or the loaded
+  /// runtime has no descriptor loader, `LlamaArgumentException` for a
+  /// descriptor that is not a regular readable file or a wrong [size], and
+  /// `LlamaModelException` when llama.cpp refuses the file.
+  Future<int> modelLoadFromFileDescriptor(
+    int fileDescriptor,
+    ModelParams params, {
+    int? size,
+  });
+}
+
 /// Optional backend capability for enumerating GPU-class devices for offload
 /// selection (e.g. pinning to the discrete GPU on a laptop, or surfacing which
 /// device is in use).
