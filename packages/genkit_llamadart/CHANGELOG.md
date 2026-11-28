@@ -1,3 +1,8 @@
+## 3.14.0 - 2026-11-28
+
+- Support llamadart 0.23.x alongside 0.21.x and 0.22.x.
+- Document the `ignoreEos` capability flag and its rejection with grammar-constrained output or active tools.
+
 ## 3.13.0 - 2026-11-26
 
 - Forward image `MediaPart` values in Genkit tool results to the next model turn on native llama.cpp vision models with a qualified template, and reject audio and unsupported runtimes with `UNIMPLEMENTED`.
