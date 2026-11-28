@@ -307,9 +307,9 @@ iOS or macOS. Platform code opens the file and passes the integer descriptor:
 ```dart
 try {
   await engine.setModelFromFileDescriptor(fd, size: length);
-} on LlamaUnsupportedException {
-  // No descriptor loader here: copy the document into the app cache and load
-  // that path.
+} on LlamaException {
+  // Unsupported here, a pipe, a split GGUF or a GGUF at an offset: copy the
+  // document into the app cache and load that path.
   await engine.setModel(LlamaModel(ModelSource.path(copiedPath)));
 }
 ```
@@ -327,13 +327,18 @@ try {
   it is safe. For a descriptor that cannot be mapped, set
   `ModelParams.useMmap: false`; the runtime then reads the weights into memory
   it owns, still without a copy on disk.
+- `fd` must be between 0 and 2147483647 (the runtime takes a 32-bit
+  descriptor), or `LlamaArgumentException` is thrown.
 - A provider that streams the document gives a pipe, not a regular file, and
-  throws `LlamaArgumentException`: copy those into the app cache.
+  throws `LlamaArgumentException`: copy those into the app cache. A split GGUF
+  or a GGUF at an offset is refused by llama.cpp with `LlamaModelException`.
 - Single-file GGUF on native llama.cpp only, with `llamadart-native` v1.1.0-1
-  or later. Windows, the Web, LiteRT-LM, split GGUFs, a GGUF at an offset, and
-  `ModelParams.gpuMemoryFit` throw `LlamaUnsupportedException`; so does a
-  `v1.1.0` runtime override, which lacks the loader. It never reports
-  success without it.
+  or later. Windows, the Web, LiteRT-LM and `ModelParams.gpuMemoryFit` throw
+  `LlamaUnsupportedException`; so does a `v1.1.0` runtime override, which
+  lacks the loader. It never reports success without it.
+- The model has no file name, so the Android workaround that keeps the
+  projector of a Qwen3.5-0.8B file on the CPU, which keys on that name, does
+  not apply: load such a model by path on Android.
 - A projector, LoRA adapters and a draft model stay path-based: add the
   projector with `loadMultimodalProjector(path)` after the load and give
   `ModelParams.loras` as paths.

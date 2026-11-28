@@ -151,10 +151,12 @@ interface does not establish backend/model support; read `await engine.capabilit
   The app keeps `fd` and closes it after the call; the file must not be
   truncated while the model is loaded. It throws `LlamaUnsupportedException` on
   Windows, the Web, LiteRT-LM and a native runtime older than
-  `llamadart-native` v1.1.0-1 (including a `v1.1.0` override): catch it, copy
-  the file into the app cache and `setModel` that path. A pipe from a streaming
-  provider throws `LlamaArgumentException`; projectors, LoRA adapters and
-  `gpuMemoryFit` stay path-based.
+  `llamadart-native` v1.1.0-1 (including a `v1.1.0` override): catch
+  `LlamaException`, copy the file into the app cache and `setModel` that path.
+  A pipe from a streaming provider throws `LlamaArgumentException`, a split
+  GGUF or a GGUF at an offset `LlamaModelException`; projectors, LoRA adapters
+  and `gpuMemoryFit` stay path-based, and the file-name-keyed Android
+  Qwen3.5-0.8B CPU-projector workaround does not apply.
 - `setModel` replaces the loaded model; do not call `unloadModel()` first.
   `unloadModel()` only frees the model without loading another. Neither
   queues: while a `setModel` runs, another `setModel` or an `unloadModel`

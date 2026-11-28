@@ -3,6 +3,7 @@ library;
 
 import 'dart:io';
 
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:llamadart/src/backends/native/native_backend.dart';
@@ -42,9 +43,13 @@ void main() {
     ('the default backend that routes by runtime', NativeAutoBackend.new),
   ]) {
     group(name, () {
+      late LlamaBackend backend;
       late LlamaEngine engine;
 
-      setUp(() => engine = LlamaEngine(create()));
+      setUp(() {
+        backend = create();
+        engine = LlamaEngine(backend);
+      });
       tearDown(() => engine.dispose());
 
       test(
@@ -72,6 +77,27 @@ void main() {
           expect(engine.isReady, isTrue);
         },
       );
+
+      test('reports the generation capabilities of a descriptor-loaded model, '
+          'as of a path-loaded one', () async {
+        final fd = openReadOnlyDescriptor(model.path);
+        await engine.setModelFromFileDescriptor(fd, params: _params);
+        closeDescriptor(fd);
+        final fromDescriptor =
+            await (backend as BackendGenerationCapabilitiesSupport)
+                .generationCapabilities();
+
+        await engine.setModel(
+          LlamaModel(ModelSource.path(model.path)),
+          params: _params,
+        );
+        final fromPath = await (backend as BackendGenerationCapabilitiesSupport)
+            .generationCapabilities();
+
+        expect(fromDescriptor.presencePenalty, isTrue);
+        expect(fromDescriptor.minP, fromPath.minP);
+        expect(fromDescriptor.presencePenalty, fromPath.presencePenalty);
+      });
 
       test('a refused descriptor keeps its typed error across the worker '
           'isolate, and the engine loads by path afterwards', () async {
@@ -121,6 +147,23 @@ void main() {
       });
     });
   }
+
+  test('rejects params of another runtime before starting a worker', () async {
+    final backend = NativeLlamaBackend();
+    addTearDown(backend.dispose);
+
+    await expectLater(
+      backend.modelLoadFromFileDescriptor(3, const LiteRtLmModelParams()),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
+    await expectLater(
+      backend.modelLoadFromFileDescriptor(
+        3,
+        const ModelParams(liteRtLmEmbeddingEngine: true),
+      ),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
+  });
 
   test('a router whose llama.cpp backend is custom and lacks the capability '
       'refuses with unsupported', () async {

@@ -595,7 +595,8 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   /// open, readable, seekable regular file whose GGUF starts at offset 0.
   /// Split GGUFs, a GGUF embedded at an offset, and a provider that streams
   /// the document as a pipe are not supported: copy those into a local file
-  /// and use [setModel].
+  /// and use [setModel]. A split or offset GGUF is refused by llama.cpp as
+  /// [LlamaModelException], a pipe as [LlamaArgumentException].
   ///
   /// The caller keeps [fileDescriptor]. The runtime duplicates it, reads from
   /// offset 0, restores the offset and closes only its duplicate, so the app
@@ -612,8 +613,11 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   /// keep loading by path: add them with [loadMultimodalProjector] after
   /// this, and give [ModelParams.loras] as paths.
   /// [ModelParams.gpuMemoryFit] measures the file by path and is not
-  /// available here. Like [setModel], a failure leaves nothing loaded, and
-  /// the old model is unloaded first.
+  /// available here. The model has no file name, so the Android workaround
+  /// that keeps the projector of a Qwen3.5-0.8B file on the CPU, which keys on
+  /// that name, does not apply: load such a model by path on Android. Like
+  /// [setModel], a failure leaves nothing loaded, and the old model is
+  /// unloaded first.
   ///
   /// Throws:
   /// - [LlamaUnsupportedException] on Windows, with a backend that cannot
@@ -621,17 +625,20 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
   ///   runtime predates llamadart-native v1.1.0-1, including a `v1.1.0`
   ///   runtime override. Never a success: catch it to copy the model into the
   ///   app cache and load that path.
-  /// - [LlamaArgumentException] for an invalid [params], a negative
-  ///   [fileDescriptor] or [size], a descriptor that is not a readable,
+  /// - [LlamaArgumentException] for an invalid [params], a [fileDescriptor]
+  ///   that is negative or above 2147483647 (the runtime takes a 32-bit
+  ///   descriptor), a negative [size], a descriptor that is not a readable,
   ///   seekable regular file, and a [size] that differs from the file.
-  /// - [LlamaModelException] when llama.cpp cannot load the file.
+  /// - [LlamaModelException] when llama.cpp cannot load the file, including a
+  ///   split GGUF and a GGUF at an offset.
   /// - [LlamaStateException] after [dispose] and while another model load or
   ///   unload runs.
   ///
   /// ```dart
   /// try {
   ///   await engine.setModelFromFileDescriptor(fd, size: length);
-  /// } on LlamaUnsupportedException {
+  /// } on LlamaException {
+  ///   // Unsupported here, a pipe, a split GGUF or a GGUF at an offset.
   ///   await engine.setModel(LlamaModel(ModelSource.path(copiedPath)));
   /// }
   /// ```
@@ -657,15 +664,19 @@ class LlamaEngine implements LlamadartEngine<LlamaEngineCapabilities> {
 
   static const String _descriptorSource = 'file descriptor';
 
+  // The runtime takes an int32: a larger value would silently name another
+  // descriptor.
+  static const int _maxFileDescriptor = 0x7fffffff;
+
   void _checkFileDescriptorLoad(
     int fileDescriptor,
     int? size,
     ModelParams params,
   ) {
     params.validate();
-    if (fileDescriptor < 0) {
+    if (fileDescriptor < 0 || fileDescriptor > _maxFileDescriptor) {
       throw LlamaArgumentException(
-        'The file descriptor must not be negative.',
+        'The file descriptor must be between 0 and $_maxFileDescriptor.',
         name: 'fileDescriptor',
         invalidValue: fileDescriptor,
       );

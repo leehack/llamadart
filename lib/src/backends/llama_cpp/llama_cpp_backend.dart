@@ -575,6 +575,12 @@ class NativeLlamaBackend
     int? size,
   }) async {
     checkModelParamsTypeFor(params, LlamaRuntime.llamaCpp);
+    if (params.liteRtLmEmbeddingEngine) {
+      throw LlamaUnsupportedException(
+        'ModelParams.liteRtLmEmbeddingEngine is LiteRT-LM-only; '
+        'llama.cpp GGUF embeddings use the existing per-call mode.',
+      );
+    }
     checkModelParamsSupportedBy(params, LlamaRuntime.llamaCpp, web: false);
     await _ensureIsolate();
     final rp = _openResponsePort();

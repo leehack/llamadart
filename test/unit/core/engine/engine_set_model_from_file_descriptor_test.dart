@@ -11,6 +11,8 @@ import 'engine_test.dart' show MockLlamaBackend;
 
 final class _DescriptorBackend extends MockLlamaBackend
     implements BackendFileDescriptorModelLoad {
+  _DescriptorBackend({super.failContextCreate});
+
   final List<({int fd, int? size, ModelParams params})> loads = [];
   Object? failure;
 
@@ -60,6 +62,12 @@ void main() {
     );
   });
 
+  test('accepts the largest 32-bit descriptor', () async {
+    await engine.setModelFromFileDescriptor(0x7fffffff);
+
+    expect(backend.loads.single.fd, 0x7fffffff);
+  });
+
   test('passes a null size, which skips the size check', () async {
     await engine.setModelFromFileDescriptor(5);
 
@@ -101,6 +109,20 @@ void main() {
         ),
       );
     });
+
+    for (final fd in [0x80000000, (1 << 32) + 8]) {
+      test('a descriptor of $fd, which the runtime would truncate to '
+          'another one', () {
+        return expectKept(
+          () => engine.setModelFromFileDescriptor(fd),
+          isA<LlamaArgumentException>().having(
+            (error) => error.name,
+            'name',
+            'fileDescriptor',
+          ),
+        );
+      });
+    }
 
     test('a negative size', () {
       return expectKept(
@@ -207,6 +229,22 @@ void main() {
         ),
       );
       expect(engine.isReady, isFalse);
+    });
+
+    test('a context that cannot be created frees the loaded model and leaves '
+        'nothing loaded', () async {
+      final failing = _DescriptorBackend(failContextCreate: true);
+      final failingEngine = LlamaEngine(failing);
+      addTearDown(failingEngine.dispose);
+
+      await expectLater(
+        failingEngine.setModelFromFileDescriptor(5),
+        throwsA(isA<LlamaModelException>()),
+      );
+
+      expect(failing.loads, hasLength(1));
+      expect(failing.modelFreeCalls, 1);
+      expect(failingEngine.isReady, isFalse);
     });
 
     test('an engine whose load failed can load again', () async {

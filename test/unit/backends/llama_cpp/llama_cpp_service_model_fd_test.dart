@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
+import 'package:llamadart/src/backends/isolate_shutdown_releases.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/model_fd_api.dart';
@@ -112,6 +113,24 @@ void main() {
       throwsA(isA<LlamaArgumentException>()),
     );
     expect(descriptorOffset(fd), 5);
+  });
+
+  test('holds the model for isolate shutdown until it is freed, like a '
+      'path-loaded one', () {
+    List<ShutdownStage> held() => [
+      for (final entry in IsolateShutdownReleases.current.debugHeldForTesting)
+        entry.stage,
+    ];
+    final before = held().length;
+    final fd = openReadOnlyDescriptor(model.path);
+
+    final handle = service.loadModelFromDescriptor(fd, _params);
+    closeDescriptor(fd);
+
+    expect(held().length, before + 1);
+    expect(held().last, ShutdownStage.model);
+    service.freeModel(handle);
+    expect(held().length, before);
   });
 
   test('a model loaded from a descriptor is freed like a path-loaded one and '
@@ -265,6 +284,30 @@ void main() {
         ),
       );
       expect(skewed.loadModel(model.path, _params), isNonNegative);
+    });
+
+    test('a refusal does not wait for runtime admission, which a runtime '
+        'without the loader may also fail', () {
+      final unadmitted = LlamaCppService(
+        isMacosX64: false,
+        buildIdentity: () => null,
+        objectCalls: LlamaCppObjectCalls.tracked(
+          ExitTeardownApi.tryResolve(isWindows: false)!,
+          modelFdResolver: () => null,
+        ),
+      )..initializeBackend();
+      addTearDown(unadmitted.dispose);
+
+      expect(
+        () => unadmitted.loadModelFromDescriptor(3, _params),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('file descriptor'),
+          ),
+        ),
+      );
     });
 
     test('Windows throws unsupported naming the platform', () {
