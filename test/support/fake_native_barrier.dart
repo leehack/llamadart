@@ -1,6 +1,7 @@
 import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
+import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/native_barrier_api.dart';
 
 /// A [NativeBarrierApi] that stands in for libllamadart's exception barrier.
@@ -14,7 +15,11 @@ import 'package:llamadart/src/backends/llama_cpp/native_barrier_api.dart';
 final class FakeNativeBarrier {
   /// Fails the calls named in [throwing] and [failing]; the others go on to
   /// [real].
-  FakeNativeBarrier({this.real});
+  FakeNativeBarrier({this.real, this.hasDrySampler = true});
+
+  /// Whether the fake exports `llama_dart_sampler_init_dry`, as a runtime
+  /// older than `NativeBarrierApi.drySamplerNativeRelease` does not.
+  final bool hasDrySampler;
 
   /// The functions that do the work of a call that does not fail.
   final NativeBarrierApi? real;
@@ -100,6 +105,30 @@ final class FakeNativeBarrier {
                 triggerTokenCount,
               ) ??
               object.cast(),
+    samplerInitDry: !hasDrySampler
+        ? null
+        : (
+            vocab,
+            multiplier,
+            base,
+            allowedLength,
+            penaltyLastN,
+            sequenceBreakers,
+            sequenceBreakerCount,
+          ) {
+            if (!_succeeds('llama_dart_sampler_init_dry')) return nullptr;
+            final wrapper = real?.samplerInitDry;
+            if (wrapper == null && real == null) return object.cast();
+            return (wrapper ?? llama_sampler_init_dry)(
+              vocab,
+              multiplier,
+              base,
+              allowedLength,
+              penaltyLastN,
+              sequenceBreakers,
+              sequenceBreakerCount,
+            );
+          },
     tokenize:
         (
           vocab,

@@ -37,6 +37,9 @@ const _symbols = [
   'llama_dart_ggml_backend_sched_synchronize',
 ];
 
+// The export a `v1.1.0` runtime admitted by commit can lack.
+const _optionalSymbol = 'llama_dart_sampler_init_dry';
+
 final _statusException = llama_dart_status.LLAMA_DART_STATUS_EXCEPTION.value;
 
 void main() {
@@ -53,7 +56,7 @@ void main() {
         NativeBarrierApi.tryResolve(isWindows: false, symbol: exported),
         isNotNull,
       );
-      expect(requested, unorderedEquals(_symbols));
+      expect(requested, unorderedEquals([..._symbols, _optionalSymbol]));
 
       for (final missing in _symbols) {
         expect(
@@ -69,6 +72,26 @@ void main() {
           reason: missing,
         );
       }
+    });
+
+    test('a runtime without the DRY sampler wrapper keeps the rest of the '
+        'barrier', () {
+      final api = NativeBarrierApi.tryResolve(
+        isWindows: false,
+        symbol: (name) => name == _optionalSymbol
+            ? throw ArgumentError("Couldn't resolve native function '$name'")
+            : Pointer.fromAddress(0x1000),
+      );
+
+      expect(api, isNotNull);
+      expect(api!.samplerInitDry, isNull);
+      expect(
+        NativeBarrierApi.tryResolve(
+          isWindows: false,
+          symbol: (_) => Pointer.fromAddress(0x1000),
+        )!.samplerInitDry,
+        isNotNull,
+      );
     });
 
     test('resolves nothing from a library that exports none of them', () {
@@ -107,6 +130,8 @@ void main() {
               nullptr,
               0,
             ),
+        _optionalSymbol: () =>
+            api.samplerInitDry!(nullptr, 0, 0, 0, 0, nullptr, 0),
         'llama_dart_tokenize': () =>
             api.tokenize(nullptr, nullptr, 0, nullptr, 0, false, false),
         'llama_dart_token_to_piece': () =>
@@ -135,7 +160,7 @@ void main() {
         'llama_dart_ggml_backend_sched_synchronize': () =>
             api.ggmlBackendSchedSynchronize(nullptr),
       };
-      expect(members.keys, unorderedEquals(_symbols));
+      expect(members.keys, unorderedEquals([..._symbols, _optionalSymbol]));
       for (final MapEntry(key: name, value: call) in members.entries) {
         exports.called.clear();
         call();
@@ -292,6 +317,30 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('DRY setup goes through the wrapper and builds a sampler', () {
+      expect(barrier.samplerInitDry, isNotNull);
+      final vocab = llama_model_get_vocab(model);
+      final breaker = 'a'.toNativeUtf8();
+      final breakers = malloc<Pointer<Char>>()..value = breaker.cast();
+      addTearDown(() {
+        malloc.free(breaker);
+        malloc.free(breakers);
+      });
+
+      final sampler = calls.samplerInitDry(
+        vocab,
+        0.8,
+        1.75,
+        2,
+        64,
+        breakers,
+        1,
+      );
+
+      expect(sampler, isNot(nullptr));
+      llama_sampler_free(sampler);
     });
 
     test('a grammar that rejects an accepted token is a typed error', () {
@@ -500,6 +549,31 @@ final class _RecordingExports {
             int _,
           ) => _record(
             'llama_dart_sampler_init_grammar_lazy_patterns',
+            nullptr.cast<llama_sampler>(),
+          ),
+        ),
+    'llama_dart_sampler_init_dry':
+        NativeCallable<
+          Pointer<llama_sampler> Function(
+            Pointer<llama_vocab>,
+            Float,
+            Float,
+            Int32,
+            Int32,
+            Pointer<Pointer<Char>>,
+            Size,
+          )
+        >.isolateLocal(
+          (
+            Pointer<llama_vocab> _,
+            double _,
+            double _,
+            int _,
+            int _,
+            Pointer<Pointer<Char>> _,
+            int _,
+          ) => _record(
+            'llama_dart_sampler_init_dry',
             nullptr.cast<llama_sampler>(),
           ),
         ),

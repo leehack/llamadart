@@ -21,6 +21,16 @@ typedef _GrammarLazyPatternsNative =
       Pointer<llama_token>,
       Size,
     );
+typedef _DrySamplerNative =
+    Pointer<llama_sampler> Function(
+      Pointer<llama_vocab>,
+      Float,
+      Float,
+      Int32,
+      Int32,
+      Pointer<Pointer<Char>>,
+      Size,
+    );
 typedef _TokenizeNative =
     Int32 Function(
       Pointer<llama_vocab>,
@@ -103,13 +113,19 @@ final class NativeBarrierApi {
     required this.ggmlBackendTensorGet,
     required this.ggmlBackendSchedAllocGraph,
     required this.ggmlBackendSchedSynchronize,
+    this.samplerInitDry,
   });
 
-  /// The oldest `llamadart-native` release that exports these functions.
+  /// The oldest `llamadart-native` release that exports these functions,
+  /// except [samplerInitDry].
   static const String minimumNativeRelease = 'v0.6.0-1';
 
+  /// The oldest `llamadart-native` release that exports [samplerInitDry].
+  static const String drySamplerNativeRelease = 'v1.1.0-1';
+
   /// Resolves every function from the loaded runtime, or returns `null` when
-  /// it does not export all of them.
+  /// it does not export all of them, except [samplerInitDry], which stays
+  /// `null` on a runtime older than [drySamplerNativeRelease].
   ///
   /// [isWindows] selects the asset the functions are bound to. [symbol]
   /// replaces that lookup: it returns the address of the function exported
@@ -142,6 +158,18 @@ final class NativeBarrierApi {
   ) {
     Pointer<NativeFunction<T>> function<T extends Function>(String name) =>
         symbol(name).cast();
+    // A `v1.1.0` runtime is admitted by its upstream commit and can lack
+    // exports a later wrapper rebuild adds, so these never disable the API.
+    Pointer<NativeFunction<T>>? optionalFunction<T extends Function>(
+      String name,
+    ) {
+      try {
+        return function<T>(name);
+      } on ArgumentError {
+        return null;
+      }
+    }
+
     return NativeBarrierApi(
       lastError: function<_LastErrorNative>(
         'llama_dart_last_error',
@@ -195,6 +223,9 @@ final class NativeBarrierApi {
       ggmlBackendSchedSynchronize: function<_SchedSynchronizeNative>(
         'llama_dart_ggml_backend_sched_synchronize',
       ).asFunction(),
+      samplerInitDry: optionalFunction<_DrySamplerNative>(
+        'llama_dart_sampler_init_dry',
+      )?.asFunction(),
     );
   }
 
@@ -220,6 +251,19 @@ final class NativeBarrierApi {
     int triggerTokenCount,
   )
   samplerInitGrammarLazyPatterns;
+
+  /// `llama_dart_sampler_init_dry`; `nullptr` after a caught exception, or
+  /// `null` when the runtime predates [drySamplerNativeRelease].
+  final Pointer<llama_sampler> Function(
+    Pointer<llama_vocab> vocab,
+    double multiplier,
+    double base,
+    int allowedLength,
+    int penaltyLastN,
+    Pointer<Pointer<Char>> sequenceBreakers,
+    int sequenceBreakerCount,
+  )?
+  samplerInitDry;
 
   /// `llama_dart_tokenize`; `LLAMA_DART_STATUS_EXCEPTION` after a caught
   /// exception.
@@ -407,6 +451,10 @@ Pointer<NativeType> _bindingsSymbol(String symbol) => switch (symbol) {
     Native.addressOf<NativeFunction<_GrammarLazyPatternsNative>>(
       llama_dart_sampler_init_grammar_lazy_patterns,
     ),
+  'llama_dart_sampler_init_dry' =>
+    Native.addressOf<NativeFunction<_DrySamplerNative>>(
+      llama_dart_sampler_init_dry,
+    ),
   'llama_dart_tokenize' => Native.addressOf<NativeFunction<_TokenizeNative>>(
     llama_dart_tokenize,
   ),
@@ -481,6 +529,8 @@ Pointer<NativeType> _wrapperAssetSymbol(String symbol) => switch (symbol) {
     Native.addressOf<NativeFunction<_GrammarLazyPatternsNative>>(
       _wrapperGrammarLazyPatterns,
     ),
+  'llama_dart_sampler_init_dry' =>
+    Native.addressOf<NativeFunction<_DrySamplerNative>>(_wrapperSamplerInitDry),
   'llama_dart_tokenize' => Native.addressOf<NativeFunction<_TokenizeNative>>(
     _wrapperTokenize,
   ),
@@ -555,6 +605,20 @@ external Pointer<llama_sampler> _wrapperGrammarLazyPatterns(
   int triggerPatternCount,
   Pointer<llama_token> triggerTokens,
   int triggerTokenCount,
+);
+
+@Native<_DrySamplerNative>(
+  assetId: _wrapperAsset,
+  symbol: 'llama_dart_sampler_init_dry',
+)
+external Pointer<llama_sampler> _wrapperSamplerInitDry(
+  Pointer<llama_vocab> vocab,
+  double multiplier,
+  double base,
+  int allowedLength,
+  int penaltyLastN,
+  Pointer<Pointer<Char>> sequenceBreakers,
+  int sequenceBreakerCount,
 );
 
 @Native<_TokenizeNative>(assetId: _wrapperAsset, symbol: 'llama_dart_tokenize')

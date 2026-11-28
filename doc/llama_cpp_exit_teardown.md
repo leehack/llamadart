@@ -66,8 +66,15 @@ for the upstream functions the service used to call directly and that throw
 (tokenize, token to piece, sampler accept, the lazy-grammar constructor,
 memory clear, the three mtmd bitmap constructors, and the ggml device and
 backend calls of the decision head). They are calls in flight for teardown
-like the others, and are resolved all or nothing in the same way. See
-"C++ exceptions".
+like the others, and are resolved all or nothing in the same way, except
+`llama_dart_sampler_init_dry` (`v1.1.0-1`). The DRY sampler constructor
+(`GenerationParams.dryMultiplier`) detokenizes the vocabulary and tokenizes
+every sequence breaker, so its setup is a guarded wrapper call: a caught
+exception is a `LlamaInferenceException`, and teardown waits for it. A
+`v1.1.0` runtime admitted by its upstream commit can lack the export; the
+barrier then stays and only that call falls back to upstream
+`llama_sampler_init_dry`, with the behavior it had before: an exception ends
+the process and teardown does not wait for it. See "C++ exceptions".
 
 `llama_dart_build_identity` (`v0.7.0-3`) is called directly, outside both:
 it returns a constant of the library and touches no llama.cpp object, so
@@ -88,7 +95,8 @@ Teardown waits up to two seconds for guarded calls in flight, then for a
 objects. It knows nothing about other native calls:
 
 - An unguarded call on a tracked object (metadata reads, sampler
-  construction other than the lazy-grammar one, and on a runtime older than
+  construction other than the lazy-grammar one and, from `v1.1.0-1`, the DRY
+  one, and on a runtime older than
   `v0.6.0-1` also tokenize, detokenize, sampler accept, memory clear and
   media decode) that is in flight when teardown runs is not protected,
   however short it is. Teardown frees the object under it.
@@ -437,11 +445,12 @@ new call on an `sd_ctx_t` that can run longer than the 250 ms settle time
   replaces the three evaluating calls and keeps the accessors, which are all
   the check of a media chunk against the micro-batch calls.
 - `test/unit/backends/llama_cpp/native_barrier_api_test.dart`: the lookup
-  requests all 18 names and resolves nothing when any one is missing or from
-  a library that has none; each member calls the function exported under its
-  own name; on the real runtime, a token outside the vocabulary, a trigger
-  pattern that is not a regular expression and a grammar that rejects an
-  accepted token are typed errors; `NativeCallFailures` marks and forgets
+  requests all 18 names and the optional DRY one, resolves nothing when any
+  of the 18 is missing or from a library that has none, and keeps the barrier
+  without the DRY export; each member calls the function exported under its
+  own name; on the real runtime, DRY setup through the wrapper, a token
+  outside the vocabulary, a trigger pattern that is not a regular expression
+  and a grammar that rejects an accepted token are typed errors; `NativeCallFailures` marks and forgets
   free-only objects.
 - `test/unit/backends/llama_cpp/exit_teardown_api_test.dart` also pins, for
   each tracked call, the error a caught exception throws and the objects it
@@ -450,8 +459,10 @@ new call on an `sd_ctx_t` that can run longer than the 250 ms settle time
   a service on the real CPU runtime whose exit API and barrier fail the calls
   a test names. Each failed call is the typed error of its operation, the
   object it leaves undefined is refused afterwards and usable again once
-  freed and recreated, and nothing created stays unfreed. It also loads a
-  state file written by llama.cpp `v0.5.0`.
+  freed and recreated, and nothing created stays unfreed. A failure inside
+  DRY setup is a `LlamaInferenceException` and the next generation runs, and
+  a barrier without the DRY export calls upstream. It also loads a state file
+  written by llama.cpp `v0.5.0`.
 - `test/unit/backends/llama_cpp/vulkan_device_probe_test.dart`,
   `load_device_selection_test.dart` and the "Vulkan" groups of
   `llama_cpp_service_test.dart`: the device facts, the device selection and

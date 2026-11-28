@@ -376,6 +376,50 @@ void main() {
     }
   });
 
+  test('an exception inside DRY setup is a typed error, and the next '
+      'generation runs', () async {
+    start();
+    barrier.throwing.add('llama_dart_sampler_init_dry');
+    barrier.message = 'boom';
+    const dry = GenerationParams(
+      maxTokens: 4,
+      temp: 0,
+      topK: 1,
+      seed: 1,
+      dryMultiplier: 0.8,
+    );
+
+    await expectLater(
+      _generate(service, context, 'ab', dry),
+      throwsA(_caught<LlamaInferenceException>('llama_sampler_init_dry')),
+    );
+
+    barrier.throwing.clear();
+    await _generate(service, context, 'ab', dry);
+    expect(
+      barrier.calls.where((name) => name == 'llama_dart_sampler_init_dry'),
+      hasLength(2),
+    );
+  });
+
+  test('DRY setup on a runtime without the wrapper calls the upstream '
+      'function', () async {
+    barrier.dispose();
+    barrier = FakeNativeBarrier(
+      real: NativeBarrierApi.tryResolve(isWindows: Platform.isWindows)!,
+      hasDrySampler: false,
+    );
+    start();
+
+    await _generate(
+      service,
+      context,
+      'ab',
+      _greedy.copyWith(dryMultiplier: 0.8),
+    );
+    expect(barrier.calls, isNot(contains('llama_dart_sampler_init_dry')));
+  });
+
   test('an exception while the sampler accepts the prompt is a typed error, '
       'and the next generation runs', () async {
     start();

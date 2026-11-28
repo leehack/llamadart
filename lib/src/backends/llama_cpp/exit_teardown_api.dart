@@ -976,6 +976,7 @@ final class LlamaCppObjectCalls {
     required this.samplerSample,
     required this.samplerAccept,
     required this.samplerInitGrammarLazyPatterns,
+    required this.samplerInitDry,
     required this.tokenize,
     required this.tokenToPiece,
     required this.memoryClear,
@@ -1009,6 +1010,7 @@ final class LlamaCppObjectCalls {
     int Function(Pointer<llama_context>)? contextSequenceCapacity,
   }) {
     final failures = NativeCallFailures(barrier, isWindows: isWindows);
+    final dryWrapper = barrier?.samplerInitDry;
     return LlamaCppObjectCalls._(
       exit: exit,
       failures: failures,
@@ -1120,6 +1122,35 @@ final class LlamaCppObjectCalls {
               if (sampler == nullptr) {
                 failures.throwIfCaught(
                   'llama_sampler_init_grammar_lazy_patterns',
+                  LlamaInferenceException.new,
+                  windowsFreeOnly: [vocab],
+                );
+              }
+              return sampler;
+            },
+      samplerInitDry: dryWrapper == null
+          ? llama_sampler_init_dry
+          : (
+              vocab,
+              multiplier,
+              base,
+              allowedLength,
+              penaltyLastN,
+              sequenceBreakers,
+              sequenceBreakerCount,
+            ) {
+              final sampler = dryWrapper(
+                vocab,
+                multiplier,
+                base,
+                allowedLength,
+                penaltyLastN,
+                sequenceBreakers,
+                sequenceBreakerCount,
+              );
+              if (sampler == nullptr) {
+                failures.throwIfCaught(
+                  'llama_sampler_init_dry',
                   LlamaInferenceException.new,
                   windowsFreeOnly: [vocab],
                 );
@@ -1306,6 +1337,7 @@ final class LlamaCppObjectCalls {
     samplerSample: llama_sampler_sample,
     samplerAccept: llama_sampler_accept,
     samplerInitGrammarLazyPatterns: llama_sampler_init_grammar_lazy_patterns,
+    samplerInitDry: llama_sampler_init_dry,
     tokenize: llama_tokenize,
     tokenToPiece: llama_token_to_piece,
     memoryClear: (ctx, memory, data) => llama_memory_clear(memory, data),
@@ -1411,6 +1443,24 @@ final class LlamaCppObjectCalls {
     int triggerTokenCount,
   )
   samplerInitGrammarLazyPatterns;
+
+  /// `llama_sampler_init_dry`; `nullptr` when it fails.
+  ///
+  /// It goes through `llama_dart_sampler_init_dry` when the runtime exports
+  /// it, so a failure inside the constructor is a typed error and teardown
+  /// waits for it. A runtime that lacks the wrapper
+  /// (`NativeBarrierApi.drySamplerNativeRelease`) keeps the unguarded
+  /// upstream call and its exposure.
+  final Pointer<llama_sampler> Function(
+    Pointer<llama_vocab> vocab,
+    double multiplier,
+    double base,
+    int allowedLength,
+    int penaltyLastN,
+    Pointer<Pointer<Char>> sequenceBreakers,
+    int sequenceBreakerCount,
+  )
+  samplerInitDry;
 
   /// `llama_tokenize`.
   final int Function(
