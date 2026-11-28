@@ -99,7 +99,7 @@ Apple SD companion pinning its own runtime, so upgrade the core and
 
 ```yaml
 dependencies:
-  llamadart_stable_diffusion_flutter: ^0.22.0
+  llamadart_stable_diffusion_flutter: ^0.23.0
 ```
 
 Without it, `all` leaves the image runtime out of a Flutter iOS or macOS app

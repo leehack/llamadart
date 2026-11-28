@@ -1,3 +1,7 @@
+## 0.23.0
+
+- Require core `0.23.x`. Apple SwiftPM pins `leehack/stable-diffusion-native@v0.4.0-1`.
+
 ## 0.22.0
 
 - Require core `0.22.x`. Apple SwiftPM pins `leehack/stable-diffusion-native@v0.4.0-1`.

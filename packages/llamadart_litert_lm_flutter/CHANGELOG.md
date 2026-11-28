@@ -1,3 +1,7 @@
+## 0.23.0
+
+- Require core `0.23.x`. Apple SwiftPM pins `leehack/litert-lm-native@v0.20.0`.
+
 ## 0.22.0
 
 - Require core `0.22.x`. Apple SwiftPM pins `leehack/litert-lm-native@v0.20.0`.

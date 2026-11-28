@@ -1,6 +1,18 @@
 Releases before 0.10.0 are in the
 [changelog archive](https://github.com/leehack/llamadart/blob/main/doc/changelog_archive.md).
 
+## 0.23.0
+
+- Add `GenerationParams.dryMultiplier`, `dryBase`, `dryAllowedLength`, `dryPenaltyLastN` and `drySequenceBreakers` (DRY repetition penalty) for native llama.cpp, reported by `LlamaEngineCapabilities.samplerControls`; WebGPU and LiteRT-LM reject them. Native llama.cpp rejects a `dryAllowedLength` at or above the DRY window (capped at the context size) and settings that can exhaust a token allow-list with `LlamaArgumentException`, and a failure inside DRY sampler setup becomes `LlamaInferenceException` instead of ending the process (`llamadart-native` v1.1.0-1 and later).
+- Add `LlamaEngine.setModelFromFileDescriptor` to load a single-file GGUF from an open file descriptor without a copy (Android document grants, user-picked iOS/macOS files); it throws `LlamaUnsupportedException` on Windows, the Web, LiteRT-LM and native runtimes older than `llamadart-native` v1.1.0-1.
+- Adopt `llamadart-native` v1.1.0-1 (llama.cpp v1.1.0). Native runtime overrides must now be built from llama.cpp v1.1.0; v1.0.0 builds throw `LlamaUnsupportedException`. On Linux x64, the HIP backend needs ROCm 6.3 or newer.
+- Aligned the default WebGPU bridge assets to `v0.1.96`, which embeds llama.cpp v1.1.0.
+- Block llama.cpp GPU loads on Android when a Qualcomm proprietary Vulkan device is registered: `ComputeDevice.gpu` throws `LlamaUnsupportedException` and automatic GPU attempts fall back to CPU with a warning.
+- Unsupported sampler errors now name the tuning fields to reset after disabling XTC, dynamic temperature, or Mirostat.
+- Show backend-reported per-request token counts and timings in the example chat app.
+
+Runtime baseline: native llama.cpp `v1.1.0-1` and Web use upstream `v1.1.0@171527522610996f5f0acf12334e185156ca8f44`; native LiteRT-LM uses `v0.20.0` and stable-diffusion uses `v0.4.0-1`. Web LiteRT-LM uses `@litert-lm/core@0.20.0`. Manifest SHA-256: `0cafdc729d985d61407f66b07c99c53ac935bef4572c9d596c2a3704c21b68c0`.
+
 ## 0.22.0
 
 - Add native llama.cpp sampler controls to `GenerationParams`: `frequencyPenalty`, `penaltyLastN`, `logitBias`, `typicalP`, `topNSigma`, `xtcProbability`/`xtcThreshold`, `dynatempRange`/`dynatempExponent` and `mirostat`/`mirostatTau`/`mirostatEta`. `LlamaEngineCapabilities.samplerControls` reports support; WebGPU and LiteRT-LM reject them. The example server maps `frequency_penalty`, `presence_penalty` and `logit_bias`.

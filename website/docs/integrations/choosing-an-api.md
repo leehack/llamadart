@@ -19,7 +19,7 @@ make a model support tools, strict JSON, images or embeddings.
 
 | Route | Available combination | Qualification boundary |
 | --- | --- | --- |
-| Direct | Published `llamadart 0.22.0` with compatible `0.22.x` Apple companions for each selected runtime | See the [runtime support matrix](../platforms/support-matrix). Devices, models and backends have separate limits. |
+| Direct | Published `llamadart 0.23.0` with compatible `0.23.x` Apple companions for each selected runtime | See the [runtime support matrix](../platforms/support-matrix). Devices, models and backends have separate limits. |
 | Genkit | Published `genkit_llamadart 3.13.0` with Genkit 1.x, `llamadart >=0.21.0 <0.23.0` and Dart 3.12+. | Adapter tests cover browser capability guards and selected native model paths. |
 | Flutter Edge AI | Published `flutter_edge_ai_llama 0.1.0` with `flutter_edge_ai ^2.6.0`. This connector version requires `llamadart >=0.17.5 <0.17.6`. | See the [Flutter Edge AI page](./flutter-edge-ai). |
 
