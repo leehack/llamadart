@@ -5,16 +5,19 @@ This document covers the major breaking upgrade paths.
 ## `0.22.x` -> `0.23.0`: llama.cpp v1.1.0 runtime and Apple companions
 
 - Upgrade core and all installed Apple SwiftPM companions together. The
-  `0.23.x` companions require `llamadart: '>=0.23.0 <0.24.0'`. The `0.22.x`
-  llama.cpp companion pins `llamadart-native` `v1.0.0-4`, which `0.23.0`
-  rejects with `LlamaUnsupportedException`: `v1.1.0` changes by-value struct
-  layouts, so no `v1.0.0` Apple build is admitted.
+  `0.23.x` companions require `llamadart: '>=0.23.0 <0.24.0'`, and the
+  `0.22.x` companions require `<0.23.0`, so pub refuses a mixed pairing. The
+  `0.22.x` llama.cpp companion pins `llamadart-native` `v1.0.0-4`; `v1.1.0`
+  changes by-value struct layouts, so no `v1.0.0` Apple build is admitted. If a
+  dependency override forces the pairing, the build hook fails with
+  `Incompatible Apple llama.cpp companion`.
 - The native runtime moves to `llamadart-native` `v1.1.0-1` (llama.cpp
   `v1.1.0`) and the default WebGPU bridge assets to the build that embeds the
-  same llama.cpp release. A native runtime override must be built from llama.cpp `v1.1.0`; a `v1.0.0` build
-  throws `LlamaUnsupportedException`. The `v1.1.0-1` rebuild adds the exports
-  behind `LlamaEngine.setModelFromFileDescriptor` and the guarded DRY sampler;
-  a `v1.1.0` override loads by path and throws there.
+  same llama.cpp release. A native runtime override must be built from
+  llama.cpp `v1.1.0`; a `v1.0.0` build throws `LlamaUnsupportedException`. The
+  `v1.1.0-1` rebuild adds the exports behind
+  `LlamaEngine.setModelFromFileDescriptor` and the guarded DRY sampler; a
+  `v1.1.0` override loads by path and throws there.
 - The Linux x64 HIP backend is built against ROCm 6.3.4, so it needs ROCm 6.3
   or newer at runtime ([Linux prerequisites](https://llamadart.leehack.com/docs/platforms/linux-prerequisites)).
 - On Android, `ComputeDevice.gpu` now throws `LlamaUnsupportedException` when
